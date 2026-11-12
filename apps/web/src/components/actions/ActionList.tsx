@@ -13,7 +13,7 @@ import {
   Trash2,
   Zap,
 } from 'lucide-react'
-import { Suspense, lazy, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { ProjectActionDto } from '@solera/protocol'
 import {
   actionView,
@@ -22,8 +22,10 @@ import {
   useDeleteAction,
   useRunAction,
 } from '../../lib/actions'
-import { actionAutomationId } from '../../lib/automations'
+import type { EditorSeed } from '../../lib/action-editor'
+import { actionAutomationId, fromAction } from '../../lib/automations'
 import { useTranslate } from '../../lib/i18n'
+import { ActionEditorDrawer } from '../automations/ActionEditorDrawer'
 import { showTerminal } from '../../lib/panel'
 import { switchTargets, unlessElsewhere } from '../../lib/served'
 import { useServedIndex, type ServedData, type ServedRow } from '../../lib/served-query'
@@ -32,8 +34,8 @@ import { ServedLine } from '../automations/served/ServedLine'
 import { ServeItems, useTargetName } from '../automations/served/ServeMenu'
 import { switchToTree, useLaunchHere, useServiceSwitch, type SwitchRequest } from '../automations/served/SwitchServiceDialog'
 
-/** L'édition d'une action, chargée à son ouverture (#128) : hors du paquet d'entrée. */
-const ActionDialog = lazy(() => import('./ActionDialog').then((m) => ({ default: m.ActionDialog })))
+/** « + Action » : une commande, à la demande. */
+const NEW_ACTION: EditorSeed = { preset: { what: 'command' } }
 
 /**
  * Les actions d'un projet, présentées comme les listes des réglages. Chaque élément
@@ -131,6 +133,10 @@ export function useActionDialogs(projectId: string, conversationId?: string) {
   const switching = useServiceSwitch()
   const here = useLaunchHere(useServedIndex(projectId).trees, conversationId)
   const failure = approve.error ?? remove.error ?? unlessElsewhere(run.error)
+  const seed = useMemo<EditorSeed | null>(
+    () => (editing === null ? null : editing === 'new' ? NEW_ACTION : { from: fromAction(editing) }),
+    [editing],
+  )
 
   const handlers: ActionHandlers = {
     onReview: setReviewing,
@@ -143,15 +149,7 @@ export function useActionDialogs(projectId: string, conversationId?: string) {
   const dialogs = (
     <>
       {switching.dialog}
-      {editing ? (
-        <Suspense fallback={null}>
-          <ActionDialog
-            projectId={projectId}
-            action={editing === 'new' ? undefined : editing}
-            onClose={() => setEditing(null)}
-          />
-        </Suspense>
-      ) : null}
+      <ActionEditorDrawer projectId={projectId} seed={seed} conversationId={conversationId} onClose={() => setEditing(null)} />
 
       <ConfirmDialog
         open={reviewing !== null}

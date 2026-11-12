@@ -4,8 +4,9 @@ import { useNavigate } from 'react-router-dom'
 import type { ProjectDto, ScheduledTaskDto } from '@solera/protocol'
 import { HeaderBand } from '../components/HeaderBand'
 import { ProjectAvatar } from '../components/ProjectAvatar'
-import { ScheduleDialog } from '../components/schedule/ScheduleDialog'
+import { ActionEditorDrawer } from '../components/automations/ActionEditorDrawer'
 import { Banner, Button, EmptyState, Menu, MenuItem, Switch, cx } from '@solera/ui'
+import { NEW_AGENT_TASK } from '../lib/action-editor'
 import { cronToHuman } from '../lib/cron'
 import { locale, useTranslate } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
@@ -18,6 +19,8 @@ import {
   useSchedules,
   useUpdateSchedule,
 } from '../lib/schedules'
+
+
 
 /**
  * Toutes les tâches planifiées, tous projets confondus.
@@ -37,6 +40,8 @@ export function SchedulesPage() {
   const { data: projects } = useProjects()
   const { data: tasks, isPending, isError } = useSchedules()
   const [creatingIn, setCreatingIn] = useState<ProjectDto | null>(null)
+  // Le projet reste le temps que le tiroir sorte de l'écran.
+  const [editorProject, setEditorProject] = useState<string | null>(null)
 
   const sorted = useMemo(
     () =>
@@ -69,7 +74,7 @@ export function SchedulesPage() {
             <MenuItem
               key={project.id}
               icon={<ProjectAvatar project={project} />}
-              onSelect={() => setCreatingIn(project)}
+              onSelect={() => { setCreatingIn(project); setEditorProject(project.id) }}
             >
               {project.name}
             </MenuItem>
@@ -116,8 +121,8 @@ export function SchedulesPage() {
         </div>
       </div>
 
-      {creatingIn ? (
-        <ScheduleDialog project={creatingIn} onClose={() => setCreatingIn(null)} />
+      {editorProject ? (
+        <ActionEditorDrawer projectId={editorProject} seed={creatingIn ? NEW_AGENT_TASK : null} onClose={() => setCreatingIn(null)} />
       ) : null}
     </div>
   )

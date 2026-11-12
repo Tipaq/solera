@@ -623,11 +623,28 @@ test('healthOf : la dernière erreur d’une commande se lit dans son extrait', 
 /* ------------------------------------------------------------------ brouillons (Q5 : la nature ne change pas) */
 
 test('draftOf : de quoi rouvrir l’éditeur sur une action existante', () => {
-  const command = draftOf(fromAction(action({ kind: 'service', subdir: 'apps/web', url: 'http://h:{port}', description: 'Vite' })))
+  const command = draftOf(fromAction(action({ kind: 'service', subdir: 'apps/web', url: 'http://h:{port}', description: 'Vite', onDemand: true })))
   assert.deepEqual(command, {
     what: 'command',
-    body: { label: 'Tests', description: 'Vite', kind: 'service', command: 'pnpm test', subdir: 'apps/web', url: 'http://h:{port}' },
+    body: {
+      label: 'Tests',
+      description: 'Vite',
+      kind: 'service',
+      command: 'pnpm test',
+      subdir: 'apps/web',
+      url: 'http://h:{port}',
+      placement: 'follow',
+      onDemand: true,
+    },
   })
+  // Où il tourne, sa branche et sa cadence suivent : « Dupliquer » les garde.
+  const pinned = draftOf(fromAction(action({ kind: 'service', placement: 'branch', pinnedBranch: 'dev', onDemand: true })))
+  assert.equal(pinned.what === 'command' && pinned.body.pinnedBranch, 'dev')
+  const planned = draftOf(
+    fromAction(action({ onDemand: false, schedule: { cadence: { kind: 'cron', expression: '0 3 * * *' }, enabled: true, nextRunAt: null, lastRunAt: null, maxDurationMinutes: 20 } as ActionInput['schedule'] })),
+  )
+  assert.deepEqual(planned.what === 'command' && planned.body.schedule, { cadence: { kind: 'cron', expression: '0 3 * * *' }, maxDurationMinutes: 20 })
+  assert.equal(planned.what === 'command' && planned.body.onDemand, false)
   const agent = draftOf(fromTask(task({ check: { script: 'exit 0', timeoutSeconds: 60, approved: true, proposedBy: null } })))
   assert.equal(agent.what, 'agent')
   assert.equal(agent.what === 'agent' && agent.body.checkScript, 'exit 0')
