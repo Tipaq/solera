@@ -233,7 +233,7 @@ async function checkEditor(page, base, project, conversation, api, context) {
   await editor.getByRole('textbox', { name: 'Libellé', exact: true }).fill('Aperçu statique')
   await editor.getByRole('checkbox', { name: /^Planifiée/ }).click()
   await editor.locator('[data-service-schedule]').waitFor()
-  await editor.getByRole('button', { name: /^Enregistrer — à compléter : Un service ne se planifie pas encore/ }).waitFor()
+  await editor.getByRole('button', { name: /^Enregistrer — À compléter : Un service ne se planifie pas encore/ }).waitFor()
   await editor.getByRole('checkbox', { name: /^Planifiée/ }).click()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'editor-service.png') })
   await save.click()

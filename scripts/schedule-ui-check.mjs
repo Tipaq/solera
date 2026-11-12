@@ -129,7 +129,7 @@ try {
   await label.focus()
   await dialog.getByRole('textbox', { name: 'Prompt', exact: true }).focus()
   await dialog.getByRole('alert').getByText('Un libellé court : c’est le texte du bouton.').waitFor()
-  await dialog.getByRole('button', { name: /^Enregistrer — à compléter : / }).waitFor()
+  await dialog.getByRole('button', { name: /^Enregistrer — À compléter : / }).waitFor()
   await label.fill('Veille de test')
   await dialog.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Réponds seulement « OK », sans utiliser aucun outil.')
   // Chaque minute, pour qu'un tir parte pendant la suite : une règle personnalisée.
@@ -226,7 +226,7 @@ try {
   await page.getByRole('button', { name: 'Fermer la navigation', exact: true }).click()
   await page.goto(`${base}/p/${project.id}/schedules`)
 
-  await page.getByRole('button', { name: 'Modifier', exact: true }).click()
+  await card.getByRole('button', { name: 'Modifier', exact: true }).click()
   const editor = page.getByRole('dialog', { name: 'Éditer une action', exact: true })
   assert.equal(await editor.getByRole('textbox', { name: 'Libellé', exact: true }).inputValue(), 'Veille de test')
   // La nature d'une action existante est figée : seule sa carte reste.

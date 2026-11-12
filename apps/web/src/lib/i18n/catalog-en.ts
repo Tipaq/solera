@@ -4554,7 +4554,7 @@ export const en = {
   'actionEditor.footer.cancel': "Cancel",
   'actionEditor.footer.save': "Save",
   'actionEditor.footer.missing': "To complete: {problems}",
-  'actionEditor.footer.saveBlocked': "Save — to complete: {problems}",
+  'actionEditor.footer.saveBlocked': "Save — {problems}",
   'actionEditor.narrow.text': "The panel is narrow for editing.",
   'actionEditor.narrow.expand': "Expand the panel",
   'schedule.form.unattended.confined': "Confined, each run goes without permission prompts: the permission mode chosen above does not apply.",

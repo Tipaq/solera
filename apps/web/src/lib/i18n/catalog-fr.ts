@@ -4548,7 +4548,7 @@ export const fr: Catalog = {
   "actionEditor.footer.cancel": "Annuler",
   "actionEditor.footer.save": "Enregistrer",
   "actionEditor.footer.missing": "À compléter : {problems}",
-  "actionEditor.footer.saveBlocked": "Enregistrer — à compléter : {problems}",
+  "actionEditor.footer.saveBlocked": "Enregistrer — {problems}",
   "actionEditor.narrow.text": "Le panneau est étroit pour éditer.",
   "actionEditor.narrow.expand": "Agrandir le panneau",
   "schedule.form.unattended.confined": "Confiné, chaque tir tourne sans demandes d'autorisation : le mode de permissions choisi plus haut ne s'applique pas.",
