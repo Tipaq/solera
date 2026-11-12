@@ -67,6 +67,7 @@ import { registerAuthHooks } from './auth-hooks.js'
 import { registerClaudeSessionRoutes } from './routes/claude-sessions.js'
 import { registerCardRoutes } from './routes/cards.js'
 import { registerMilestoneRoutes } from './routes/milestones.js'
+import { registerRefinementRoutes } from './routes/refinement.js'
 import type { MilestoneRuns } from '../milestones/milestone-runs.js'
 import { registerIssueRoutes } from './routes/issues.js'
 import { registerConversationRoutes } from './routes/conversations.js'
@@ -238,6 +239,7 @@ export async function buildApp(
     { forge: ghForge, worktreeStatus, token: githubToken },
   )
   registerCardRoutes(app, ctx, attachments)
+  registerRefinementRoutes(app, ctx, log)
   if (milestones) registerMilestoneRoutes(app, ctx, milestones)
   if (issues) registerIssueRoutes(app, ctx, issues)
   registerJournalRoutes(app, ctx)

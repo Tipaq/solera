@@ -286,7 +286,8 @@ export function registerProjectRoutes(
     // Le niveau du projet, relu puis réécrit : un écran n'en change que quelques champs,
     // et deux onglets ouverts ne doivent pas s'écraser l'un l'autre (#120).
     if (body.configLayer !== undefined) {
-      patch.defaultConfig = serializeProjectLayer(patchConfigLayer(readProjectLayer(project.defaultConfig), body.configLayer))
+      const changes = Array.isArray(body.configLayer) ? body.configLayer : [body.configLayer]
+      patch.defaultConfig = serializeProjectLayer(changes.reduce(patchConfigLayer, readProjectLayer(project.defaultConfig)))
     } else if (body.defaultConfig !== undefined) {
       // Le chemin des clients d'avant : une configuration entière, ou `null` pour ne plus
       // rien régler pour ce CLI. Seuls ses écarts au compte de l'appelant sont retenus.

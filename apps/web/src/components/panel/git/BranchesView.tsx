@@ -3,7 +3,6 @@ import {
   ArrowDown,
   ArrowUp,
   Boxes,
-  ChevronDown,
   Cloud,
   GitBranch,
   GitMerge,
@@ -16,7 +15,7 @@ import {
 import type { RefSectionDto } from '@solera/protocol'
 import { useTranslate } from '../../../lib/i18n'
 import type { WorkspaceScope } from '../../../lib/workspace-scope'
-import { Banner, cx } from '@solera/ui'
+import { Banner, PanelEmpty, PanelGroup, PanelStatusIcon, cx, panelRowClass } from '@solera/ui'
 import { useGitActions } from './actions'
 import { DragLive, useKeyboardDrag, type KeyboardDrag } from './drag'
 import { BranchMenu, type MenuContext } from './menus'
@@ -115,9 +114,9 @@ export function BranchesView({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2 pt-1 pb-safe">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto py-1 pb-safe">
         {isPending ? (
-          <p className="flex items-center gap-1.5 px-1 py-2 text-xs text-ink-faint">
+          <p className="flex items-center gap-1.5 px-3 py-2 text-xs text-ink-faint">
             <Loader size={11} className="animate-spin" />
             {t('git.branches.loading')}
           </p>
@@ -126,7 +125,7 @@ export function BranchesView({
         {error ? <Banner>{error instanceof Error ? error.message : t('git.branches.error')}</Banner> : null}
 
         {data && data.sections === null ? (
-          <p className="px-1 py-2 text-xs text-ink-faint">{t('changes.diff.notGitRepo')}</p>
+          <PanelEmpty>{t('changes.diff.notGitRepo')}</PanelEmpty>
         ) : null}
 
         {(data?.sections ?? []).map((section) => (
@@ -267,22 +266,19 @@ function Section({
   const movable = section.kind === 'local' || section.kind === 'worktrees'
 
   return (
-    <div className="flex flex-col gap-0.5 pb-1">
-      <span className="flex items-center gap-1 px-1 pt-1 text-micro font-semibold tracking-wide text-ink-soft uppercase">
-        <ChevronDown size={10} />
-        <Icon size={10} />
-        {section.kind !== 'remote'
-          ? t(`git.branches.${section.kind}`)
-          : section.remote
-            ? t('git.branches.remote', { remote: section.remote })
-            : t('git.branches.remoteNone')}
-      </span>
+    <div className="flex flex-col pb-1">
+      <PanelGroup
+        title={
+          section.kind !== 'remote'
+            ? t(`git.branches.${section.kind}`)
+            : section.remote
+              ? t('git.branches.remote', { remote: section.remote })
+              : t('git.branches.remoteNone')
+        }
+        count={section.lines.length}
+      />
 
-      {section.lines.length === 0 ? (
-        <span className="px-1.5 py-0.5 text-micro text-ink-faint italic">
-          {t('git.branches.none')}
-        </span>
-      ) : null}
+      {section.lines.length === 0 ? <PanelEmpty>{t('git.branches.none')}</PanelEmpty> : null}
 
       {section.lines.map((line) => {
         const row = (menu: ReactNode) => (
@@ -296,27 +292,20 @@ function Section({
                   'aria-label': t('git.drag.branch.label', { name: line.name }),
                 }
               : {})}
+            aria-current={line.current || undefined}
             className={cx(
-              'group flex items-center gap-1.5 rounded px-1.5 py-1 outline-none',
-              line.current && 'bg-accent-wash',
+              panelRowClass,
               // La ligne tenue s'efface, la destination se souligne : c'est tout ce
               // que le geste a besoin de montrer, et ça tient dans deux classes.
               drag.held === line.name && 'opacity-50',
               drag.over === line.name && 'ring-1 ring-accent',
-              movable && 'focus-visible:ring-1 focus-visible:ring-accent',
             )}
             title={line.subject}
           >
-            <Icon
-              size={11}
-              className={cx('shrink-0', line.current ? 'text-accent' : 'text-ink-faint opacity-60')}
-            />
-            <span
-              className={cx(
-                'min-w-0 truncate text-xs',
-                line.current ? 'font-medium text-accent' : 'text-ink',
-              )}
-            >
+            {/* La branche courante a son point, comme ce qui travaille ailleurs dans le
+                panneau : la couleur ne sert qu'aux points d'état. */}
+            <PanelStatusIcon icon={<Icon size={15} />} dot={line.current ? 'accent' : undefined} />
+            <span className={cx('min-w-0 truncate text-sm text-ink', line.current && 'font-medium')}>
               {line.name}
             </span>
 
@@ -324,9 +313,9 @@ function Section({
               <button
                 type="button"
                 onClick={() => line.thread && onOpenThread(line.thread.id)}
-                className="flex min-w-0 shrink items-center gap-1 truncate text-micro text-ink-faint hover:text-accent hover:underline"
+                className="flex min-w-0 shrink items-center gap-1 truncate text-xs text-ink-faint hover:text-accent hover:underline"
               >
-                <MessagesSquare size={9} className="shrink-0" />
+                <MessagesSquare size={11} className="shrink-0" />
                 {line.thread.title}
               </button>
             ) : null}
@@ -336,19 +325,19 @@ function Section({
             {/* Le retard sur l'amont : ce qu'on pousserait, ce qu'on tirerait. */}
             {line.ahead ? (
               <span
-                className="flex items-center gap-0.5 text-micro text-ink-faint tabular-nums"
+                className="flex items-center gap-0.5 text-xs text-ink-faint tabular-nums"
                 title={t('git.branches.ahead', { count: line.ahead, upstream: line.upstream ?? '' })}
               >
-                <ArrowUp size={9} />
+                <ArrowUp size={11} />
                 {line.ahead}
               </span>
             ) : null}
             {line.behind ? (
               <span
-                className="flex items-center gap-0.5 text-micro text-ink-faint tabular-nums"
+                className="flex items-center gap-0.5 text-xs text-ink-faint tabular-nums"
                 title={t('git.branches.behind', { count: line.behind, upstream: line.upstream ?? '' })}
               >
-                <ArrowDown size={9} />
+                <ArrowDown size={11} />
                 {line.behind}
               </span>
             ) : null}

@@ -11,6 +11,7 @@ import {
   type ProjectActionRunResult,
   type ServiceActionControl,
   type TerminalDto,
+  type UpdateProjectActionBody,
 } from '@solera/protocol'
 import { api } from './api'
 import { relativeDate } from './dates'
@@ -52,10 +53,11 @@ export function useCreateAction(projectId: string) {
   })
 }
 
+/** La pause d'une commande planifiée n'envoie que `{ schedule: { enabled } }`. */
 export function useUpdateAction() {
   const invalidate = useInvalidate()
   return useMutation({
-    mutationFn: ({ id, ...patch }: { id: string } & Partial<CreateProjectActionBody>) =>
+    mutationFn: ({ id, ...patch }: { id: string } & UpdateProjectActionBody) =>
       api.patch<ProjectActionDto>(`/api/actions/${id}`, patch),
     onSuccess: () => invalidate(),
   })
@@ -109,8 +111,11 @@ export function useDeleteAction() {
  * devant : cliquer un bouton sans voir sa sortie donnerait l'impression qu'il n'a rien fait.
  *
  * Où : le worktree de `conversationId`, sinon `worktreeId` (« Lancer dans… » hors
- * conversation), sinon la racine. `args` s'ajoutent à la commande d'un lancement
- * (« relancer seulement les échecs »).
+ * conversation), sinon la racine, que le placement d'un service peut remplacer. `args`
+ * s'ajoutent à la commande d'un lancement (« relancer seulement les échecs »).
+ *
+ * Un service qui tourne depuis un autre arbre échoue en 409 `service_running_elsewhere`,
+ * ses `params` disant lequel (`cwd`, `branch`, `ports`, `href`) : `switch` le bascule.
  */
 export function useRunAction() {
   const invalidate = useInvalidate()
@@ -121,18 +126,21 @@ export function useRunAction() {
       conversationId,
       worktreeId,
       args,
+      switch: switching,
     }: {
       action: ProjectActionDto
       op?: 'run' | 'logs' | ServiceActionControl
       conversationId?: string
       worktreeId?: string
       args?: string[]
+      switch?: boolean
     }) =>
       api.post<ProjectActionRunResult>(
         op === 'run' ? `/api/actions/${action.id}/run` : `/api/actions/${action.id}/service/${op}`,
         {
           ...(conversationId ? { conversationId } : worktreeId ? { worktreeId } : {}),
           ...(op === 'run' && args && args.length > 0 ? { args } : {}),
+          ...(op === 'run' && switching ? { switch: true } : {}),
         },
       ),
     onSuccess: (result, { action }) => {
