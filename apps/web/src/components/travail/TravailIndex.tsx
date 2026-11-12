@@ -4,15 +4,7 @@ import { formatBytes, shortBranch, type BranchInfo, type TreeRow } from '../../l
 import { shortAge } from '../../lib/dates'
 import { locale, useTranslate } from '../../lib/i18n'
 import { MilestoneChip } from '../code/MilestoneChip'
-import { BranchDot, VerdictDot, verdictReason } from '../code/VerdictDot'
-
-/** La teinte de la raison d'un arbre : rouge quand le nettoyer perdrait du travail. */
-const REASON_TONE: Partial<Record<TreeRow['verdict'], string>> = {
-  waiting: 'text-caution',
-  'merged-dirty': 'text-critical',
-  missing: 'text-critical',
-  clean: 'text-positive',
-}
+import { BranchDot, REASON_TONE, VerdictDot, verdictReason } from '../code/VerdictDot'
 
 const ITEM = 'flex w-full min-w-0 items-start gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-accent'
 
@@ -64,7 +56,7 @@ export function TravailIndex({
                 <VerdictDot verdict={tree.verdict} className="mt-1.5" />
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className={cx('min-w-0 truncate font-mono text-sm', tree.root && 'font-semibold')}>{tree.root ? name : shortBranch(name)}</span>
-                  <span className={cx('min-w-0 truncate text-xs', REASON_TONE[tree.verdict] ?? 'text-ink-faint')}>{verdictReason(t, tree.reason)}</span>
+                  <span className={cx('min-w-0 truncate text-xs', REASON_TONE[tree.verdict])}>{verdictReason(t, tree.reason)}</span>
                 </span>
                 {tree.sizeBytes !== null ? <span className="shrink-0 text-xs tabular-nums text-ink-faint">{formatBytes(tree.sizeBytes, locale())}</span> : null}
               </button>

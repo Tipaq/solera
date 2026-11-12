@@ -377,6 +377,73 @@ try {
   await page.screenshot({ animations: 'disabled', path: join(shots, 't4-travail-par-moment-sombre.png') })
   await page.evaluate(() => { delete document.documentElement.dataset.theme })
 
+  // ─── Par arbre (#176) : un couloir par arbre, l'index qui fait défiler ─────
+  await page.goto(`${base}/p/${nimbus.id}/travail?vue=couloirs`)
+  const escaped = (text) => text.replace(/[/.*+?^${}()|[\]\\]/g, '\\$&')
+  const lane = page.getByRole('region', { name: branch, exact: true })
+  await lane.waitFor()
+  // Un couloir par worktree, et celui de la racine.
+  for (const entry of trees.worktrees) {
+    await page.getByRole('region', { name: entry.branch ?? entry.name, exact: true }).first().waitFor()
+  }
+  await page.getByRole('region', { name: 'main', exact: true }).waitFor()
+  // Son corps : la session qui tourne, son fil.
+  await lane.getByRole('link', { name: new RegExp(escaped(running.title)) }).waitFor()
+  // L'index défile au lieu de filtrer : l'adresse ne bouge pas, le couloir s'entoure d'accent.
+  await index.getByRole('button', { name: /^Tous/ }).waitFor()
+  await index.getByText('en haut', { exact: true }).waitFor()
+  await index.getByRole('button', { name: new RegExp(`^${escaped(short)}`) }).click()
+  await page.waitForFunction((name) => document.querySelector(`section[aria-label="${name}"]`)?.className.includes('ring-accent'), branch)
+  assert.equal(new URL(page.url()).searchParams.has('arbre'), false, 'En Par arbre, l’index ne filtre pas')
+  assert.ok(await lane.evaluate((element) => element.getBoundingClientRect().top < 300), 'Le couloir est venu en haut')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 't6-travail-par-arbre.png') })
+
+  // ─── Le tiroir d'un arbre : l'en-tête du couloir l'ouvre ──────────────────
+  await lane.getByRole('button', { name: branch, exact: true }).click()
+  const drawer = page.getByRole('dialog', { name: `Arbre ${branch}`, exact: true })
+  await drawer.waitFor()
+  await drawer.getByText(tree.path, { exact: true }).waitFor()
+  for (const label of ['PR', 'Sur la base', 'Non commités', 'Taille sur disque', 'Dernier usage', 'Chemin']) {
+    await drawer.getByText(label, { exact: true }).first().waitFor()
+  }
+  await drawer.getByRole('button', { name: 'Session', exact: true }).waitFor()
+  await drawer.getByRole('region', { name: 'Sessions', exact: true }).getByRole('link', { name: new RegExp(escaped(running.title)) }).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 't7-tiroir-d-un-arbre.png') })
+  await page.keyboard.press('Escape')
+  await drawer.waitFor({ state: 'detached' })
+  // Le menu ⋯ d'un couloir : ses gestes ; le fermer laisse la page en place.
+  await lane.getByRole('button', { name: `Gestes sur ${branch}`, exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Session', exact: true }).waitFor()
+  await page.keyboard.press('Escape')
+  assert.equal(await page.getByRole('dialog', { name: `Arbre ${branch}` }).count(), 0, 'Le menu n’ouvre pas le tiroir')
+
+  // ─── Affichage ▾ : regrouper par jalon, cacher le couloir Projet ──────────
+  await toolbar.getByRole('button', { name: 'Affichage : Par arbre', exact: true }).click()
+  await page.getByRole('radio', { name: 'Par jalon', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await page.getByRole('region', { name: /^(Jalon #\d+ · |Sans jalon$)/ }).first().waitFor()
+  await page.reload()
+  await page.getByRole('region', { name: /^(Jalon #\d+ · |Sans jalon$)/ }).first().waitFor()
+  await toolbar.getByRole('button', { name: 'Affichage : Par arbre', exact: true }).click()
+  await page.getByRole('radio', { name: 'Aucun', exact: true }).click()
+  await page.keyboard.press('Escape')
+  assert.equal(await page.getByRole('region', { name: 'Sans jalon', exact: true }).count(), 0)
+
+  // ─── Un filtre « À nettoyer » déplie la section, et l'index la suit ───────
+  await filterButton.click()
+  await filterPanel.getByRole('checkbox', { name: 'À nettoyer', exact: true }).click()
+  await page.keyboard.press('Escape')
+  const cleanable = trees.worktrees.filter((entry) => entry.state === 'merged' && entry.modified + entry.untracked === 0)
+  if (cleanable.length > 0) {
+    const cleanup = page.getByRole('region', { name: /arbres? fusionnés?$/ })
+    await cleanup.waitFor()
+    assert.equal(await cleanup.getByRole('button', { expanded: true }).count(), 1, 'Déplié d’office')
+  } else {
+    await page.getByText('Rien ne correspond à ces filtres.', { exact: true }).waitFor()
+  }
+  await chips.filter({ hasText: 'À nettoyer' }).getByRole('button', { name: 'Retirer ce filtre' }).click()
+  await chips.first().waitFor({ state: 'detached' })
+
   // ─── Au téléphone : une ligne, rien ne déborde, l'index se replie ───────────
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`${base}/p/${nimbus.id}/travail?vue=fil`)
@@ -386,6 +453,16 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Rien ne déborde à 390 px')
   await page.waitForTimeout(300)
   await page.screenshot({ animations: 'disabled', path: join(shots, 't5-travail-au-telephone.png') })
+  // Par arbre au téléphone : les couloirs tiennent dans la largeur, le tiroir prend l'écran.
+  await page.goto(`${base}/p/${nimbus.id}/travail?vue=couloirs`)
+  await lane.waitFor()
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Par arbre ne déborde pas à 390 px')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 't8-par-arbre-au-telephone.png') })
+  await lane.getByRole('button', { name: branch, exact: true }).click()
+  await page.getByRole('dialog', { name: `Arbre ${branch}`, exact: true }).waitFor()
+  await page.waitForTimeout(300)
+  await page.screenshot({ animations: 'disabled', path: join(shots, 't9-tiroir-au-telephone.png') })
+  await page.keyboard.press('Escape')
 
   // ─── Jalons, au portefeuille aussi ─────────────────────────────────────────
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -477,7 +554,7 @@ try {
   await page.waitForURL(`**/p/${nimbus.id}/timeline/${parent.number}`)
 
   assert.deepEqual(errors, [])
-  console.log('OK : rangée, compteur de demandes, ce qui t’attend, Travail (redirections, barre, Par moment, ?vue=, filtres et puces retenus, rien ne correspond, index, puce d’arbre, recherche, téléphone), jalon lancé ; captures dans ' + shots)
+  console.log('OK : rangée, compteur de demandes, ce qui t’attend, Travail (redirections, barre, Par moment, ?vue=, filtres et puces retenus, rien ne correspond, index, puce d’arbre, recherche, téléphone), Par arbre (couloirs, index qui défile, tiroir, regroupement, à nettoyer, téléphone), jalon lancé ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {
