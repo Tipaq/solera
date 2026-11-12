@@ -4566,7 +4566,6 @@ export const en = {
   'portfolio.milestones.meta.other': "{count} open milestones",
   'portfolio.milestones.empty': "No milestone matches.",
   'portfolio.milestones.noDue': "no date",
-  'portfolio.milestones.list': "Milestones",
   'portfolio.milestones.bar': "#{number} {title} · {done}/{total}",
   'place.schedules.title': "Scheduled",
   'place.schedules.empty': "No scheduled task yet",

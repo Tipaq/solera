@@ -4560,7 +4560,6 @@ export const fr: Catalog = {
   'portfolio.milestones.meta.other': "{count} jalons ouverts",
   'portfolio.milestones.empty': "Aucun jalon ne correspond.",
   'portfolio.milestones.noDue': "sans date",
-  'portfolio.milestones.list': "Jalons",
   'portfolio.milestones.bar': "#{number} {title} · {done}/{total}",
   'place.schedules.title': "Planifiées",
   'place.schedules.empty': "Aucune tâche planifiée",

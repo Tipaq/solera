@@ -78,9 +78,7 @@ export function PortfolioGantt({
     <div ref={scroller} className="overflow-x-auto" onMouseLeave={() => setHovered(null)}>
       <div className="flex" style={{ width: listWidth + scale.width }}>
         <div className="sticky left-0 z-10 shrink-0 border-r border-line bg-canvas" style={{ width: listWidth }}>
-          <div className="flex items-end border-b border-line px-4 pb-1.5 text-xs font-medium text-ink-faint md:px-6" style={{ height: AXIS_H }}>
-            {t('portfolio.milestones.list')}
-          </div>
+          <div className="border-b border-line" style={{ height: AXIS_H }} />
           {lines.map((line) =>
             line.kind === 'project' ? (
               <div key={line.project.id} className="flex items-center bg-surface/40 px-4 md:px-6" style={{ height: ROW_H }}>

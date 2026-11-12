@@ -1,17 +1,18 @@
 import { CalendarRange, Compass } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
-import { ProjectAvatar } from '../components/ProjectAvatar'
 import type { Zoom } from '../components/gantt/scale'
 import { PortfolioGantt } from '../components/portfolio/PortfolioGantt'
 import { PortfolioMilestoneTile } from '../components/portfolio/PortfolioMilestoneTile'
+import { PortfolioToolbar } from '../components/portfolio/PortfolioToolbar'
 import { ProjectGroupHeader } from '../components/places/ProjectPip'
-import { FilterChip, OneLineToolbar, ToolbarSearch } from '../components/toolbar/OneLineToolbar'
-import { DisplayMenu, FilterMenu, MenuCheck, MenuHeading, MenuSegment, type ViewOption } from '../components/toolbar/ToolbarMenus'
+import { FilterChip } from '../components/toolbar/OneLineToolbar'
+import { MenuCheck, MenuHeading, MenuSegment, type ViewOption } from '../components/toolbar/ToolbarMenus'
 import { useAllCards } from '../lib/cards'
 import { pluralOf } from '../lib/code-model'
 import { useTranslate } from '../lib/i18n'
 import { maturityCounts } from '../lib/milestone-horizon'
-import { MATURITIES, type Maturity } from '../lib/milestone-model'
+import { toggled } from '../lib/filters'
+import { MATURITIES } from '../lib/milestone-model'
 import { useLiveCardStatuses, usePortfolioActiveMilestones } from '../lib/milestones'
 import { usePortfolioLive } from '../lib/portfolio'
 import {
@@ -19,7 +20,7 @@ import {
   keepPortfolioMilestone,
   milestoneGroups,
   openMilestoneCounts,
-  portfolioMilestoneFilterCount,
+  milestoneExtraFilterCount,
   portfolioMilestones,
   type PortfolioMilestoneFilters,
 } from '../lib/portfolio-milestones'
@@ -33,8 +34,6 @@ const VIEW_LABELS: Record<View, 'milestones.view.horizon' | 'portfolio.milestone
   horizon: 'milestones.view.horizon',
   gantt: 'portfolio.milestones.view.gantt',
 }
-
-const toggled = <T,>(list: readonly T[], value: T): T[] => (list.includes(value) ? list.filter((item) => item !== value) : [...list, value])
 
 /**
  * Les **Jalons du portefeuille** (`coque.md` PF-28 à PF-31) : les jalons de tous les
@@ -73,40 +72,29 @@ export function PortfolioMilestonesPage() {
   const now = Date.now()
   const shown = rows.filter((row) => keepPortfolioMilestone(row, query, filters, now))
   const groups = milestoneGroups(shown, projects)
-  const byId = new Map(projects.map((project) => [project.id, project]))
 
-  const set = (patch: Partial<PortfolioMilestoneFilters>) => setFilters({ ...filters, ...patch })
-  // « Effacer tous les filtres » garde le réglage d'affichage des livrés.
-  const clearAll = () => setFilters({ ...NO_PORTFOLIO_MILESTONE_FILTERS, delivered: filters.delivered })
+  const set = (patch: Partial<PortfolioMilestoneFilters>) => setFilters((current) => ({ ...current, ...patch }))
 
   if (isPending || cardsPending) return null
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <OneLineToolbar
-        search={<ToolbarSearch value={query} onChange={setQuery} placeholder={t('milestones.toolbar.search')} />}
-        filter={
-          <FilterMenu active={portfolioMilestoneFilterCount(filters)} onClearAll={clearAll}>
-            <MenuHeading>{t('portfolio.milestones.filter.project')}</MenuHeading>
-            {projects.map((project) => (
-              <MenuCheck
-                key={project.id}
-                checked={filters.projects.includes(project.id)}
-                onChange={() => set({ projects: toggled(filters.projects, project.id) })}
-                aside={open.get(project.id) ?? 0}
-              >
-                <span className="inline-flex min-w-0 items-center gap-1.5">
-                  <ProjectAvatar project={project} className="size-3.5 shrink-0" />
-                  <span className="truncate">{project.name}</span>
-                </span>
-              </MenuCheck>
-            ))}
+      <PortfolioToolbar
+        search={query}
+        onSearch={setQuery}
+        placeholder={t('milestones.toolbar.search')}
+        projects={projects}
+        selected={filters.projects}
+        onSelected={(selected) => set({ projects: selected })}
+        counts={open}
+        filterExtra={
+          <>
             <MenuHeading>{t('milestones.filter.maturity')}</MenuHeading>
             {MATURITIES.map((maturity) => (
               <MenuCheck
                 key={maturity}
-                checked={filters.maturities.includes(maturity)}
-                onChange={() => set({ maturities: toggled<Maturity>(filters.maturities, maturity) })}
+                checked={filters.maturities.has(maturity)}
+                onChange={() => set({ maturities: toggled(filters.maturities, maturity) })}
                 aside={totals[maturity]}
               >
                 {t(`milestones.maturity.label.${maturity}`)}
@@ -116,40 +104,25 @@ export function PortfolioMilestonesPage() {
             <MenuCheck checked={filters.late} onChange={(late) => set({ late })}>
               {t('milestones.filter.late')}
             </MenuCheck>
-          </FilterMenu>
+          </>
         }
-        chips={[
-          ...filters.projects.flatMap((id) => {
-            const project = byId.get(id)
-            return project
-              ? [
-                  <FilterChip key={id} onClear={() => set({ projects: toggled(filters.projects, id) })}>
-                    <span className="inline-flex min-w-0 items-center gap-1.5">
-                      <ProjectAvatar project={project} className="size-3.5 shrink-0" />
-                      <span className="truncate">{project.name}</span>
-                    </span>
-                  </FilterChip>,
-                ]
-              : []
-          }),
-          ...filters.maturities.map((maturity) => (
-            <FilterChip key={maturity} onClear={() => set({ maturities: toggled(filters.maturities, maturity) })}>
-              {t(`milestones.maturity.label.${maturity}`)}
-            </FilterChip>
-          )),
-          filters.late ? (
-            <FilterChip key="late" onClear={() => set({ late: false })}>
-              {t('milestones.filter.lateChip')}
-            </FilterChip>
-          ) : null,
-        ]}
-        extra={
-          <span className="hidden shrink-0 text-xs text-ink-faint tabular-nums lg:inline">
-            {t(`portfolio.milestones.meta.${pluralOf(openTotal)}`, { count: openTotal })}
-          </span>
+        extraActive={milestoneExtraFilterCount(filters)}
+        onClearExtra={() => set({ maturities: new Set(), late: false })}
+        extraChips={
+          <>
+            {[...filters.maturities].map((maturity) => (
+              <FilterChip key={maturity} onClear={() => set({ maturities: toggled(filters.maturities, maturity) })}>
+                {t(`milestones.maturity.label.${maturity}`)}
+              </FilterChip>
+            ))}
+            {filters.late ? <FilterChip onClear={() => set({ late: false })}>{t('milestones.filter.lateChip')}</FilterChip> : null}
+          </>
         }
-        display={
-          <DisplayMenu views={views} value={view} onChange={setView}>
+        views={views}
+        view={view}
+        onView={setView}
+        displayExtra={
+          <>
             {view === 'gantt' ? (
               <>
                 <MenuHeading>{t('milestones.scale.title')}</MenuHeading>
@@ -168,8 +141,9 @@ export function PortfolioMilestonesPage() {
             <MenuCheck checked={filters.delivered} onChange={(delivered) => set({ delivered })}>
               {t('portfolio.milestones.show.delivered')}
             </MenuCheck>
-          </DisplayMenu>
+          </>
         }
+        meta={t(`portfolio.milestones.meta.${pluralOf(openTotal)}`, { count: openTotal })}
       />
       <div className="min-h-0 flex-1 overflow-y-auto">
         {groups.length === 0 ? (

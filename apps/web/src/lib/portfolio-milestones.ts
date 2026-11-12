@@ -51,18 +51,22 @@ export function portfolioMilestones({
 
 /** Ce que « Filtrer ▾ » et « Affichage ▾ » restreignent (PF-28). */
 export interface PortfolioMilestoneFilters {
-  projects: string[]
-  maturities: Maturity[]
+  /** Les projets cochés en tête de « Filtrer ▾ » ; aucun : tous. */
+  projects: ReadonlySet<string>
+  maturities: ReadonlySet<Maturity>
   late: boolean
   /** « Montrer : Jalons livrés » : masqués par défaut. */
   delivered: boolean
 }
 
-export const NO_PORTFOLIO_MILESTONE_FILTERS: PortfolioMilestoneFilters = { projects: [], maturities: [], late: false, delivered: false }
+export const NO_PORTFOLIO_MILESTONE_FILTERS: PortfolioMilestoneFilters = { projects: new Set(), maturities: new Set(), late: false, delivered: false }
 
-/** Les filtres posés, pour le compte de « Filtrer ▾ ». Les livrés relèvent de l'affichage. */
-export function portfolioMilestoneFilterCount(filters: PortfolioMilestoneFilters): number {
-  return filters.projects.length + filters.maturities.length + Number(filters.late)
+/**
+ * Les filtres propres à la page posés, pour le compte de « Filtrer ▾ » : la barre du
+ * portefeuille compte les projets elle-même, et les livrés relèvent de l'affichage.
+ */
+export function milestoneExtraFilterCount(filters: PortfolioMilestoneFilters): number {
+  return filters.maturities.size + Number(filters.late)
 }
 
 /**
@@ -75,9 +79,9 @@ export function keepPortfolioMilestone(
   filters: PortfolioMilestoneFilters,
   now = Date.now(),
 ): boolean {
-  if (filters.projects.length > 0 && !filters.projects.includes(project.id)) return false
-  if (filters.maturities.length > 0 && !filters.maturities.includes(entry.maturity)) return false
-  if (entry.maturity === 'delivered' && !filters.delivered && !filters.maturities.includes('delivered')) return false
+  if (filters.projects.size > 0 && !filters.projects.has(project.id)) return false
+  if (filters.maturities.size > 0 && !filters.maturities.has(entry.maturity)) return false
+  if (entry.maturity === 'delivered' && !filters.delivered && !filters.maturities.has('delivered')) return false
   if (filters.late && !isMilestoneLate(entry, now)) return false
   return milestoneMatches(entry, query) || project.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())
 }
