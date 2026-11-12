@@ -5422,6 +5422,8 @@ export const fr: Catalog = {
   "inbox.merge.bodyAfter": ". Il reste à la fusionner dans la branche par défaut.",
   "inbox.merge.action": "Fusionner dans {base}",
   "inbox.merge.failed": "Pas fusionnée : {error}",
+  "inbox.refine.failed": "Réponse refusée : {error}",
+  "inbox.draft.failed": "Pas validé : {error}",
   "inbox.light.review": "Relire",
   "inbox.light.openPr": "Ouvrir la PR",
   "inbox.milestone": "Jalon #{number}",

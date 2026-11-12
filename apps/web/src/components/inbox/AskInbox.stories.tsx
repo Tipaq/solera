@@ -114,6 +114,7 @@ const MILESTONES: InboxItem[] = [
       { id: '1', text: 'Le phare montre-t-il le jalon courant ou le prochain à livrer ?' },
       { id: '2', text: 'Une carte sans échéance hérite-t-elle de celle du jalon ?' },
     ],
+    error: null,
     onAnswer: () => {},
   },
   {
@@ -125,6 +126,7 @@ const MILESTONES: InboxItem[] = [
       { key: 'b', title: 'Onglet Actions', after: ['a'] },
       { key: 'c', title: 'Planifiées', after: ['a', 'b'] },
     ],
+    error: null,
     onValidate: () => {},
   },
   {

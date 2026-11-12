@@ -71,6 +71,8 @@ export async function installMilestoneAsks({ page, base, project }) {
       },
     },
     mergeRefusal: 'la PR a des conflits avec main',
+    draftRefusal: 'deux cartes portent la même clé',
+    answerRefusal: 'la session ne répond plus',
   }
   const sent = { answers: [], drafts: [], merges: [] }
   const pullRequest = (number, title, branch) => ({
@@ -103,13 +105,16 @@ export async function installMilestoneAsks({ page, base, project }) {
           draft: state.drafted.refinement.draft ? { requestId: 'd-255', conversationId: drafting.id, draft: DRAFT } : null,
         },
       }),
+    // Chaque geste est refusé une première fois : la ligne doit le dire, puis le second passe.
     [`**/api/conversations/${refining.id}/questions/*`]: (route) => {
       sent.answers.push(route.request().postDataJSON())
+      if (sent.answers.length === 1) return route.fulfill({ status: 409, json: { error: { code: 'suite_refused', message: state.answerRefusal } } })
       state.question = null
       return route.fulfill({ json: { ok: true } })
     },
     [`**/api/conversations/${drafting.id}/card-drafts/*`]: (route) => {
       sent.drafts.push(route.request().postDataJSON())
+      if (sent.drafts.length === 1) return route.fulfill({ status: 409, json: { error: { code: 'suite_refused', message: state.draftRefusal } } })
       state.drafted = { ...state.drafted, refinement: { ...state.drafted.refinement, draft: null } }
       return route.fulfill({ json: { created: [] } })
     },
@@ -210,8 +215,14 @@ export async function checkMilestoneAsks({ page, base, project, shots }) {
   await draft.getByText('après 1', { exact: true }).waitFor()
   await draft.screenshot({ animations: 'disabled', path: join(shots, 'apercu-decoupage-de-jalon.png') })
   await draft.getByRole('button', { name: 'Valider', exact: true }).click()
+  // Refusée, la validation le dit dans la ligne, puis dépliée ; la seconde passe.
+  await draft.getByText(`Pas validé : ${fakes.state.draftRefusal}`, { exact: true }).waitFor()
+  await draft.getByRole('button', { name: 'Examiner', exact: true }).click()
+  await draft.getByRole('alert').waitFor()
+  await draft.screenshot({ animations: 'disabled', path: join(shots, 'apercu-decoupage-refuse.png') })
+  await draft.getByRole('button', { name: 'Valider', exact: true }).click()
   await draft.waitFor({ state: 'detached' })
-  assert.equal(fakes.sent.drafts.length, 1)
+  assert.equal(fakes.sent.drafts.length, 2)
   assert.equal(fakes.sent.drafts[0].decision, 'created')
   assert.deepEqual(
     fakes.sent.drafts[0].draft.parent,
@@ -229,8 +240,20 @@ export async function checkMilestoneAsks({ page, base, project, shots }) {
   const second = refine.getByRole('textbox', { name: 'Une carte hérite-t-elle de l’échéance du jalon ?', exact: true })
   await second.fill('Non')
   await second.press('Enter')
+  // Refusée, la réponse rend ses deux questions, et dit pourquoi ; renvoyée, elle passe.
+  await refine.getByText(`Réponse refusée : ${fakes.state.answerRefusal}`, { exact: true }).waitFor()
+  await refine.getByText('2 questions d’affinage', { exact: true }).waitFor()
+  await refine.getByRole('button', { name: 'Répondre', exact: true }).click()
+  await refine.getByRole('alert').waitFor()
+  await refine.screenshot({ animations: 'disabled', path: join(shots, 'apercu-reponse-refusee.png') })
+  for (const [label, text] of [['Le phare montre-t-il le jalon courant ?', 'Le courant'], ['Une carte hérite-t-elle de l’échéance du jalon ?', 'Non']]) {
+    const field = refine.getByRole('textbox', { name: label, exact: true })
+    await field.fill(text)
+    await field.press('Enter')
+  }
   await refine.waitFor({ state: 'detached' })
-  assert.deepEqual(fakes.sent.answers, [{ status: 'answered', answers: { cible: ['Le courant'], heritage: ['Non'] } }])
+  const sentAnswer = { status: 'answered', answers: { cible: ['Le courant'], heritage: ['Non'] } }
+  assert.deepEqual(fakes.sent.answers, [sentAnswer, sentAnswer])
   // La question levée, la session n'est pas revenue en dire autant.
   assert.equal(await inbox.getByRole('listitem').filter({ hasText: fakes.refining.title }).count(), 0)
 

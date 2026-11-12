@@ -23,10 +23,15 @@ export interface MilestoneInboxInput {
   answers: Readonly<Record<string, Readonly<Record<string, string[]>>>>
   /** Seul le propriétaire d'une session lui répond. */
   owns: (conversationId: string) => boolean
+  /**
+   * La session s'est arrêtée (erreur, interruption) : sa ligne dit qu'il faut la relancer,
+   * et rien ne lui répond tant qu'elle ne l'est pas.
+   */
+  stopped: (conversationId: string) => boolean
   /** La base d'une PR que Solera n'a pas encore relevée sur la forge. */
   defaultBase: string
-  /** Le refus de la dernière fusion tentée pour ce jalon. */
-  mergeError: (cardId: string) => string | null
+  /** Le refus du dernier geste tenté sur une demande de ce jalon : réponse, validation, fusion. */
+  errorOf: (kind: MilestoneAsk['kind'], cardId: string) => string | null
   gestures: {
     answer: (ask: Ask<'refine'>, id: string, text: string) => void
     validate: (ask: Ask<'draft'>, draft: CardDraft) => void
@@ -45,12 +50,14 @@ export function milestoneInbox(input: MilestoneInboxInput): InboxExtra {
   const asking = new Set(input.asks.flatMap((ask) => (ask.kind === 'refine' ? [ask.milestone.id] : [])))
   const items: HeavyInboxItem[] = []
   const replaces: string[] = []
+  // La session d'un autre garde sa ligne : il n'y a que lui pour y répondre. Une session
+  // arrêtée aussi : « La session s'est arrêtée » passe avant la question qu'elle portait.
+  const answerable = (conversationId: string) => input.owns(conversationId) && !input.stopped(conversationId)
 
   for (const ask of input.asks) {
     switch (ask.kind) {
       case 'refine': {
-        // La session d'un autre garde sa ligne : il n'y a que lui pour y répondre.
-        if (!input.owns(ask.conversationId)) break
+        if (!answerable(ask.conversationId)) break
         replaces.push(sessionItemKey(ask.conversationId))
         const kept = input.answers[ask.requestId] ?? {}
         const questions = ask.questions.filter((question) => !kept[question.id]?.length)
@@ -61,12 +68,13 @@ export function milestoneInbox(input: MilestoneInboxInput): InboxExtra {
           key: ask.key,
           milestone: link(ask.milestone),
           questions,
+          error: input.errorOf('refine', ask.milestone.id),
           onAnswer: (id, text) => gestures.answer(ask, id, text),
         })
         break
       }
       case 'draft': {
-        if (!input.owns(ask.conversationId)) break
+        if (!answerable(ask.conversationId)) break
         const draft = input.drafts.get(ask.milestone.id)
         // Pas encore lu, il ferait une ligne vide : la session garde la sienne jusque-là.
         if (!draft || asking.has(ask.milestone.id)) break
@@ -76,6 +84,7 @@ export function milestoneInbox(input: MilestoneInboxInput): InboxExtra {
           key: ask.key,
           milestone: link(ask.milestone),
           cards: draft.cards.map((card) => ({ key: card.key, title: card.title, after: card.after })),
+          error: input.errorOf('draft', ask.milestone.id),
           onValidate: () => gestures.validate(ask, draft),
         })
         break
@@ -88,7 +97,7 @@ export function milestoneInbox(input: MilestoneInboxInput): InboxExtra {
           milestone: link(ask.milestone),
           branch: ask.branch,
           base: ask.pr.base ?? input.defaultBase,
-          error: input.mergeError(ask.milestone.id),
+          error: input.errorOf('merge', ask.milestone.id),
           onMerge: () => gestures.merge(ask),
         })
         break

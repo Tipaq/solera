@@ -53,6 +53,8 @@ export type InboxItem =
        * dernière répondue referme la ligne.
        */
       questions: { id: string; text: string }[]
+      /** Le refus du dernier envoi : les questions reviennent, avec sa raison. */
+      error: string | null
       onAnswer: (id: string, text: string) => void
     }
   | {
@@ -60,6 +62,8 @@ export type InboxItem =
       key: string
       milestone: InboxMilestone
       cards: { key: string; title: string; after: string[] }[]
+      /** Le refus de la dernière validation, `null` sinon. */
+      error: string | null
       onValidate: () => void
     }
   | {

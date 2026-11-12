@@ -1,5 +1,5 @@
 import { useMemo, useSyncExternalStore } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   appendCardPrecision,
   type AgentConfig,

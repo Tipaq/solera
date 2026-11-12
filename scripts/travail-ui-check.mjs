@@ -539,16 +539,14 @@ try {
     ],
   }
   let pauses = 0
-  // Mis en pause, il l'est aussi dans la liste des jalons actifs : c'est elle que le
-  // panneau de suivi lit (#198).
-  const currentRun = () => (pauses ? { ...milestoneRun, state: 'paused' } : milestoneRun)
-  await page.route('**/api/projects/*/milestones/active', (route) => route.fulfill({ json: [currentRun()] }))
+  await page.route('**/api/projects/*/milestones/active', (route) => route.fulfill({ json: [milestoneRun] }))
   await page.route(`**/api/cards/${parent.id}/milestone`, async (route) => {
     if (route.request().method() === 'PATCH') {
       assert.deepEqual(route.request().postDataJSON(), { state: 'paused' })
       pauses += 1
+      return route.fulfill({ json: { ...milestoneRun, state: 'paused' } })
     }
-    return route.fulfill({ json: currentRun() })
+    return route.fulfill({ json: milestoneRun })
   })
 
   // C1 : le bandeau ouvre « Maintenant », au-dessus des sessions du fil.

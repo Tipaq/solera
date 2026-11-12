@@ -60,8 +60,9 @@ function build(asks: MilestoneAsk[], extra: Partial<Input> = {}) {
     drafts: new Map(),
     answers: {},
     owns: () => true,
+    stopped: () => false,
     defaultBase: 'la branche par défaut',
-    mergeError: () => null,
+    errorOf: () => null,
     gestures,
     ...extra,
   })
@@ -139,8 +140,37 @@ test('INB-10 : la PR du jalon, fusionnée dans sa base, à la place de la PR pr�
 
   const unknown = only(build([merge(2, { base: null })]).items, 'merge')
   assert.equal(unknown.base, 'la branche par défaut', 'une base pas encore relevée sur la forge')
-  const failed = only(build([ask], { mergeError: (id) => (id === 'c-2' ? 'conflit' : null) }).items, 'merge')
+  const failed = only(build([ask], { errorOf: (kind, id) => (kind === 'merge' && id === 'c-2' ? 'conflit' : null) }).items, 'merge')
   assert.equal(failed.error, 'conflit')
+})
+
+test('un refus ne se tait pas : la réponse et la validation refusées le disent dans leur ligne', () => {
+  const refused = (kind: string, id: string) => (id === 'c-1' ? `${kind} refusé` : null)
+  const refine1 = only(build([refine()], { errorOf: refused }).items, 'refine')
+  assert.equal(refine1.error, 'refine refusé')
+  assert.equal(refine1.questions.length, 2, 'les questions reviennent toutes : la réponse se renvoie entière')
+  const draft1 = only(build([draft()], { errorOf: refused, drafts: new Map([['c-1', proposal]]) }).items, 'draft')
+  assert.equal(draft1.error, 'draft refusé')
+  const clean = build([refine(), draft(3)], { drafts: new Map([['c-3', proposal]]) }).items
+  assert.deepEqual(clean.map((item) => ('error' in item ? item.error : undefined)), [null, null])
+})
+
+test('INB-6 : une session d’affinage arrêtée garde sa ligne « La session s’est arrêtée »', () => {
+  const stopped = build([refine(), draft(3)], { stopped: (id) => id === 'split-1', drafts: new Map([['c-3', proposal]]) })
+  assert.deepEqual(stopped.items.map((item) => item.key), ['draft-c-3'], 'rien ne répond à une session qui ne tourne plus')
+  assert.deepEqual(stopped.replaces, ['s-split-3'], 'la session arrêtée n’est pas cachée')
+})
+
+test('INB-6, dans la liste : la session arrêtée reste, avec son signal', () => {
+  const extra = build([refine(1)], { stopped: () => true })
+  const items = buildInbox({
+    live: [{ ...live('split-1', 1), status: 'error', awaiting: false }],
+    requests: new Map(),
+    projects: new Map([['p1', { id: 'p1', name: 'Nimbus' } as ProjectDto]]),
+    prefixProject: false,
+    extra,
+  })
+  assert.deepEqual(items.map((item) => [item.key, item.kind === 'session' ? item.tone : null]), [['s-split-1', 'broken']])
 })
 
 /* ------------------------------------------------------------------ dans la liste */

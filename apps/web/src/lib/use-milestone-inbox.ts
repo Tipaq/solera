@@ -21,7 +21,7 @@ const NO_INBOX: InboxExtra = { items: [], replaces: [] }
  */
 export function useMilestoneInbox(projectId: string | undefined): InboxExtra {
   const t = useTranslate()
-  const { entries } = useMilestones(projectId)
+  const { entries, statusOf } = useMilestones(projectId)
   const { data: conversations } = useAllConversations()
   const asks = useMemo(() => entries.flatMap(milestoneAsks), [entries])
   const draftIds = useMemo(() => asks.flatMap((ask) => (ask.kind === 'draft' ? [ask.milestone.id] : [])), [asks])
@@ -34,11 +34,24 @@ export function useMilestoneInbox(projectId: string | undefined): InboxExtra {
   const answer = useAnswerRefinement(projectId ?? '')
   const validate = useValidateRefinementDraft(projectId ?? '')
   const merge = useMergeBranchPullRequest(projectId ?? '')
-  const mergeError = merge.isError ? { cardId: merge.variables, message: merge.error.message } : null
+  // Le refus du dernier geste de chaque sorte, et le jalon qui l'a reçu.
+  const failed = {
+    refine: answer.isError ? { cardId: answer.variables?.cardId, message: answer.error.message } : null,
+    draft: validate.isError ? { cardId: validate.variables?.cardId, message: validate.error.message } : null,
+    merge: merge.isError ? { cardId: merge.variables, message: merge.error.message } : null,
+  }
+  const failures = JSON.stringify(failed)
 
   return useMemo(() => {
     if (!projectId || asks.length === 0) return NO_INBOX
     const owners = new Set((conversations ?? []).flatMap((entry) => (entry.isOwner ? [entry.id] : [])))
+    // Le statut vivant de la session d'affinage, celui que lit la page du jalon.
+    const stopped = new Set(
+      entries.flatMap(({ card: { refinement } }) => {
+        const status = refinement ? statusOf({ id: refinement.conversationId, status: refinement.status }) : null
+        return refinement && (status === 'error' || status === 'interrupted') ? [refinement.conversationId] : []
+      }),
+    )
     const drafts = new Map<string, CardDraft>()
     for (const ask of asks) {
       const proposal = ask.kind === 'draft' ? proposals.get(ask.milestone.id) : null
@@ -51,8 +64,9 @@ export function useMilestoneInbox(projectId: string | undefined): InboxExtra {
       drafts,
       answers,
       owns: (id) => owners.has(id),
+      stopped: (id) => stopped.has(id),
       defaultBase: t('milestone.run.defaultBase'),
-      mergeError: (cardId) => (mergeError?.cardId === cardId ? mergeError.message : null),
+      errorOf: (kind, cardId) => (failed[kind]?.cardId === cardId ? failed[kind].message : null),
       gestures: {
         answer: (ask, id, text) => {
           const next = collectAnswer(answers[ask.requestId] ?? {}, ask.questions, id, text)
@@ -74,7 +88,7 @@ export function useMilestoneInbox(projectId: string | undefined): InboxExtra {
         merge: (ask) => merge.mutate(ask.milestone.id),
       },
     })
-    // Les `mutate` de React Query sont stables : seul l'état de la fusion compte.
+    // Les `mutate` de React Query sont stables : seuls leurs refus comptent (`failures`).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, asks, conversations, proposals, answers, t, mergeError?.cardId, mergeError?.message])
+  }, [projectId, entries, statusOf, asks, conversations, proposals, answers, t, failures])
 }
