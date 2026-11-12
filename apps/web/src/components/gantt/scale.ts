@@ -112,6 +112,17 @@ export function isWeekend(at: number): boolean {
   return day === 0 || day === 6
 }
 
+/** La place d'une étiquette de semaine (« S45 23 ») sur l'axe, en zoom mois. */
+const WEEK_LABEL_MIN = 44
+
+/**
+ * Une étiquette de semaine sur combien, en zoom mois : toutes quand une semaine a la place
+ * de la sienne, sinon une sur deux, sur trois… Serrées, elles se chevauchaient.
+ */
+export function weekLabelStep(ppd: number): number {
+  return Math.max(1, Math.ceil(WEEK_LABEL_MIN / (ppd * 7) - 1e-9))
+}
+
 /** Numéro de semaine ISO : celle qui contient le premier jeudi de l'année est la 1re. */
 export function isoWeek(at: number): number {
   const thursday = new Date(startOfDay(at))

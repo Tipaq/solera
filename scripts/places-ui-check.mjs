@@ -655,65 +655,43 @@ try {
   }
   await portfolio.waitFor()
 
-  /*
-    Le board global : les cartes de **tous** les projets dans quatre colonnes, chacune
-    disant d'où elle sort. C'est ce qui le distingue d'un board de projet, et ce qu'une
-    relecture ne verrait pas — rien dans le code ne garantit que les cartes de deux
-    projets atterrissent bien dans la même colonne.
-  */
+  // Le Tableau du portefeuille : ses couloirs, filtres et clics sont dans `board-ui-check`.
   await portfolio.getByRole('link', { name: /^Tableau/ }).click()
   await page.waitForURL('**/projects/board')
-  const todo = page.getByRole('region', { name: 'À faire', exact: true })
-  await todo.waitFor()
-  const mixed = await page.evaluate(() => {
-    const names = [...document.querySelectorAll('[data-card-open]')]
-      .map((tile) => tile.textContent ?? '')
-    return names.length
-  })
-  assert.ok(mixed > 0, 'Le board global porte des cartes')
-  assert.equal(
-    await page.getByRole('region', { name: 'Abandonné', exact: true }).count(),
-    0,
-    "L'abandon est un classement, pas une étape du board global",
-  )
-  // Le filtre par projet vit dans l'adresse : un board filtré se partage par lien.
-  await page.goto(`${base}/projects/board?projet=${nimbus.id}`)
-  await todo.waitFor()
-  await page.getByRole('button', { name: /^Retirer le filtre/ }).waitFor()
-  const others = projects.filter((entry) => entry.id !== nimbus.id).map((entry) => entry.name)
-  for (const name of others) {
-    assert.equal(
-      await page.locator('[data-card-open]').filter({ hasText: name }).count(),
-      0,
-      `Le filtre retire les cartes de « ${name} »`,
-    )
-  }
+  await page.locator('[data-portfolio-board] [data-card-tile]').first().waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-board.png') })
 
-  // La chronologie du portefeuille : les projets en lignes, leurs jalons en barres. Un
-  // projet sans jalon le dit, plutôt que de laisser sa ligne muette.
+  /*
+    Les Jalons du portefeuille (#240, PF-28 à PF-31) : les jalons de tous les projets sur
+    le modèle de maturité. **Horizon** : une bande par projet, une tuile par jalon qui
+    mène à sa page ; **Gantt** : un axe commun, une bande par projet, la barre d'un jalon
+    cliquable. Le filtre Projet de la barre commune retire les bandes des autres.
+  */
   await page.goto(`${base}/projects/timeline`)
-  await page.getByRole('button', { name: new RegExp(milestone.title) }).first().waitFor()
-  await page.getByText('aucun jalon', { exact: true }).first().waitFor()
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-chronologie.png') })
-
-  // Le filtre *Jalon* du board global : il liste des **cartes**, puisqu'un jalon en est
-  // une, et il se partage par lien comme les deux autres. L'ancien nom du paramètre,
-  // d'avant l'arbre de cartes (#83), mène encore au filtre.
-  await page.goto(`${base}/projects/board?jalon=${milestone.id}`)
-  await page.waitForURL(`**/projects/board?parente=${milestone.id}`)
-  await page.getByRole('button', { name: /^Retirer le filtre/ }).waitFor()
-  const attached = cards.filter((entry) => entry.parent?.id === milestone.id)
-  assert.ok(attached.length > 0, 'Le jeu d’essai rattache des cartes à son jalon')
-  /* Attendre une **tuile** et non la colonne : la colonne est rendue avant que les
-     cartes du projet arrivent, et compter à ce moment-là rend zéro quel que soit le
-     filtre. C'est la course qui a fait tomber cette assertion la première fois. */
-  await page.locator(`[data-card-open="${attached[0].id}"]`).waitFor()
-  assert.equal(
-    await page.locator('[data-card-open]').count(),
-    attached.length,
-    'Le filtre Jalon ne laisse que les cartes rattachées',
+  const nimbusBand = page.getByRole('region', { name: nimbus.name, exact: true })
+  const tile = nimbusBand.locator(`a[href="/p/${nimbus.id}/timeline/${milestone.number}"]`)
+  await tile.waitFor()
+  assert.match(await tile.textContent(), new RegExp(`#${milestone.number}`), 'La tuile porte le numéro du jalon')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-jalons-horizon.png') })
+  const milestoneProjects = await page.locator('[data-place-content] section[aria-label]').evaluateAll((sections) =>
+    sections.map((section) => section.getAttribute('aria-label')),
   )
+  const other = projects.find((entry) => entry.id !== nimbus.id && milestoneProjects.includes(entry.name))
+  await page.getByRole('button', { name: /^Filtrer/ }).click()
+  await page.getByRole('dialog', { name: 'Filtrer' }).getByRole('checkbox', { name: new RegExp(nimbus.name) }).click()
+  await page.keyboard.press('Escape')
+  await nimbusBand.waitFor()
+  if (other) await page.getByRole('region', { name: other.name, exact: true }).waitFor({ state: 'detached' })
+  // Le Gantt commun : la barre du jalon mène à sa page dans son projet.
+  await page.getByRole('button', { name: /^Affichage : / }).click()
+  await page.getByRole('dialog', { name: 'Affichage' }).getByRole('radio', { name: 'Gantt', exact: true }).click()
+  await page.keyboard.press('Escape')
+  const bar = page.locator(`[data-milestone-bar="${milestone.number}"]`)
+  await bar.waitFor()
+  await page.locator(`a[href="/p/${nimbus.id}/timeline/${milestone.number}"]`).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-jalons-gantt.png') })
+  await bar.click()
+  await page.waitForURL(`**/p/${nimbus.id}/timeline/${milestone.number}`)
 
   /*
     Le Journal : sept sources mêlées, et c'est leur **alignement** qu'une relecture ne
@@ -795,7 +773,7 @@ try {
   await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-vide.png') })
 
   assert.deepEqual(errors, [])
-  console.log('OK : coque v2 (rangée, Réglages au bout, comptes, gouttière, anciennes adresses), bandeau sans inventaire, coque et Aperçu du portefeuille (anciennes vues, état vide), board global, les deux chronologies, le journal, table des planifiées, mobile ; captures dans ' + shots)
+  console.log('OK : coque v2 (rangée, Réglages au bout, comptes, gouttière, anciennes adresses), bandeau sans inventaire, coque et Aperçu du portefeuille (anciennes vues, état vide), board global, les Jalons du portefeuille, le journal, table des planifiées, mobile ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

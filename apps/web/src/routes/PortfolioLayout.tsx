@@ -1,7 +1,8 @@
 import { Flag, FolderKanban, Plus, SquareKanban, Target } from 'lucide-react'
 import { useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Outlet, useNavigate } from 'react-router-dom'
 import { Button } from '@solera/ui'
+import { PortfolioCardSheetHost } from '../components/cards/PortfolioCardSheetHost'
 import { PlaceShell, type PlaceTab } from '../components/places/PlaceShell'
 import { useAllCards } from '../lib/cards'
 import { useTranslate } from '../lib/i18n'
@@ -22,7 +23,10 @@ import { openSettings } from '../lib/settings-dialog'
  * Travail et Actions n'ont pas encore leur vue du portefeuille (#238, #241) : leurs
  * onglets sont masqués jusque-là, plutôt que de mener hors de la coque. Le compte ambre
  * de Travail (`usePortfolioAskingCount`) revient avec eux ; d'ici là, « Ce qui t'attend »
- * de l'Aperçu dit la même chose. Tableau et Jalons mènent aux vues actuelles.
+ * de l'Aperçu dit la même chose. Tableau et Jalons ont leur vue (#239, #240).
+ *
+ * La fiche d'une carte s'ouvre sur place, par-dessus la vue (`?fiche=<projet>:<N>`) :
+ * son hôte est posé ici, une fois pour toutes les vues.
  */
 export function PortfolioLayout() {
   const navigate = useNavigate()
@@ -57,6 +61,9 @@ export function PortfolioLayout() {
           <span className="hidden sm:inline">{t('portfolio.action.newProject')}</span>
         </Button>
       }
-    />
+    >
+      <Outlet />
+      <PortfolioCardSheetHost />
+    </PlaceShell>
   )
 }

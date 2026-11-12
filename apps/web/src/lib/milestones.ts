@@ -1,5 +1,5 @@
 import { useMemo, useSyncExternalStore } from 'react'
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   appendCardPrecision,
   type AgentConfig,
@@ -11,6 +11,7 @@ import {
   type MilestonePlanDto,
   type MilestoneRunDto,
   type MilestoneRunMode,
+  type PortfolioMilestoneRunsDto,
   type UpdateMilestoneRunBody,
 } from '@solera/protocol'
 import { useLiveConversations } from './activity'
@@ -69,23 +70,20 @@ export function useActiveMilestones(projectId: string | undefined) {
 }
 
 /**
- * Les jalons lancés de plusieurs projets (le portefeuille), sous la clé de
- * `useActiveMilestones` : le cache est celui de la page de chaque projet.
+ * Les jalons lancés de tous les projets (le portefeuille, #240), d'une requête, par
+ * projet. Sous le préfixe des listes de projet : une pause ou un arrêt les relit aussi.
  */
-export function useAllActiveMilestones(projectIds: readonly string[]): MilestoneRunDto[] {
-  const queries = useQueries({
-    queries: projectIds.map((projectId) => ({
-      queryKey: activeKey(projectId),
-      queryFn: () => api.get<MilestoneRunDto[]>(`/api/projects/${projectId}/milestones/active`),
-      refetchInterval: (query: { state: { data?: MilestoneRunDto[] } }) =>
-        (query.state.data?.length ?? 0) > 0 ? LIVE_REFETCH_MS : IDLE_REFETCH_MS,
-    })),
+export function usePortfolioActiveMilestones(): ReadonlyMap<string, MilestoneRunDto[]> {
+  const { data } = useQuery({
+    queryKey: [ACTIVE_PREFIX, PORTFOLIO],
+    queryFn: () => api.get<PortfolioMilestoneRunsDto>('/api/milestones/active'),
+    refetchInterval: (query) => (Object.keys(query.state.data?.projects ?? {}).length > 0 ? LIVE_REFETCH_MS : IDLE_REFETCH_MS),
   })
-  // Recomposé à chaque rendu : on mémorise sur les horodatages de réponse.
-  const stamps = queries.map((query) => query.dataUpdatedAt).join(',')
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  return useMemo(() => queries.flatMap((query) => query.data ?? []), [stamps])
+  return useMemo(() => new Map(Object.entries(data?.projects ?? {})), [data])
 }
+
+/** La clé du portefeuille sous le préfixe : aucun identifiant de projet ne la prend. */
+const PORTFOLIO = '*'
 
 /**
  * L'affinage d'une carte lu hors du fil (#184) : la session, sa question ouverte, son
@@ -267,7 +265,8 @@ export function useLaunchMilestone(projectId: string, cardId: string) {
     onSuccess: (run) => {
       queryClient.setQueryData(runKey(cardId), run)
       void queryClient.invalidateQueries({ queryKey: ['cards', projectId] })
-      void queryClient.invalidateQueries({ queryKey: activeKey(projectId) })
+      // Celle du projet et celle du portefeuille.
+      void queryClient.invalidateQueries({ queryKey: [ACTIVE_PREFIX] })
     },
   })
 }
