@@ -9,7 +9,7 @@ import { BaseLine } from '../components/code/BaseLine'
 import { TreeChip } from '../components/code/TreeChip'
 import { VerdictDot } from '../components/code/VerdictDot'
 import { AskInbox } from '../components/inbox/AskInbox'
-import { journalDestination } from '../components/journal/JournalView'
+import { journalDestination } from '../components/journal/journal-marks'
 import { CardSheetHost } from '../components/cards/CardSheetHost'
 import { PanelHost } from '../components/shell/PanelHost'
 import { FilterChip, OneLineToolbar, ToolbarSearch, toolbarButtonClass } from '../components/toolbar/OneLineToolbar'
@@ -210,7 +210,7 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
         from,
       }),
   )
-  const days = useJournalDays(entries, 'all')
+  const days = useJournalDays(entries)
 
   const active = filterCount(filters, target !== null)
   const narrowed = active > 0 || isActiveFilter(search)

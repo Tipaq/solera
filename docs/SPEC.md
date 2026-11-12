@@ -949,9 +949,9 @@ c'est un mode de déploiement alternatif, pas un réglage par conversation.
 
 Les cinq vues d'un projet (et du portefeuille) partagent une coque, `PlaceShell` : la
 bande, puis la rangée *Aperçu · Travail · Tableau · Jalons · Actions*, et *Réglages* au
-bout. Sa grammaire est celle du gabarit *Lieu* du design system (`docs/GabaritLieu.mdx`) ;
-le cahier des charges et la recette de cette page sont dans
-`docs/audits/2026-11-page-projet-v2/RECETTE.md`.
+bout. Sa grammaire est celle du gabarit *Lieu* du design system (`docs/GabaritLieu.mdx`).
+La recette de cette page, point par point, est dans
+`docs/audits/2026-11-page-projet-v2/RECETTE.md`, qui dit où lire ses quatre specs.
 
 Les réglages de l'instance et du compte sont une fenêtre, pas une page : `/settings` et
 `/settings/:section` l'ouvrent puis rendent la main à l'accueil. Les anciennes adresses
