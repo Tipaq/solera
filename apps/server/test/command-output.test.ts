@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
-const { actionRoot, detectTool, lastLine, outputTail, screenText, summarize, workspacePath } = await import(
+const { actionRoot, commandLine, detectTool, lastLine, outputTail, screenText, summarize, workspacePath } = await import(
   '../../web/src/lib/command-output.js'
 )
 
@@ -198,6 +198,21 @@ test('relancer seulement les échecs : noms échappés, et jamais derrière un o
   // Ajoutés en bout de commande, ils iraient à la dernière, pas aux tests.
   assert.equal(summarize('pnpm build && vitest run', output).rerunArgs, null)
   assert.equal(summarize('vitest run | tee log', output).rerunArgs, null)
+})
+
+test('npm ne passe les options au script qu’après « -- »', () => {
+  const output = ' FAIL  src/a.test.ts > calcule\nAssertionError: non\n'
+  assert.deepEqual(summarize('npm test', output).rerunArgs, ['--', '-t', 'calcule'])
+  assert.deepEqual(summarize('npm run test:unit', output).rerunArgs, ['--', '-t', 'calcule'])
+  // Déjà séparées : on ajoute à la suite.
+  assert.deepEqual(summarize('npm test -- --run', output).rerunArgs, ['-t', 'calcule'])
+  assert.deepEqual(summarize('pnpm test', output).rerunArgs, ['-t', 'calcule'])
+})
+
+test('commandLine : ce qui a vraiment tourné, lu dans l’en-tête du terminal', () => {
+  assert.equal(commandLine("\x1b[2m$ node --test a.mjs '--test-name-pattern=x y'\x1b[0m\r\nok\r\n"), "node --test a.mjs '--test-name-pattern=x y'")
+  assert.equal(commandLine('sans en-tête\r\n'), null)
+  assert.equal(commandLine(null), null)
 })
 
 test('une sortie inconnue ne casse rien', () => {

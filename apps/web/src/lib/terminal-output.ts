@@ -1,15 +1,20 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { TerminalServerMessage } from '@solera/protocol'
 import { useTerminalsReload } from './terminals'
 
 /** Ce que le lecteur utilise d'une socket : de quoi recevoir, et fermer. */
 export type TerminalSocket = Pick<WebSocket, 'onmessage' | 'onerror' | 'close'>
 
-function openSocket(projectId: string, terminalId: string): TerminalSocket {
-  return new WebSocket(
+/** L'adresse de la socket d'un terminal, pour le lecteur comme pour l'onglet Terminaux. */
+export function terminalSocketUrl(projectId: string, terminalId: string): string {
+  return (
     `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}` +
-      `/api/projects/${projectId}/terminal?terminalId=${encodeURIComponent(terminalId)}`,
+    `/api/projects/${projectId}/terminal?terminalId=${encodeURIComponent(terminalId)}`
   )
+}
+
+function openSocket(projectId: string, terminalId: string): TerminalSocket {
+  return new WebSocket(terminalSocketUrl(projectId, terminalId))
 }
 
 /** D'où viennent les sockets : le serveur, ou une sortie rejouée dans les stories. */
@@ -31,11 +36,18 @@ const FLUSH_MS = 150
  * L'`exit` recharge la liste des terminaux : c'est lui, et non la réponse d'« Arrêter »,
  * qui dit que la commande est finie.
  */
-export function useTerminalOutput(projectId: string, terminalId: string | null): { text: string | null; unreadable: boolean } {
+export function useTerminalOutput(
+  projectId: string,
+  terminalId: string | null,
+  /** La liste la croit en cours : une fin survenue avant l'attachement la recharge aussi. */
+  running = false,
+): { text: string | null; unreadable: boolean } {
   const [text, setText] = useState<string | null>(null)
   const [unreadable, setUnreadable] = useState(false)
   const reload = useTerminalsReload(projectId)
   const open = useContext(TerminalSockets)
+  const runningRef = useRef(running)
+  runningRef.current = running
   useEffect(() => {
     setText(null)
     setUnreadable(false)
@@ -52,6 +64,7 @@ export function useTerminalOutput(projectId: string, terminalId: string | null):
       if (payload.t === 'ready') {
         buffer = payload.replay
         flush()
+        if (payload.exited && runningRef.current) reload()
       } else if (payload.t === 'output') {
         buffer = ((buffer ?? '') + payload.data).slice(-KEEP_CHARS)
         timer ??= window.setTimeout(flush, FLUSH_MS)

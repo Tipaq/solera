@@ -12,7 +12,7 @@ import {
   panelToolClass,
 } from '@solera/ui'
 import { useActions, useRunAction } from '../../lib/actions'
-import { issueCount, lastLine, outputTail, summarize, workspacePath, type FailedTest, type LintFile, type OutputSummary } from '../../lib/command-output'
+import { commandLine, issueCount, lastLine, outputTail, summarize, workspacePath, type FailedTest, type LintFile, type OutputSummary } from '../../lib/command-output'
 import { commandRunsOf, runMeta, runSentence, type CommandRun } from '../../lib/command-runs'
 import { relativeDate } from '../../lib/dates'
 import { openTab } from '../../lib/editor-tabs'
@@ -148,7 +148,7 @@ function RunRow({
   const t = useTranslate()
   // Une ligne finie ne lit sa sortie que pour dire ce qui a échoué.
   const reads = run.status === 'running' || run.status === 'failed'
-  const { text } = useTerminalOutput(projectId, reads ? run.terminalId : null)
+  const { text } = useTerminalOutput(projectId, reads ? run.terminalId : null, run.status === 'running')
   const summary = useSummary(run.command, text, run.status === 'failed')
   const activity = run.status === 'running' && text ? lastLine(text.slice(-LAST_LINE_CHARS)) : null
   return (
@@ -156,7 +156,7 @@ function RunRow({
       <button
         type="button"
         onClick={onOpen}
-        className="flex min-w-0 flex-1 items-center gap-2.5 self-stretch text-left focus-visible:outline-none"
+        className="-mx-1 flex min-w-0 flex-1 items-center gap-2.5 self-stretch rounded-sm px-1 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
       >
         <RunIcon status={run.status} />
         <span className="flex min-w-0 flex-1 items-baseline gap-2">
@@ -213,7 +213,7 @@ export function CommandRunDetail({
   onRelaunched: (terminalId: string) => void
 }) {
   const t = useTranslate()
-  const { text, unreadable } = useTerminalOutput(projectId, run.terminalId)
+  const { text, unreadable } = useTerminalOutput(projectId, run.terminalId, run.status === 'running')
   const now = useNow(run.status === 'running')
   const summary = useSummary(run.command, text, true)
   const interrupt = useInterruptTerminal(projectId)
@@ -253,6 +253,8 @@ export function CommandRunDetail({
   const errors = summary ? issueCount(summary) : 0
   const files = summary?.lint.length ?? 0
   const output = useMemo(() => (text == null ? null : outputTail(text, OUTPUT_LINES)), [text])
+  // Après « Relancer seulement les échecs », ses arguments en plus : l'en-tête du terminal les dit.
+  const ran = useMemo(() => commandLine(text) ?? run.command, [text, run.command])
 
   return (
     <div data-command-run className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -277,8 +279,8 @@ export function CommandRunDetail({
       <div className="min-h-0 flex-1 overflow-y-auto pb-safe">
         <section className="flex flex-col gap-2 border-b border-line px-3 py-3">
           <p className={cx('text-sm', sentenceTone)}>{runSentence(run, now, summary, t, run.finishedAt ? relativeDate(run.finishedAt) : '')}</p>
-          <code className="truncate font-mono text-xs text-ink-faint" title={run.command}>
-            $ {run.command}
+          <code className="truncate font-mono text-xs text-ink-faint" title={ran}>
+            $ {ran}
           </code>
           <div className="flex flex-wrap gap-1.5">
             {run.status === 'running' ? (
@@ -362,9 +364,9 @@ export function CommandRunDetail({
   )
 }
 
-/** Un argument tel que le serveur le cite pour le shell, pour l'infobulle. */
+/** Un argument cité comme le serveur le cite pour le shell (`shellQuote`), pour l'infobulle. */
 function quote(arg: string): string {
-  return /^[\w./=@:-]+$/.test(arg) ? arg : `'${arg.replace(/'/g, `'\\''`)}'`
+  return `'${arg.replaceAll("'", `'\\''`)}'`
 }
 
 function Block({ title, children }: { title: string; children: ReactNode }) {

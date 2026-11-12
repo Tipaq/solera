@@ -359,7 +359,8 @@ try {
   await actionsTab.click()
   await suiteRow.getByRole('button', { name: /^Tests du panier/ }).click()
   await rerunFailed.click()
-  await detail.getByText("$ node --test check/cart.test.mjs '--test-name-pattern=additionne les lignes'").waitFor({ timeout: 20000 })
+  // L'en-tête dit ce qui a tourné, arguments de relance compris.
+  await detail.getByText("$ node --test check/cart.test.mjs '--test-name-pattern=additionne les lignes'", { exact: true }).waitFor({ timeout: 20000 })
   await detail.getByText(/Échec \(code 1\)/).waitFor({ timeout: 20000 })
   assert.equal(await detail.getByText('Tests en échec · 1').count(), 1)
   // Échap remonte à la liste.

@@ -5,6 +5,7 @@ import type { TerminalClientMessage, TerminalServerMessage } from '@solera/proto
 import { cx } from '@solera/ui'
 import '@xterm/xterm/css/xterm.css'
 import { translate, useTranslate } from '../../lib/i18n'
+import { terminalSocketUrl } from '../../lib/terminal-output'
 import { useTerminalsReload } from '../../lib/terminals'
 
 /**
@@ -122,10 +123,7 @@ export function TerminalView({
 
     fit.current = fitAddon
 
-    const socket = new WebSocket(
-      `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}` +
-        `/api/projects/${projectId}/terminal?terminalId=${encodeURIComponent(terminalId)}`,
-    )
+    const socket = new WebSocket(terminalSocketUrl(projectId, terminalId))
 
     const send = (payload: TerminalClientMessage) => {
       if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(payload))

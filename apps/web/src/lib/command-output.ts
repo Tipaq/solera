@@ -147,6 +147,16 @@ export function lastLine(raw: string | null): string | null {
   return null
 }
 
+/**
+ * La commande qui a vraiment tourné : la première ligne que le serveur écrit en tête du
+ * terminal (`$ …`), arguments de relance compris. Null sans en-tête.
+ */
+export function commandLine(raw: string | null): string | null {
+  if (!raw) return null
+  const first = screenLines(raw.slice(0, 4096)).find((line) => line.trim())
+  return first?.startsWith('$ ') ? first.slice(2) : null
+}
+
 /** Un chemin absolu, ses `.` et `..` résolus. */
 function normalize(path: string): string {
   const parts: string[] = []
@@ -457,17 +467,17 @@ function rerunArgsOf(command: string, tool: ToolKind, tests: FailedTest[]): stri
   if (tests.length === 0 || /&&|\|\||[;|`]|\$\(/.test(command)) return null
   const names = [...new Set(tests.map((test) => test.name.split(' › ').at(-1)!.trim()).filter(Boolean))]
   const pattern = names.map((name) => name.replace(REGEX_SPECIALS, '\\$&')).join('|')
-  switch (tool) {
-    case 'vitest':
-    case 'jest':
-      return ['-t', pattern]
-    case 'node-test':
-      return [`--test-name-pattern=${pattern}`]
-    case 'pytest':
-      return ['--lf']
-    default:
-      return null
-  }
+  const args =
+    tool === 'vitest' || tool === 'jest'
+      ? ['-t', pattern]
+      : tool === 'node-test'
+        ? [`--test-name-pattern=${pattern}`]
+        : tool === 'pytest'
+          ? ['--lf']
+          : null
+  // `npm test` garde pour lui les options qui ne suivent pas `--` (pnpm et yarn les passent).
+  const npmScript = /^npm\s+(test|t|run\s+\S+|run-script\s+\S+)\b/.test(command.trim()) && !/\s--(\s|$)/.test(command)
+  return args && npmScript ? ['--', ...args] : args
 }
 
 /** Les tests en double (jest les redit sous « Summary of all failing tests ») ne comptent qu'une fois. */
