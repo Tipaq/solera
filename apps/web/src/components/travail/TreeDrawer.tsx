@@ -120,7 +120,7 @@ function TreeBody({
       <dl className="grid grid-cols-[8rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
         {tree.card ? (
           <Fact label={t('travail.drawer.card')}>
-            <CardRef projectId={projectId} card={{ ...tree.card, milestone: null }} className="text-sm" />
+            <CardRef projectId={projectId} card={{ ...tree.card, milestone: null }} size="sm" />
           </Fact>
         ) : null}
         {tree.card?.milestone ? (
@@ -146,13 +146,13 @@ function TreeBody({
           </Fact>
         )}
         <Fact label={t('travail.drawer.uncommitted')}>
-          {tree.uncommitted > 0 ? <span className="text-caution">{t(`code.drift.dirty.${pluralOf(tree.uncommitted)}`, { count: tree.uncommitted })}</span> : <span className="text-ink-faint">{t('travail.drawer.noUncommitted')}</span>}
+          {tree.uncommitted > 0 ? <span className="text-caution">{t(`travail.drawer.files.${pluralOf(tree.uncommitted)}`, { count: tree.uncommitted })}</span> : <span className="text-ink-faint">{t('travail.drawer.noUncommitted')}</span>}
         </Fact>
         <Fact label={t('code.size')}>
           <span className="tabular-nums text-ink-soft">{tree.sizeBytes !== null ? formatBytes(tree.sizeBytes, locale) : t('travail.drawer.measuring')}</span>
         </Fact>
         <Fact label={t('travail.drawer.lastUse')}>
-          <span className="text-ink-soft">{tree.lastUsedAt !== null ? shortAge(tree.lastUsedAt) : '—'}</span>
+          <span className="text-ink-soft">{tree.lastUsedAt !== null ? t('travail.drawer.ago', { age: shortAge(tree.lastUsedAt) }) : '—'}</span>
         </Fact>
         <Fact label={t('travail.drawer.path')}>
           <code className="min-w-0 truncate font-mono text-xs text-ink-faint" title={tree.path}>

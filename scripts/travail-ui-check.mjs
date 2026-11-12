@@ -388,14 +388,18 @@ try {
   }
   await page.getByRole('region', { name: 'main', exact: true }).waitFor()
   // Son corps : la session qui tourne, son fil.
-  await lane.getByRole('link', { name: new RegExp(escaped(running.title)) }).waitFor()
+  await lane.locator('[data-session-row]').filter({ hasText: running.title }).waitFor()
   // L'index défile au lieu de filtrer : l'adresse ne bouge pas, le couloir s'entoure d'accent.
   await index.getByRole('button', { name: /^Tous/ }).waitFor()
   await index.getByText('en haut', { exact: true }).waitFor()
   await index.getByRole('button', { name: new RegExp(`^${escaped(short)}`) }).click()
   await page.waitForFunction((name) => document.querySelector(`section[aria-label="${name}"]`)?.className.includes('ring-accent'), branch)
   assert.equal(new URL(page.url()).searchParams.has('arbre'), false, 'En Par arbre, l’index ne filtre pas')
-  assert.ok(await lane.evaluate((element) => element.getBoundingClientRect().top < 300), 'Le couloir est venu en haut')
+  // Le couloir est à l'écran (il monte en haut quand la page est assez longue).
+  await page.waitForFunction((name) => {
+    const box = document.querySelector(`section[aria-label="${name}"]`)?.getBoundingClientRect()
+    return box && box.top >= 0 && box.top < window.innerHeight - 40
+  }, branch)
   await page.screenshot({ animations: 'disabled', path: join(shots, 't6-travail-par-arbre.png') })
 
   // ─── Le tiroir d'un arbre : l'en-tête du couloir l'ouvre ──────────────────
@@ -434,13 +438,19 @@ try {
   await filterPanel.getByRole('checkbox', { name: 'À nettoyer', exact: true }).click()
   await page.keyboard.press('Escape')
   const cleanable = trees.worktrees.filter((entry) => entry.state === 'merged' && entry.modified + entry.untracked === 0)
+  const mergedBranches = trees.branches.filter((entry) => entry.merged)
   if (cleanable.length > 0) {
     const cleanup = page.getByRole('region', { name: /arbres? fusionnés?$/ })
-    await cleanup.waitFor()
-    assert.equal(await cleanup.getByRole('button', { expanded: true }).count(), 1, 'Déplié d’office')
-  } else {
-    await page.getByText('Rien ne correspond à ces filtres.', { exact: true }).waitFor()
+    assert.equal(await cleanup.getByRole('button', { expanded: true }).count(), 1, 'À nettoyer, déplié d’office')
   }
+  if (mergedBranches.length > 0) {
+    const merged = page.getByRole('region', { name: /branches? fusionnées?$/ })
+    await merged.getByRole('button', { expanded: true }).waitFor()
+    for (const entry of mergedBranches) await merged.getByText(entry.name, { exact: true }).waitFor()
+  }
+  if (cleanable.length + mergedBranches.length === 0) await page.getByText('Rien ne correspond à ces filtres.', { exact: true }).waitFor()
+  else assert.equal(await lane.count(), 0, 'Un arbre au travail ne répond pas à « À nettoyer »')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 't10-par-arbre-a-nettoyer.png') })
   await chips.filter({ hasText: 'À nettoyer' }).getByRole('button', { name: 'Retirer ce filtre' }).click()
   await chips.first().waitFor({ state: 'detached' })
 
