@@ -1,8 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
-import type { ActionRunDetailDto, ProjectActionDto, ScheduledRunDto, ScheduledTaskDto, WorktreeDto } from '@solera/protocol'
+import type { ActionRunDetailDto, ActionSuggestion, ProjectActionDto, ScheduledRunDto, ScheduledTaskDto, WorktreeDto } from '@solera/protocol'
 import { ACTIONS_KEY } from '../../lib/actions'
 import { fromAction, fromTask, type Automation, type TaskInput } from '../../lib/automations'
+import { SCHEDULES_KEY } from '../../lib/schedules'
 import { worktreesKey } from '../../lib/worktrees'
 
 /**
@@ -150,6 +151,32 @@ export function SeededRuns({ children }: { children: ReactNode }) {
   })
   return <>{children}</>
 }
+
+/**
+ * Des actions dans le cache de React Query, telles que leurs deux listes les rendent
+ * (`/api/actions`, `/api/schedules`) : ce qui lit `useAutomations` les trouve sans
+ * requête. `extra` s'ajoute aux actions — celles d'autres fixtures, que d'autres
+ * pièces nomment.
+ */
+export function SeededAutomations({ items, extra = [], children }: { items: Automation[]; extra?: ProjectActionDto[]; children: ReactNode }) {
+  const client = useQueryClient()
+  useState(() => {
+    const actions = items.flatMap((item) => (item.source.kind === 'action' ? [item.source.action] : []))
+    const tasks = items.flatMap((item) => (item.source.kind === 'task' ? [item.source.task] : []))
+    client.setQueryData(ACTIONS_KEY, [...actions, ...extra])
+    client.setQueryData(SCHEDULES_KEY, tasks)
+    return null
+  })
+  return <>{children}</>
+}
+
+/** Ce que le dépôt de démonstration sait lancer (« Trouvé dans le dépôt »). */
+export const SUGGESTIONS: ActionSuggestion[] = [
+  { source: 'package.json', name: 'dev', kind: 'service', reason: 'service-name', command: 'pnpm dev', subdir: '', url: 'http://localhost:{port}' },
+  { source: 'package.json', name: 'test', kind: 'task', reason: 'task', command: 'pnpm test', subdir: '', url: null },
+  { source: 'apps/web/package.json', name: 'storybook', kind: 'service', reason: 'service-name', command: 'pnpm storybook', subdir: 'apps/web', url: 'http://localhost:{port}' },
+  { source: 'Makefile', name: 'backup', kind: 'task', reason: 'task', command: 'make backup', subdir: '', url: null },
+]
 
 /** Les états, dans l'ordre où les stories les montrent. */
 export const STATES: Automation[] = [SERVICE_ON, SERVICE_OFF, SUCCEEDED, FAILED, FAIL_STREAK, NEVER, IN_TERMINAL, PROPOSED, AGENT, AGENT_RUNNING]

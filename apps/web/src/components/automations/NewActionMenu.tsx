@@ -1,6 +1,6 @@
 import { AlarmClock, Bot, ChevronDown, Plus, Server, SquareTerminal } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
-import { Button, Popover } from '@solera/ui'
+import { Button, Popover, panelToolClass } from '@solera/ui'
 import type { NewActionKind } from '../../lib/action-panel'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
 
@@ -23,17 +23,22 @@ const ENTRIES: NewActionEntry[] = [
  * « + Action ▾ » (AO-6) : la nature d'abord — une commande, un service, une tâche
  * d'agent — ou planifier une action qui existe déjà. Chaque entrée dit en une ligne ce
  * qu'elle crée. La page Planifiées le reprend en « + Tâche ▾ », avec ses entrées.
+ *
+ * Dans la ligne d'outils du panneau (`inPanel`) : un outil bordé comme ses voisins, et
+ * « Nouvelle », « Actions » étant déjà le titre de la ligne.
  */
 export function NewActionMenu({
   onPick,
   entries = ENTRIES,
   label = 'actionsTab.new.label',
-  button = 'actionsTab.new.button',
+  button,
+  inPanel = false,
 }: {
   onPick: (kind: NewActionEntry['kind']) => void
   entries?: readonly NewActionEntry[]
   label?: MessageKey
   button?: MessageKey
+  inPanel?: boolean
 }) {
   const t = useTranslate()
   const [open, setOpen] = useState(false)
@@ -50,9 +55,15 @@ export function NewActionMenu({
       align="end"
       className="w-72 p-1"
       trigger={
-        <Button size="sm" icon={<Plus size={14} />} aria-label={t(label)}>
-          {t(button)} <ChevronDown size={13} className="-mr-1" aria-hidden />
-        </Button>
+        inPanel ? (
+          <button type="button" aria-label={t(label)} className={panelToolClass()}>
+            <Plus size={14} aria-hidden /> {t(button ?? 'panel.actions.new')} <ChevronDown size={13} className="-mr-1 text-ink-faint" aria-hidden />
+          </button>
+        ) : (
+          <Button size="sm" icon={<Plus size={14} />} aria-label={t(label)}>
+            {t(button ?? 'actionsTab.new.button')} <ChevronDown size={13} className="-mr-1" aria-hidden />
+          </Button>
+        )
       }
     >
       {entries.map((entry) => (

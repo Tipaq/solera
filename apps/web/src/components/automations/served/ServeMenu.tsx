@@ -15,7 +15,7 @@ export function useTargetName(): (tree: Pick<ServedTree, 'root' | 'branch' | 'na
  * dans un menu. Le choix ne bascule rien : il ouvre le dialogue qui dit ce que la bascule
  * redémarre.
  */
-export function ServeItems<T extends ServedTree>({ targets, onSwitch }: { targets: T[]; onSwitch: (tree: T) => void }) {
+function ServeItems<T extends ServedTree>({ targets, onSwitch }: { targets: T[]; onSwitch: (tree: T) => void }) {
   const t = useTranslate()
   const nameOf = useTargetName()
   return (
