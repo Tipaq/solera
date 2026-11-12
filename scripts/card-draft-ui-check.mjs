@@ -90,8 +90,9 @@ try {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
 
-  // Le brouillon en mode « découper » : à la racine, sans arbre. Son entrée a quitté la
-  // rangée du board (#160) ; la palette et la fiche d'une carte y mènent encore.
+  // Le brouillon en mode « découper » : à la racine, sans arbre. Ses entrées ont quitté la
+  // rangée du board (#160), puis la palette et la fiche d'une carte (#180) : le découpage
+  // passe par « idée : » et la page d'un jalon, l'adresse reste.
   await page.goto(`${base}/p/${project.id}/c/new?split=new`)
   await page.getByText('Découper en cartes', { exact: true }).first().waitFor()
   assert.equal(new URL(page.url()).searchParams.get('split'), 'new')

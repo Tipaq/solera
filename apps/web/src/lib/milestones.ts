@@ -220,11 +220,12 @@ export function useMilestonePlan(cardId: string, enabled: boolean) {
 export function useLaunchMilestone(projectId: string, cardId: string) {
   const queryClient = useQueryClient()
   return useMutation({
+    // Sans `config`, le CLI d'une session neuve du projet (#197, « comme une session neuve »).
     mutationFn: (body: {
       mode?: MilestoneRunMode
       concurrency: number
-      config: AgentConfig
-      cards: Record<string, AgentConfig>
+      config?: AgentConfig
+      cards?: Record<string, AgentConfig>
       confined: boolean | null
     }) =>
       api.post<MilestoneRunDto>(`/api/cards/${cardId}/milestone`, body),

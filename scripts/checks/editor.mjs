@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict'
-import { closePanelButton } from './panel.mjs'
+import { closePanelButton, openProjectPanel } from './panel.mjs'
 
 /** Parcours réel de l'éditeur, dans le workspace de démonstration temporaire du test UI. */
 export async function checkEditor({ page, context, base, project }) {
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.goto(`${base}/p/${project.id}/board`)
-  await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
+  await openProjectPanel(page, base, project)
   const panel = page.locator('[data-panel="workspace"]')
   const showTree = panel.getByRole('button', { name: "Afficher l'arborescence", exact: true })
   if (await showTree.count()) await showTree.click()
@@ -45,7 +44,7 @@ export async function checkEditor({ page, context, base, project }) {
   await page.reload()
   // L'ouverture du panneau ne survit pas au rechargement (`lib/panel.ts`) : le
   // brouillon, lui, doit y être et se compter en rouvrant.
-  await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
+  await openProjectPanel(page, base, project, { inPlace: true })
   await panel.getByRole('button', { name: 'Brouillons conservés (1)', exact: true }).click()
   await recovery.getByRole('button', { name: 'package.json', exact: true }).click()
   await waitText('"uiCheck": "a"')
@@ -73,7 +72,7 @@ export async function checkEditor({ page, context, base, project }) {
   await code.fill(draftB)
   await (await closePanelButton(page)).click()
   await panel.waitFor({ state: 'hidden' })
-  await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
+  await openProjectPanel(page, base, project, { inPlace: true })
   await waitText('"uiCheck": "b"')
   assert.equal(await panel.getByRole('button', { name: 'Enregistrement…', exact: true }).isDisabled(), true)
   await code.click()
