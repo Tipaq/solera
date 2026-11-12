@@ -35,8 +35,9 @@ export function PortfolioCode({ trees }: { trees: PortfolioTree[] }) {
                 <span className="flex min-w-0 flex-col">
                   <span className="truncate font-mono text-xs text-ink">{tree.branch ?? tree.name}</span>
                   <span className="truncate text-xs text-ink-faint">
-                    {verdictReason(t, tree.reason)}
-                    {tree.card ? ` · #${tree.card.number} ${tree.card.title}` : ''}
+                    {tree.card
+                      ? t('portfolio.overview.treeCard', { reason: verdictReason(t, tree.reason), number: tree.card.number, title: tree.card.title })
+                      : verdictReason(t, tree.reason)}
                   </span>
                 </span>
                 <span className="flex items-center gap-2">

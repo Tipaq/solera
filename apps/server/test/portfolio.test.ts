@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { CardDto, CardLinkDto, JournalEntryDto, ProjectDto } from '@solera/protocol'
+import type { CardDto, CardLinkDto, JournalEntryDto, MilestoneRunDto, ProjectDto } from '@solera/protocol'
 import type { TreeFields, TreeRow } from '../../web/src/lib/code-model.js'
 
 const { verdictOf } = await import('../../web/src/lib/code-model.js')
@@ -70,6 +70,7 @@ test('une carte par projet : ce qui attend, les sessions vivantes, les cartes ou
       card('a', 4, { column: 'abandoned' }),
       card('b', 5),
     ],
+    runs: [],
     sessions: [
       { projectId: 'a', tone: 'awaiting' },
       { projectId: 'a', tone: 'broken' },
@@ -89,6 +90,7 @@ test('une parente ne compte pas dans les cartes ouvertes : ses enfants portent l
   const [summary] = projectSummaries({
     projects: [project('a')],
     cards: milestone('a', 1, [card('a', 2), card('a', 3)]),
+    runs: [],
     sessions: [],
     events: [],
   })
@@ -103,12 +105,21 @@ test('le jalon en cours : le premier non livré du phare, avec son avancement et
     ...milestone('a', 1, [card('a', 2, { column: 'done' })], { column: 'done' }),
     ...milestone('a', 10, [done, card('a', 12), card('a', 13, { column: 'abandoned' })], { dueAt: due }),
   ]
-  const [summary] = projectSummaries({ projects: [project('a')], cards, sessions: [], events: [] })
+  const [summary] = projectSummaries({ projects: [project('a')], cards, runs: [], sessions: [], events: [] })
   assert.deepEqual(summary?.milestone, { number: 10, title: 'carte 10', done: 1, total: 2, dueAt: due })
 })
 
+test('un jalon lancé passe devant un jalon prêt, comme au phare du projet', () => {
+  const cards = [...milestone('a', 5, [card('a', 6)]), ...milestone('a', 8, [card('a', 9)])]
+  const run = { cardId: 'a-8', state: 'running', concurrency: 2, createdAt: NOW - DAY } as MilestoneRunDto
+  const [ready] = projectSummaries({ projects: [project('a')], cards, runs: [], sessions: [], events: [] })
+  const [launched] = projectSummaries({ projects: [project('a')], cards, runs: [run], sessions: [], events: [] })
+  assert.equal(ready?.milestone?.number, 5)
+  assert.equal(launched?.milestone?.number, 8)
+})
+
 test('sans jalon ouvert, la carte le dit', () => {
-  const [summary] = projectSummaries({ projects: [project('a')], cards: [card('a', 1)], sessions: [], events: [] })
+  const [summary] = projectSummaries({ projects: [project('a')], cards: [card('a', 1)], runs: [], sessions: [], events: [] })
   assert.equal(summary?.milestone, null)
   assert.equal(summary?.lastAt, null)
 })
@@ -117,6 +128,7 @@ test('l’ordre des cartes : ce qui attend, puis ce qui tourne, puis l’activit
   const order = projectSummaries({
     projects: [project('calme', 'Calme'), project('vieux', 'Vieux'), project('tourne'), project('attend'), project('aube', 'Aube')],
     cards: [],
+    runs: [],
     sessions: [
       { projectId: 'tourne', tone: 'running' },
       { projectId: 'tourne', tone: 'running' },

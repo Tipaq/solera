@@ -7,14 +7,13 @@ import { OverviewSection } from '../components/overview/OverviewSection'
 import { RecentEventsView } from '../components/overview/RecentEvents'
 import { PortfolioCode } from '../components/portfolio/PortfolioCode'
 import { ProjectSummaryCard } from '../components/portfolio/ProjectSummaryCard'
-import { useLiveConversations } from '../lib/activity'
 import { useAllCards } from '../lib/cards'
 import { codeSessionOf, usePortfolioCode } from '../lib/code-data'
-import { useAllConversations } from '../lib/conversations'
 import { useTranslate } from '../lib/i18n'
 import { useJournal } from '../lib/journal'
 import { activeTrees, EVENTS_SHOWN, projectSummaries, recentEvents } from '../lib/portfolio-overview'
-import { useProjects } from '../lib/projects'
+import { useAllActiveMilestones } from '../lib/milestones'
+import { usePortfolioLive } from '../lib/portfolio'
 import { useInbox } from '../lib/use-inbox'
 
 /**
@@ -32,16 +31,9 @@ import { useInbox } from '../lib/use-inbox'
  */
 export function PortfolioOverviewPage() {
   const t = useTranslate()
-  const { data: projects, isPending } = useProjects()
-  const visible = useMemo(() => (projects ?? []).filter((project) => !project.archivedAt), [projects])
+  const { projects: visible, live, isPending } = usePortfolioLive()
   const byId = useMemo(() => new Map(visible.map((project) => [project.id, project])), [visible])
-
-  const { data: conversations } = useAllConversations()
-  const mine = useMemo(
-    () => (conversations ?? []).filter((entry) => entry.projectId !== null && byId.has(entry.projectId)),
-    [conversations, byId],
-  )
-  const live = useLiveConversations(mine)
+  const runs = useAllActiveMilestones(useMemo(() => visible.map((project) => project.id), [visible]))
   const inbox = useInbox({ portfolio: true })
   const { cards } = useAllCards(visible)
   const code = usePortfolioCode(visible, live)
@@ -52,10 +44,11 @@ export function PortfolioOverviewPage() {
       projectSummaries({
         projects: visible,
         cards,
+        runs,
         sessions: live.map(codeSessionOf).flatMap((session) => (session.projectId ? [{ projectId: session.projectId, tone: session.tone }] : [])),
         events: journal?.entries ?? [],
       }),
-    [visible, cards, live, journal],
+    [visible, cards, runs, live, journal],
   )
   const trees = useMemo(() => activeTrees(code.groups), [code.groups])
   const events = useMemo(() => recentEvents(journal?.entries ?? [], byId, EVENTS_SHOWN), [journal, byId])

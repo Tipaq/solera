@@ -1,4 +1,4 @@
-import type { CardDto, JournalEntryDto, ProjectDto } from '@solera/protocol'
+import type { CardDto, JournalEntryDto, MilestoneRunDto, ProjectDto } from '@solera/protocol'
 import type { SessionTone, TreeRow } from './code-model'
 import { beaconOf, beaconProgress } from './milestone-beacon'
 import { horizonOf } from './milestone-model'
@@ -40,6 +40,8 @@ export interface ProjectSummary {
 export interface SummarySources {
   projects: readonly ProjectDto[]
   cards: readonly CardDto[]
+  /** Les jalons lancés des projets : un jalon lancé passe devant un jalon prêt, comme au phare. */
+  runs: readonly MilestoneRunDto[]
   /** Les sessions des projets, avec leur ton ; null : au repos. */
   sessions: readonly { projectId: string; tone: SessionTone | null }[]
   /** Les entrées du journal, tous projets, la plus récente d'abord ou non. */
@@ -47,12 +49,11 @@ export interface SummarySources {
 }
 
 /**
- * Le jalon en cours : celui que le phare de l'Aperçu du projet met en grand (#174), lu
- * sans les pilotages, que le portefeuille ne charge pas. Un jalon lancé sans PR y passe
- * pour prêt : son rang change, pas son avancement.
+ * Le jalon en cours : celui que le phare de l'Aperçu du projet met en grand (#174). Les
+ * demandes ouvertes n'y changent rien : elles ne jouent pas sur la maturité.
  */
-function currentMilestone(cards: readonly CardDto[]): SummaryMilestone | null {
-  const { current } = beaconOf(horizonOf({ cards, runs: [], requests: new Map() }))
+function currentMilestone(cards: readonly CardDto[], runs: readonly MilestoneRunDto[]): SummaryMilestone | null {
+  const { current } = beaconOf(horizonOf({ cards, runs, requests: new Map() }))
   if (!current) return null
   const { done, total } = beaconProgress(current)
   return { number: current.card.number, title: current.card.title, done, total, dueAt: current.card.dueAt }
@@ -63,7 +64,7 @@ function currentMilestone(cards: readonly CardDto[]): SummaryMilestone | null {
  * attendent, puis le plus de sessions vivantes, puis l'activité la plus récente, puis
  * le nom.
  */
-export function projectSummaries({ projects, cards, sessions, events }: SummarySources): ProjectSummary[] {
+export function projectSummaries({ projects, cards, runs, sessions, events }: SummarySources): ProjectSummary[] {
   return projects
     .map((project): ProjectSummary => {
       const mine = cards.filter((entry) => entry.projectId === project.id)
@@ -77,7 +78,7 @@ export function projectSummaries({ projects, cards, sessions, events }: SummaryS
         waiting: tones.filter((entry) => entry.tone !== 'running').length,
         live: tones.length,
         open: openLeafCount(mine),
-        milestone: currentMilestone(mine),
+        milestone: currentMilestone(mine, runs),
         lastAt,
       }
     })

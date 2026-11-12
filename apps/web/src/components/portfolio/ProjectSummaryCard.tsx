@@ -60,7 +60,7 @@ export function ProjectSummaryCard({ summary }: { summary: ProjectSummary }) {
         <span className="text-xs text-ink-faint">{t('portfolio.card.noMilestone')}</span>
       )}
       <span className="mt-auto flex items-center gap-3 text-xs text-ink-faint tabular-nums">
-        <span>{t(`portfolio.card.openCards.${pluralOf(open)}`, { count: open })}</span>
+        <span>{t(open === 1 ? 'place.count.openCards.one' : 'place.count.openCards.many', { count: open })}</span>
         {live > 0 ? (
           <span className="inline-flex items-center gap-1">
             <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-accent" />

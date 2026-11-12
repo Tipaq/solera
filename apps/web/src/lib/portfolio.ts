@@ -10,16 +10,16 @@ import { usePortfolioSessionRequests } from './session-requests'
 /** Une carte du portefeuille, qui sait d'où elle vient. */
 export type PortfolioCard = CardDto & { project: ProjectDto }
 
-/** Les projets du portefeuille, et leurs conversations vivantes. */
-function usePortfolioLive(): { projects: ProjectDto[]; live: LiveConversation[] } {
-  const { data: projects } = useProjects()
+/** Les projets visibles du portefeuille, et leurs conversations vivantes. */
+export function usePortfolioLive(): { projects: ProjectDto[]; live: LiveConversation[]; isPending: boolean } {
+  const { data: projects, isPending } = useProjects()
   const { data: conversations } = useAllConversations()
   const visible = useMemo(() => (projects ?? []).filter((project) => !project.archivedAt), [projects])
   const mine = useMemo(() => {
     const ids = new Set(visible.map((project) => project.id))
     return (conversations ?? []).filter((entry) => entry.projectId !== null && ids.has(entry.projectId))
   }, [conversations, visible])
-  return { projects: visible, live: useLiveConversations(mine) }
+  return { projects: visible, live: useLiveConversations(mine), isPending }
 }
 
 /**
