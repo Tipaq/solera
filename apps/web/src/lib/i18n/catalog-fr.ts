@@ -4999,5 +4999,4 @@ export const fr: Catalog = {
   "sessionsPage.bulk.delete.note": "Leurs messages et leurs pièces jointes partent avec elles. Ce geste ne se défait pas.",
   "sessionsPage.bulk.failed.one": "Une session n’a pas suivi : {error}",
   "sessionsPage.bulk.failed.other": "{count} sessions n’ont pas suivi : {error}",
-  "sessionsPage.bulk.archiveFailed": "L’archivage s’est arrêté : {error}",
 }

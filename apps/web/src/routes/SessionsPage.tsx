@@ -26,9 +26,9 @@ import {
   byDay,
   byProject,
   byState,
+  displayedRows,
   filterSessions,
   inScope,
-  inTurn,
   pinTarget,
   readSessionQuery,
   selectedRows,
@@ -41,14 +41,16 @@ import {
   type SessionRow,
   type SessionScope,
   type SessionSort,
+  type SessionView,
   type StateColumn,
 } from '../lib/sessions-view'
+import { inTurn, type BulkFailure } from '../lib/bulk'
 import { pluralKey } from '../lib/schedule-rule'
 import { useInbox } from '../lib/use-inbox'
 import { useSessionRows } from '../lib/use-session-rows'
 import { useView } from '../lib/use-view'
 
-type View = 'liste' | 'etat' | 'projet'
+type View = SessionView
 const VIEW_KEYS = ['liste', 'etat', 'projet'] as const
 
 const PERIODS: { key: SessionPeriod; label: MessageKey }[] = [
@@ -104,6 +106,8 @@ export function SessionsPage() {
   const { rows, projects, pending } = useSessionRows()
   const inbox = useInbox({ sessions: true })
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set())
+  // Tenu ici et non dans les colonnes : « Tout » ne coche que ce qu'elles montrent.
+  const [unfolded, setUnfolded] = useState<ReadonlySet<StateColumn>>(() => new Set())
 
   /**
    * Une retouche de la page, réécrite dans l'adresse sans entrée d'historique.
@@ -131,7 +135,11 @@ export function SessionsPage() {
   const counted = (keep: (row: SessionRow) => boolean) => scoped.filter(keep).length
   const scopeCount = (scope: SessionScope) => rows.filter((row) => inScope(row, scope)).length
   const filtered = activeFilterCount(filters)
-  const picked = useMemo(() => selectedRows(selection.selected, shown), [selection.selected, shown])
+  const displayed = useMemo(
+    () => displayedRows(shown, { view, folded, unfolded, limit: COLUMN_LIMIT }),
+    [shown, view, folded, unfolded],
+  )
+  const picked = useMemo(() => selectedRows(selection.selected, displayed), [selection.selected, displayed])
 
   const chips = [
     ...[...filters.projects].map((id) => (
@@ -277,6 +285,8 @@ export function SessionsPage() {
         }
         display={displayMenu}
         action={
+          // Une bascule de la barre, du même habillage que « Filtrer » et « Affichage » à
+          // côté d'elle : un `Button` y détonnerait.
           <button
             type="button"
             aria-pressed={selection.on}
@@ -289,7 +299,7 @@ export function SessionsPage() {
           </button>
         }
       />
-      {selection.on ? <SelectionBar scope={query.scope} rows={picked} onAll={() => selection.set(shown.map((row) => row.id))} selection={selection} /> : null}
+      {selection.on ? <SelectionBar scope={query.scope} rows={picked} onAll={() => selection.set(displayed.map((row) => row.id))} selection={selection} /> : null}
 
       {/* `relative` : le calque des tiroirs s'y pose sous la barre, et ne défile pas
           avec la liste. */}
@@ -302,7 +312,7 @@ export function SessionsPage() {
               {shown.length === 0 ? (
                 <p className="text-sm text-ink-faint">{empty}</p>
               ) : view === 'etat' ? (
-                <StateColumns rows={shown} selection={selection.lines} />
+                <StateColumns rows={shown} selection={selection.lines} unfolded={unfolded} onUnfold={(key) => setUnfolded((current) => toggled(current, key))} />
               ) : view === 'projet' ? (
                 <div className="flex flex-col gap-5">
                   {byProject(shown).map((group) => {
@@ -395,6 +405,8 @@ function useBulkSelection(scope: SessionScope) {
   if (scope !== seenScope) {
     setSeenScope(scope)
     setSelected(new Set())
+    // Le refus dit d'une ligne qui n'est plus de cette portée.
+    setFailed(null)
   }
   const pin = usePinConversation()
   const setArchived = useArchiveConversation()
@@ -404,9 +416,10 @@ function useBulkSelection(scope: SessionScope) {
   const close = () => {
     setOn(false)
     setSelected(new Set())
+    setFailed(null)
   }
   /** Le geste fait : tout a suivi et la sélection se referme, ou ce qui a refusé reste coché. */
-  const settle = (failures: { id: string; error: unknown }[]) => {
+  const settle = (failures: BulkFailure[]) => {
     if (failures.length === 0) return close()
     setSelected(new Set(failures.map((failure) => failure.id)))
     setFailed({ count: failures.length, error: messageOf(failures[0]!.error) })
@@ -431,17 +444,12 @@ function useBulkSelection(scope: SessionScope) {
     if (gesture === 'delete') return loop(ids, (id) => remove.mutateAsync(id))
     // Archiver passe par la fenêtre des demandes en attente, qui fait sa propre boucle.
     setFailed(null)
-    guarded.archive(ids, close)
+    guarded.archive(ids, settle)
   }
 
-  // L'archivage gardé s'arrête au premier refus : il n'a pas de compte à dire.
-  const failure = !on
-    ? null
-    : failed
-      ? t(`sessionsPage.bulk.failed.${pluralKey(failed.count, locale)}`, { count: failed.count, error: failed.error })
-      : guarded.error
-        ? t('sessionsPage.bulk.archiveFailed', { error: messageOf(guarded.error) })
-        : null
+  const failure = failed
+    ? t(`sessionsPage.bulk.failed.${pluralKey(failed.count, locale)}`, { count: failed.count, error: failed.error })
+    : null
 
   return {
     on,
@@ -451,11 +459,7 @@ function useBulkSelection(scope: SessionScope) {
     dialog: guarded.dialog,
     lines: on ? { selected, toggle: (id: string) => setSelected((current) => toggled(current, id)) } : null,
     set: (ids: string[]) => setSelected(new Set(ids)),
-    toggleMode: () => {
-      setFailed(null)
-      if (on) close()
-      else setOn(true)
-    },
+    toggleMode: () => (on ? close() : setOn(true)),
     run,
   }
 }
@@ -464,8 +468,9 @@ type BulkSelection = ReturnType<typeof useBulkSelection>
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
-const GESTURE: Record<BulkGesture, { label: MessageKey; icon: ReactNode }> = {
+const GESTURE: Record<BulkGesture | 'unpin', { label: MessageKey; icon: ReactNode }> = {
   pin: { label: 'sessionsPage.bulk.pin', icon: <Pin size={14} /> },
+  unpin: { label: 'sessionsPage.bulk.unpin', icon: <PinOff size={14} /> },
   archive: { label: 'sessionsPage.bulk.archive', icon: <Archive size={14} /> },
   unarchive: { label: 'sessionsPage.bulk.unarchive', icon: <ArchiveRestore size={14} /> },
   delete: { label: 'sessionsPage.bulk.delete', icon: <Trash2 size={14} /> },
@@ -481,26 +486,26 @@ function SelectionBar({ scope, rows, onAll, selection }: { scope: SessionScope; 
   const locale = useLocale()
   const [confirming, setConfirming] = useState(false)
   const count = rows.length
-  const label = (gesture: BulkGesture) =>
-    t(gesture === 'pin' && !pinTarget(rows) ? 'sessionsPage.bulk.unpin' : GESTURE[gesture].label)
+  // Épingler défait quand toute la sélection l'est déjà.
+  const face = (gesture: BulkGesture) => GESTURE[gesture === 'pin' && !pinTarget(rows) ? 'unpin' : gesture]
   return (
     <div data-selection-bar className="flex h-11 shrink-0 items-center gap-2 border-b border-line bg-surface/60 px-4 text-sm md:px-6">
       <span className="shrink-0 tabular-nums text-ink-soft">{t(`sessionsPage.selected.${pluralKey(count, locale)}`, { count })}</span>
-      <button type="button" className="shrink-0 px-1 text-xs text-ink-faint hover:text-ink pointer-coarse:min-h-11" onClick={onAll}>
+      <Button size="sm" variant="ghost" className="shrink-0" onClick={onAll}>
         {t('sessionsPage.select.all')}
-      </button>
+      </Button>
       <span className="ml-auto flex items-center gap-1.5">
         {bulkGestures(scope).map((gesture) => (
           <Button
             key={gesture}
             size="sm"
             variant="ghost"
-            aria-label={label(gesture)}
+            aria-label={t(face(gesture).label)}
             disabled={count === 0 || selection.busy}
             onClick={() => (gesture === 'delete' ? setConfirming(true) : void selection.run(gesture, rows))}
           >
-            <span className="sm:hidden">{gesture === 'pin' && !pinTarget(rows) ? <PinOff size={14} /> : GESTURE[gesture].icon}</span>
-            <span className="hidden sm:inline">{label(gesture)}</span>
+            <span className="sm:hidden">{face(gesture).icon}</span>
+            <span className="hidden sm:inline">{t(face(gesture).label)}</span>
           </Button>
         ))}
       </span>
@@ -538,9 +543,14 @@ function Group({ rows, selection, hideProject = false, children }: { rows: Sessi
 }
 
 /** Par état : quatre colonnes, une puis deux puis quatre selon la largeur. */
-function StateColumns({ rows, selection }: { rows: SessionRow[]; selection: LineSelection }) {
+function StateColumns({ rows, selection, unfolded, onUnfold }: {
+  rows: SessionRow[]
+  selection: LineSelection
+  /** Les colonnes montrées au-delà de `COLUMN_LIMIT`. */
+  unfolded: ReadonlySet<StateColumn>
+  onUnfold: (column: StateColumn) => void
+}) {
   const t = useTranslate()
-  const [unfolded, setUnfolded] = useState<ReadonlySet<StateColumn>>(() => new Set())
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       {byState(rows).map((column) => {
@@ -557,7 +567,7 @@ function StateColumns({ rows, selection }: { rows: SessionRow[]; selection: Line
               </ul>
             )}
             {extra > 0 ? (
-              <Button variant="ghost" size="sm" className="mt-1 self-start" onClick={() => setUnfolded((current) => toggled(current, column.key))}>
+              <Button variant="ghost" size="sm" className="mt-1 self-start" onClick={() => onUnfold(column.key)}>
                 {all ? t('sessionsPage.less') : t('sessionsPage.more', { count: extra })}
               </Button>
             ) : null}

@@ -7,7 +7,7 @@ import { useTranslate, type MessageKey } from '../../lib/i18n'
 import type { SessionRow, SessionState } from '../../lib/sessions-view'
 import { AgentIcon } from '../AgentIcon'
 import { ProjectPip } from '../places/ProjectPip'
-import { CheckBox } from '../toolbar/ToolbarMenus'
+import { CheckBox } from '../CheckBox'
 
 export const STATE_WORD: Record<SessionState, MessageKey> = {
   awaiting: 'sessionsPage.state.awaiting',

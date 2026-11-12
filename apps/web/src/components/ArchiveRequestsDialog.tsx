@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import type { PendingRequestCounts, PendingRequestsDto } from '@solera/protocol'
 import { Button, ConfirmDialog } from '@solera/ui'
 import { api } from '../lib/api'
+import { inTurn, type BulkFailure } from '../lib/bulk'
 import { conversationPath } from '../lib/conversation-route'
 import { useArchiveConversation } from '../lib/conversations'
 import { useTranslate, type MessageKey } from '../lib/i18n'
@@ -93,36 +94,45 @@ function sum(pending: PendingRequestsDto['conversations']): PendingRequestCounts
  * laisse en attente, quel que soit le chemin qui l'a archivé.
  */
 export function useGuardedArchive(): {
-  /** `onDone` une fois tout archivé — pas sur un refus, ni quand la fenêtre est fermée. */
-  archive: (ids: string[], onDone?: () => void) => void
+  /**
+   * `onDone` quand l'archivage a eu lieu, avec les fils qui ne l'ont pas suivi : tous
+   * quand le compte des demandes n'a pas pu se lire. Pas quand la fenêtre est fermée.
+   */
+  archive: (ids: string[], onDone?: (failures: BulkFailure[]) => void) => void
   dialog: ReactNode
   pending: boolean
   error: unknown
 } {
   const archive = useArchiveConversation()
   const navigate = useNavigate()
-  const [ask, setAsk] = useState<{ ids: string[]; pending: PendingRequestsDto['conversations']; onDone?: () => void } | null>(null)
+  const [ask, setAsk] = useState<{ ids: string[]; pending: PendingRequestsDto['conversations']; onDone?: (failures: BulkFailure[]) => void } | null>(null)
   const [error, setError] = useState<unknown>(null)
+  // Pendant la lecture du compte, avant toute mutation : un second clic lancerait une
+  // seconde boucle.
+  const [checking, setChecking] = useState(false)
 
-  const commit = async (ids: string[], onDone?: () => void) => {
-    try {
-      for (const id of ids) await archive.mutateAsync({ id, archived: true })
-      setAsk(null)
-      onDone?.()
-    } catch (err) {
-      setError(err)
-    }
+  /** Un fil refusé n'arrête pas les suivants ; le premier refus reste l'erreur rendue. */
+  const commit = async (ids: string[], onDone?: (failures: BulkFailure[]) => void) => {
+    const failures = await inTurn(ids, (id) => archive.mutateAsync({ id, archived: true }))
+    if (failures.length > 0) setError(failures[0]!.error)
+    setAsk(null)
+    onDone?.(failures)
   }
 
-  const start = (ids: string[], onDone?: () => void) => {
+  const start = (ids: string[], onDone?: (failures: BulkFailure[]) => void) => {
     setError(null)
+    setChecking(true)
     void api
       .get<PendingRequestsDto>(`/api/conversations/pending-requests?ids=${ids.map(encodeURIComponent).join(',')}`)
       .then(({ conversations }) => {
         if (conversations.length === 0) void commit(ids, onDone)
         else setAsk({ ids, pending: conversations, onDone })
       })
-      .catch(setError)
+      .catch((err: unknown) => {
+        setError(err)
+        onDone?.(ids.map((id) => ({ id, error: err })))
+      })
+      .finally(() => setChecking(false))
   }
 
   const dialog = ask ? (
@@ -139,5 +149,5 @@ export function useGuardedArchive(): {
     />
   ) : null
 
-  return { archive: start, dialog, pending: archive.isPending, error: error ?? archive.error }
+  return { archive: start, dialog, pending: checking || archive.isPending, error: error ?? archive.error }
 }

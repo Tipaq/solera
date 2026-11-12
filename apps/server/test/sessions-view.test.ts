@@ -10,8 +10,8 @@ const {
   byProject,
   byState,
   bulkGestures,
+  displayedRows,
   filterSessions,
-  inTurn,
   pinTarget,
   readSessionQuery,
   selectedRows,
@@ -20,6 +20,7 @@ const {
   sortSessions,
   writeSessionQuery,
 } = await import('../../web/src/lib/sessions-view.js')
+const { inTurn } = await import('../../web/src/lib/bulk.js')
 
 const project = (id: string, name = id) => ({ id, name, git: { branch: 'main' } }) as ProjectDto
 const nimbus = project('p1', 'Nimbus')
@@ -360,4 +361,12 @@ test('Un geste en masse va au bout et rend les échecs, sans s’arrêter au pre
   assert.deepEqual(seen, ['a', 'b', 'c'], 'Un appel après l’autre, tous')
   assert.deepEqual(failed.map((failure) => [failure.id, (failure.error as Error).message]), [['b', 'refusé']])
   assert.deepEqual(await inTurn([], async () => {}), [])
+})
+
+test('Lignes affichées : ni les groupes repliés de « Par projet », ni le reste d’une colonne coupée de « Par état »', () => {
+  const rows = [row('a1', { project: atlas }), row('n1'), row('n2'), row('w1', { state: 'awaiting' }), row('w2', { state: 'error' })]
+  assert.deepEqual(ids(displayedRows(rows, { view: 'liste', folded: new Set(['p1']), unfolded: new Set(), limit: 1 })), ids(rows), 'La Liste montre tout')
+  assert.deepEqual(ids(displayedRows(rows, { view: 'projet', folded: new Set(['p1']), unfolded: new Set(), limit: 1 })), ['a1'])
+  assert.deepEqual(ids(displayedRows(rows, { view: 'etat', folded: new Set(), unfolded: new Set(), limit: 1 })), ['w1', 'a1'])
+  assert.deepEqual(ids(displayedRows(rows, { view: 'etat', folded: new Set(), unfolded: new Set(['waiting']), limit: 1 })), ['w1', 'w2', 'a1'])
 })

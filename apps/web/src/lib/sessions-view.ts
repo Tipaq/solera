@@ -288,6 +288,24 @@ export function byState(rows: readonly SessionRow[]): { key: StateColumn; rows: 
 
 /* ------------------------------------------------------------------ la sélection */
 
+export type SessionView = 'liste' | 'etat' | 'projet'
+
+/**
+ * Les lignes que la page montre vraiment, dans l'ordre de la vue : ni celles des groupes
+ * repliés de « Par projet », ni celles qu'une colonne de « Par état » garde derrière
+ * « N de plus ». « Tout » ne coche qu'elles : un geste ne touche rien qu'on n'a pas vu.
+ */
+export function displayedRows(
+  rows: readonly SessionRow[],
+  display: { view: SessionView; folded: ReadonlySet<string>; unfolded: ReadonlySet<StateColumn>; limit: number },
+): SessionRow[] {
+  if (display.view === 'projet') return byProject(rows).flatMap((group) => (display.folded.has(group.key) ? [] : group.rows))
+  if (display.view === 'etat') {
+    return byState(rows).flatMap((column) => (display.unfolded.has(column.key) ? column.rows : column.rows.slice(0, display.limit)))
+  }
+  return [...rows]
+}
+
 /**
  * Les lignes sélectionnées **parmi celles affichées**, dans leur ordre : une session
  * cochée puis masquée par un filtre, ou partie de la portée après un geste, ne compte
@@ -307,22 +325,4 @@ export function bulkGestures(scope: SessionScope): BulkGesture[] {
 /** Épingler, ou désépingler quand toute la sélection l'est déjà : le même bouton défait. */
 export function pinTarget(rows: readonly SessionRow[]): boolean {
   return rows.length === 0 || rows.some((row) => !row.pinned)
-}
-
-/**
- * Un geste sur chaque session, l'une après l'autre, jusqu'au bout : un refus n'arrête
- * pas les suivantes. Rend les échecs, avec leur erreur, dans l'ordre.
- *
- * Pas de route en masse côté serveur : la boucle reprend celles d'une session.
- */
-export async function inTurn(ids: readonly string[], step: (id: string) => Promise<unknown>): Promise<{ id: string; error: unknown }[]> {
-  const failed: { id: string; error: unknown }[] = []
-  for (const id of ids) {
-    try {
-      await step(id)
-    } catch (error) {
-      failed.push({ id, error })
-    }
-  }
-  return failed
 }

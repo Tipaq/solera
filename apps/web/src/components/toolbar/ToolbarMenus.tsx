@@ -1,7 +1,8 @@
-import { Check, Filter, SlidersHorizontal } from 'lucide-react'
+import { Filter, SlidersHorizontal } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Button, Popover, SegmentedControl, TooltipButton, cx, type Segment } from '@solera/ui'
 import { useTranslate } from '../../lib/i18n'
+import { CheckBox } from '../CheckBox'
 import { toolbarButtonClass } from './OneLineToolbar'
 
 /*
@@ -151,25 +152,6 @@ export function ViewTiles<K extends string>({ options, value, onChange }: { opti
 /** Le titre d'un groupe dans un popover de la barre, en petites capitales. */
 export function MenuHeading({ children }: { children: ReactNode }) {
   return <p className="px-3 pt-3 pb-1 text-meta font-medium tracking-wide text-ink-faint uppercase">{children}</p>
-}
-
-/**
- * La case d'une coche, seule et muette : celui qui la porte dit son rôle (`checkbox`,
- * `radio`) et son état. `round` pour un choix unique.
- */
-export function CheckBox({ checked, round = false }: { checked: boolean; round?: boolean }) {
-  return (
-    <span
-      aria-hidden
-      className={cx(
-        'grid size-4 shrink-0 place-items-center border',
-        round ? 'rounded-full' : 'rounded',
-        checked ? 'border-accent bg-accent text-accent-ink' : 'border-line-strong',
-      )}
-    >
-      {checked ? round ? <span className="size-1.5 rounded-full bg-accent-ink" /> : <Check size={11} strokeWidth={3} /> : null}
-    </span>
-  )
 }
 
 /**

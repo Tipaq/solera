@@ -456,6 +456,20 @@ try {
   assert.ok(await record(limit), 'Seule la session cochée part')
   await line(flaky).waitFor({ state: 'detached' })
 
+  // « Tout » ne coche que les lignes affichées : pas celles d'un groupe replié.
+  await page.goto(`${base}/sessions?vue=projet`)
+  await content.getByRole('button', { name: 'Replier Atlas API' }).click()
+  await line(limit).waitFor({ state: 'detached' })
+  await selectToggle.click()
+  await bar.getByRole('button', { name: 'Tout', exact: true }).click()
+  const visible = await content.locator('[data-session]').count()
+  assert.ok(visible > 1)
+  assert.match(await bar.innerText(), new RegExp(`^${visible} sélectionnées`), 'Le groupe replié n’est pas coché')
+  await content.getByRole('button', { name: 'Déplier Atlas API' }).click()
+  assert.equal(await line(limit).getAttribute('aria-checked'), 'false')
+  assert.match(await bar.innerText(), new RegExp(`^${visible} sélectionnées`))
+  await toolbar.getByRole('button', { name: 'Terminer' }).click()
+
   // Au téléphone : la barre tient, les libellés de la barre d'outils se replient.
   await page.setViewportSize({ width: 390, height: 844 })
   await selectToggle.click()

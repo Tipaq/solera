@@ -5002,7 +5002,6 @@ export const en = {
   "sessionsPage.bulk.delete.note": "Their messages and attachments go with them. This cannot be undone.",
   "sessionsPage.bulk.failed.one": "One session did not follow: {error}",
   "sessionsPage.bulk.failed.other": "{count} sessions did not follow: {error}",
-  "sessionsPage.bulk.archiveFailed": "Archiving stopped: {error}",
 } as const
 
 /**
