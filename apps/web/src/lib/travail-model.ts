@@ -390,3 +390,26 @@ export function legacyTravailQuery(from: 'activity' | 'journal', search: string)
   }
   return params.toString()
 }
+
+/* ------------------------------------------------------------------ l'arrivée filtrée */
+
+/** Le paramètre d'une arrivée filtrée sur un état : `?etat=cleanup`. */
+export const STATE_PARAM = 'etat'
+
+/**
+ * L'adresse de Travail, Par arbre, filtré sur un état : ce que l'Aperçu ouvre pour « + N
+ * arbres fusionnés à nettoyer » (A-4.6).
+ */
+export function travailStateHref(projectId: string, state: StateKey): string {
+  return `/p/${projectId}/travail?vue=couloirs&${STATE_PARAM}=${state}`
+}
+
+/**
+ * Les filtres qu'impose une arrivée par `?etat=` : cet état seul. Les filtres retenus
+ * sont levés, sans quoi un jalon ou un agent choisi la veille cacherait ce qu'on vient
+ * voir. Null si l'adresse n'en demande pas, ou un état qui n'existe pas.
+ */
+export function arrivalFilters(state: string | null): TravailFilters | null {
+  if (!state || !oneOf(STATE_KEYS)(state)) return null
+  return { ...NO_FILTERS, states: [state] }
+}
