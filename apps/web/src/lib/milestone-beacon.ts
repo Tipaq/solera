@@ -45,6 +45,15 @@ export function concurrencyOf(entry: MilestoneEntry): number {
   return entry.run?.concurrency ?? DEFAULT_MILESTONE_CONCURRENCY
 }
 
+/**
+ * L'avancement du jalon (A-3.4) : ses faites sur ses cartes non abandonnées — les mêmes
+ * que ses vagues, pour que l'anneau atteigne 100 % quand elles sont toutes cochées.
+ */
+export function beaconProgress(entry: MilestoneEntry): { done: number; total: number; share: number } {
+  const total = entry.children.filter((card) => card.column !== 'abandoned').length
+  return { done: entry.done, total, share: total === 0 ? 0 : entry.done / total }
+}
+
 /* ------------------------------------------------------------------ vagues */
 
 export interface BeaconWave {
@@ -77,17 +86,35 @@ export interface BeaconSession {
   title: string
 }
 
-/** Les sessions vivantes des cartes du jalon (A-3.6), dans l'ordre des cartes. */
-export function beaconSessions(entry: MilestoneEntry, statusOf: StatusOf = loadedStatus): BeaconSession[] {
-  return entry.children.flatMap((card) =>
-    liveSessions(card, statusOf).map((session) => ({
-      id: session.id,
-      agent: session.agent,
-      tone: statusOf(session) === 'awaiting_input' ? ('awaiting' as const) : ('running' as const),
-      cardNumber: card.number,
-      title: card.title,
-    })),
-  )
+const toneOf = (status: string) => (status === 'awaiting_input' ? ('awaiting' as const) : ('running' as const))
+
+/**
+ * Les sessions vivantes du jalon (A-3.6) : son affinage, celles de la carte-jalon, puis
+ * celles de ses cartes, dans leur ordre. La session d'affinage n'est pas rattachée à la
+ * carte : son CLI vient de la liste des conversations (`agents`), et sans lui elle ne se
+ * montre pas.
+ */
+export function beaconSessions(
+  entry: MilestoneEntry,
+  statusOf: StatusOf = loadedStatus,
+  agents: ReadonlyMap<string, AgentKind> = new Map(),
+): BeaconSession[] {
+  const { card } = entry
+  const sessions: BeaconSession[] = []
+  const refinement = card.refinement
+  const agent = refinement ? agents.get(refinement.conversationId) : undefined
+  if (refinement && agent && !card.conversations.some((session) => session.id === refinement.conversationId)) {
+    const status = statusOf({ id: refinement.conversationId, status: refinement.status })
+    if (status === 'running' || status === 'awaiting_input') {
+      sessions.push({ id: refinement.conversationId, agent, tone: toneOf(status), cardNumber: card.number, title: card.title })
+    }
+  }
+  for (const owner of [card, ...entry.children]) {
+    for (const session of liveSessions(owner, statusOf)) {
+      sessions.push({ id: session.id, agent: session.agent, tone: toneOf(statusOf(session)), cardNumber: owner.number, title: owner.title })
+    }
+  }
+  return sessions
 }
 
 /* ------------------------------------------------------------------ provisoire */

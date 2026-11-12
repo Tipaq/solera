@@ -347,7 +347,8 @@ try {
   /*
     Le phare des jalons (A-3), entre « Ce qui t'attend » et la grille : le jalon courant
     en grand, la file à sa droite. Dans le jeu d'essai, v1.2 a trois enfants ouverts et
-    v1.1 est livrée ; il n'y a pas d'autre jalon, donc les deux files sont vides.
+    v1.1 est livrée ; il n'y a pas d'autre jalon, donc les deux files sont vides — la
+    suite en pose deux plus bas.
   */
   const beacon = page.getByRole('region', { name: 'Jalons', exact: true })
   await beacon.waitFor()
@@ -387,6 +388,19 @@ try {
     await page.goBack()
     await beacon.waitFor()
   }
+  /* La file : un jalon prêt part dans « Ensuite », une idée dans « Plus tard » (A-3.9).
+     Posés ici et retirés après le téléphone, pour ne rien changer aux vues suivantes. */
+  const createCard = async (data) => (await context.request.post(`${base}/api/projects/${nimbus.id}/cards`, { data })).json()
+  const readyMilestone = await createCard({ title: 'Accès distant fiable', milestone: true })
+  const readyChild = await createCard({ title: 'Adresse de secours', parentId: readyMilestone.id })
+  const idea = await createCard({ title: 'Mode hors ligne complet', milestone: true })
+  await page.reload()
+  await beacon.getByRole('heading', { name: 'Ensuite · 1', exact: true }).waitFor()
+  await beacon.getByRole('heading', { name: 'Plus tard · 1', exact: true }).waitFor()
+  const queued = (title) => beacon.getByRole('link').filter({ hasText: title })
+  assert.equal(await queued('Accès distant fiable').getAttribute('href'), `/p/${nimbus.id}/timeline/${readyMilestone.number}`)
+  await queued('Accès distant fiable').getByText('Prêt', { exact: true }).waitFor()
+  await queued('Mode hors ligne complet').getByText('Idée', { exact: true }).waitFor()
   await beacon.screenshot({ animations: 'disabled', path: join(shots, 'apercu-phare.png') })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'apercu-projet.png') })
   await actions.screenshot({ animations: 'disabled', path: join(shots, 'apercu-actions.png') })
@@ -404,6 +418,12 @@ try {
   const narrowBeacon = await beacon.boundingBox()
   assert.ok(Math.abs(narrowBeacon.x - narrowInbox.x) <= 1, 'Au téléphone, le phare est sur la gouttière')
   await beacon.screenshot({ animations: 'disabled', path: join(shots, 'apercu-phare-mobile.png') })
+  for (const card of [readyChild, readyMilestone, idea]) {
+    assert.ok((await context.request.delete(`${base}/api/cards/${card.id}`)).ok())
+  }
+  // La liste des cartes en cache les porte encore : la page la relit.
+  await page.reload()
+  await beacon.waitFor()
   await actions.screenshot({ animations: 'disabled', path: join(shots, 'apercu-actions-mobile.png') })
   await events.screenshot({ animations: 'disabled', path: join(shots, 'apercu-evenements-mobile.png') })
   await page.setViewportSize({ width: 1440, height: 900 })

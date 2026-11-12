@@ -1,6 +1,7 @@
 import { cx } from '@solera/ui'
 import { pluralOf } from '../../lib/code-model'
 import { useTranslate } from '../../lib/i18n'
+import type { MilestoneWaiting } from '../../lib/inbox'
 import { openInboxItem } from './AskInbox'
 
 /**
@@ -8,7 +9,7 @@ import { openInboxItem } from './AskInbox'
  * la demande — elle vit dans « Ce qui t'attend », une seule fois — : il y mène et la
  * déplie (`openInboxItem`).
  */
-export function WaitingMark({ waiting, className }: { waiting: { count: number; key: string }; className?: string }) {
+export function WaitingMark({ waiting, className }: { waiting: MilestoneWaiting; className?: string }) {
   const t = useTranslate()
   return (
     <button

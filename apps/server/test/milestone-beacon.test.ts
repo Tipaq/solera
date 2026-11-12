@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import type { CardConversationDto, CardDto, CardLinkDto, CardRefinementDto, MilestoneRunDto } from '@solera/protocol'
 
 const { horizonOf } = await import('../../web/src/lib/milestone-model.js')
-const { beaconOf, beaconSessions, beaconWaves, concurrencyOf, currentWave, MATURITY_RANK } = await import(
+const { beaconOf, beaconProgress, beaconSessions, beaconWaves, concurrencyOf, currentWave, MATURITY_RANK } = await import(
   '../../web/src/lib/milestone-beacon.js'
 )
 
@@ -178,4 +178,39 @@ test('A-3.6 : le statut vivant l’emporte sur celui du chargement', () => {
   const [entry] = horizonOf({ cards: milestone(70, [a]), runs: [], requests: new Map() })
   const sessions = beaconSessions(entry!, (conversation) => (conversation.id === 's-1' ? 'awaiting_input' : conversation.status))
   assert.equal(sessions[0]?.tone, 'awaiting')
+})
+
+test('A-3.6 : la session d’affinage et celles de la carte-jalon comptent, une fois chacune', () => {
+  const kid = card(81, { conversations: [session('s-kid', 'running')] })
+  const [entry] = horizonOf({
+    cards: milestone(80, [kid], { refinement: refining, conversations: [session('s-own', 'awaiting_input')] }),
+    runs: [],
+    requests: new Map(),
+  })
+  const sessions = beaconSessions(entry!, undefined, new Map([['split-1', 'codex' as const]]))
+  assert.deepEqual(
+    sessions.map((item) => [item.id, item.agent, item.tone, item.cardNumber]),
+    [
+      ['split-1', 'codex', 'running', 80],
+      ['s-own', 'claude', 'awaiting', 80],
+      ['s-kid', 'claude', 'running', 81],
+    ],
+  )
+  // Sans son CLI connu, la session d'affinage ne se montre pas : il faut une icône.
+  assert.deepEqual(beaconSessions(entry!).map((item) => item.id), ['s-own', 's-kid'])
+})
+
+/* ------------------------------------------------------------------ A-3.4 */
+
+test('A-3.4 : l’avancement compte les faites sur les cartes non abandonnées', () => {
+  const cards = milestone(90, [
+    card(91, { column: 'done' }),
+    card(92, { column: 'done' }),
+    card(93, { column: 'done' }),
+    card(94, { column: 'abandoned' }),
+  ])
+  const [entry] = horizonOf({ cards, runs: [], requests: new Map() })
+  assert.deepEqual(beaconProgress(entry!), { done: 3, total: 3, share: 1 })
+  const [empty] = horizonOf({ cards: milestone(95, []), runs: [], requests: new Map() })
+  assert.deepEqual(beaconProgress(empty!), { done: 0, total: 0, share: 0 })
 })

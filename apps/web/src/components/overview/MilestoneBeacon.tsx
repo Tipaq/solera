@@ -1,6 +1,7 @@
 import { ArrowRight, ArrowUpRight, Check } from 'lucide-react'
 import { useMemo } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import type { AgentKind } from '@solera/protocol'
 import { Button, ProgressRing, cx } from '@solera/ui'
 import { AgentIcon } from '../AgentIcon'
 import { STATE_DOT } from '../gantt/tones'
@@ -11,9 +12,10 @@ import { loadedStatus, type StatusOf } from '../../lib/card-state'
 import { pluralOf } from '../../lib/code-model'
 import { relativeDate } from '../../lib/dates'
 import { locale, useTranslate } from '../../lib/i18n'
-import { waitingByMilestone, type InboxItem } from '../../lib/inbox'
+import { waitingByMilestone, type InboxItem, type MilestoneWaiting } from '../../lib/inbox'
 import {
   beaconOf,
+  beaconProgress,
   beaconSessions,
   beaconWaves,
   concurrencyOf,
@@ -22,10 +24,13 @@ import {
   type BeaconWave,
 } from '../../lib/milestone-beacon'
 import { nextAction, nextActionText, type MilestoneEntry } from '../../lib/milestone-model'
+import { useAllConversations } from '../../lib/conversations'
 import { useMilestones } from '../../lib/milestones'
 
 /** Ce qui attend dans chaque jalon, par numéro : le repère « N t'attend » et la demande qu'il ouvre. */
-type Waiting = ReadonlyMap<number, { count: number; key: string }>
+type Waiting = ReadonlyMap<number, MilestoneWaiting>
+
+const NO_AGENTS: ReadonlyMap<string, AgentKind> = new Map()
 
 /** Sessions montrées sous le titre avant « +N ». */
 const SESSIONS_SHOWN = 6
@@ -45,8 +50,14 @@ const milestoneHref = (projectId: string, number: number) => `/p/${projectId}/ti
 export function MilestoneBeacon({ projectId, inbox }: { projectId: string; inbox: InboxItem[] }) {
   const { entries, statusOf, isPending } = useMilestones(projectId)
   const waiting = useMemo(() => waitingByMilestone(inbox), [inbox])
+  // Le CLI d'une session d'affinage, que la carte ne porte pas.
+  const { data: conversations } = useAllConversations()
+  const agents = useMemo(
+    () => new Map((conversations ?? []).map((conversation) => [conversation.id, conversation.agent])),
+    [conversations],
+  )
   if (isPending) return null
-  return <MilestoneBeaconView projectId={projectId} entries={entries} waiting={waiting} statusOf={statusOf} />
+  return <MilestoneBeaconView projectId={projectId} entries={entries} waiting={waiting} statusOf={statusOf} agents={agents} />
 }
 
 export function MilestoneBeaconView({
@@ -54,18 +65,21 @@ export function MilestoneBeaconView({
   entries,
   waiting,
   statusOf = loadedStatus,
+  agents = NO_AGENTS,
 }: {
   projectId: string
   entries: MilestoneEntry[]
   waiting: Waiting
   statusOf?: StatusOf
+  /** Le CLI de chaque conversation, pour la session d'affinage. */
+  agents?: ReadonlyMap<string, AgentKind>
 }) {
   const t = useTranslate()
   const { current, next, later, delivered } = useMemo(() => beaconOf(entries), [entries])
 
   if (!current) {
     return (
-      <section aria-label={t('project.overview.beacon.label')} className="rounded-2xl bg-surface p-6">
+      <section aria-label={t('project.overview.beacon.label')} className="rounded-xl bg-surface p-6">
         <p className="text-sm text-ink-faint">{t('project.overview.beacon.empty')}</p>
       </section>
     )
@@ -73,9 +87,15 @@ export function MilestoneBeaconView({
   return (
     <section
       aria-label={t('project.overview.beacon.label')}
-      className="grid gap-8 rounded-2xl bg-surface p-6 lg:grid-cols-[minmax(0,1fr)_17rem]"
+      className="grid gap-8 rounded-xl bg-surface p-6 lg:grid-cols-[minmax(0,1fr)_17rem]"
     >
-      <Current projectId={projectId} entry={current} waiting={waiting.get(current.card.number) ?? null} statusOf={statusOf} />
+      <Current
+        projectId={projectId}
+        entry={current}
+        waiting={waiting.get(current.card.number) ?? null}
+        statusOf={statusOf}
+        agents={agents}
+      />
       <aside className="flex min-w-0 flex-col gap-6 lg:border-l lg:border-line lg:pl-8">
         <Queue projectId={projectId} title={t('project.overview.beacon.next')} entries={next} waiting={waiting} />
         <Queue projectId={projectId} title={t('project.overview.beacon.later')} entries={later} waiting={waiting} />
@@ -99,18 +119,22 @@ function Current({
   entry,
   waiting,
   statusOf,
+  agents,
 }: {
   projectId: string
   entry: MilestoneEntry
-  waiting: { count: number; key: string } | null
+  waiting: MilestoneWaiting | null
   statusOf: StatusOf
+  agents: ReadonlyMap<string, AgentKind>
 }) {
   const t = useTranslate()
   const navigate = useNavigate()
   const to = milestoneHref(projectId, entry.card.number)
-  const total = entry.children.length
-  const progress = total === 0 ? 0 : entry.done / total
-  const action = nextActionText(nextAction(entry), t)
+  const { done, total, share } = beaconProgress(entry)
+  const next = nextAction(entry)
+  // La question d'une session bloquée vit dans « Ce qui t'attend » : le phare ne la redit
+  // pas, même quand le repère manque le temps que la liste suive (A-3.8).
+  const action = nextActionText(next.kind === 'answerBlock' ? { ...next, request: null } : next, t)
   const joiner = t('project.overview.beacon.joiner')
   const facts = [
     t('project.overview.beacon.number', { number: entry.card.number }),
@@ -124,18 +148,13 @@ function Current({
     <div className="flex min-w-0 flex-col gap-6">
       {/* L'identité du jalon : l'anneau, puis ce qu'il est, où il en est, et qui y travaille. */}
       <div className="flex items-start gap-5">
-        <ProgressRing
-          value={progress}
-          size={88}
-          stroke={8}
-          label={t('project.overview.beacon.ring', { done: entry.done, total })}
-        >
+        <ProgressRing value={share} size={88} stroke={8} label={t('project.overview.beacon.ring', { done, total })}>
           <span aria-hidden className="flex flex-col items-center">
             <span className="text-heading font-semibold tabular-nums">
-              {new Intl.NumberFormat(locale(), { style: 'percent' }).format(progress)}
+              {new Intl.NumberFormat(locale(), { style: 'percent' }).format(share)}
             </span>
             <span className="text-meta text-ink-faint tabular-nums">
-              {t('project.overview.beacon.wave.progress', { done: entry.done, total })}
+              {t('project.overview.beacon.ring.count', { done, total })}
             </span>
           </span>
         </ProgressRing>
@@ -151,7 +170,7 @@ function Current({
             {entry.card.title}
           </Link>
           <span className="text-xs text-ink-faint">{facts.filter(Boolean).join(joiner)}</span>
-          <Sessions projectId={projectId} sessions={beaconSessions(entry, statusOf)} />
+          <Sessions projectId={projectId} sessions={beaconSessions(entry, statusOf, agents)} />
         </div>
       </div>
 
@@ -256,7 +275,7 @@ function Waves({
             <li key={index} className="flex items-center gap-2">
               <div
                 className={cx(
-                  'flex min-w-[7.5rem] flex-col gap-2 rounded-xl px-3 py-2.5',
+                  'flex min-w-[7.5rem] flex-col gap-2 rounded-lg px-3 py-2.5',
                   isCurrent ? 'bg-canvas ring-1 ring-accent/50' : 'ring-1 ring-line',
                   finished && 'opacity-60',
                 )}
@@ -265,7 +284,6 @@ function Waves({
                   {finished ? <Check size={12} aria-hidden className="text-positive" /> : null}
                   {t('project.overview.beacon.wave', { n: index + 1 })}
                   <span className="text-ink-faint tabular-nums">
-                    {t('project.overview.beacon.joiner').trimStart()}
                     {t('project.overview.beacon.wave.progress', { done: wave.done, total: wave.cards.length })}
                   </span>
                   {isCurrent ? <span className="text-accent">{t('project.overview.beacon.wave.current')}</span> : null}
