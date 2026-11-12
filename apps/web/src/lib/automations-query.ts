@@ -14,6 +14,7 @@ import { actionsStatus, type ActionsStatus } from './actions-tab'
 import { api } from './api'
 import { automationsOf, type Automation, type AutomationDraft, type AutomationScope, type UnifiedRun } from './automations'
 import { useAllConversations } from './conversations'
+import { useProjects } from './projects'
 import {
   useApproveScheduleCheck,
   useCreateSchedule,
@@ -22,7 +23,7 @@ import {
   useSchedules,
   useUpdateSchedule,
 } from './schedules'
-import { useSessionWorks } from './session-works-query'
+import { useAllSessionWorks, useSessionWorks } from './session-works-query'
 
 export interface AutomationsData {
   items: Automation[]
@@ -54,12 +55,27 @@ export function useAutomations(scope: AutomationScope): AutomationsData {
 /**
  * Ce qui tourne et ce qui attend dans un projet (ACT-1), pour le compte de son onglet
  * Actions et le point du bouton du panneau. Aucune requête de plus : les mêmes listes que
- * l'onglet, et les processus partagent celle de la page Services.
+ * l'onglet, et les processus partagent celle de la page Services. `null` : tous les
+ * projets visibles, pour l'onglet du portefeuille, qui lit en plus les travaux de fond
+ * de chacun.
  */
 export function useActionsStatus(projectId: string | null): ActionsStatus {
   const { items } = useAutomations(projectId ? { projectId } : { all: true })
   const works = useSessionWorks(projectId ?? undefined)
-  return useMemo(() => actionsStatus(items, works), [items, works])
+  const { data: projects } = useProjects()
+  const visible = useMemo(
+    () => (projectId ? [] : (projects ?? []).filter((project) => !project.archivedAt).map((project) => project.id)),
+    [projectId, projects],
+  )
+  const everywhere = useAllSessionWorks(visible)
+  return useMemo(() => {
+    if (projectId) return actionsStatus(items, works)
+    const shown = new Set(visible)
+    return actionsStatus(
+      items.filter((item) => item.projectId !== null && shown.has(item.projectId)),
+      [...everywhere.values()].flat(),
+    )
+  }, [projectId, items, works, visible, everywhere])
 }
 
 /** Où lancer : le worktree d'une conversation, sinon la racine du projet. */

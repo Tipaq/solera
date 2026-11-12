@@ -30,6 +30,12 @@ import type { SessionWork } from './session-works'
 export const ACTIONS_VIEWS = ['lanceur', 'liste', 'agenda'] as const
 export type ActionsView = (typeof ACTIONS_VIEWS)[number]
 
+/** Les entrées Quoi et Quand de « Filtrer ▾ », dans leur ordre, et leurs libellés : un projet et le portefeuille. */
+export const WHAT_FILTERS: readonly What[] = ['command', 'agent']
+export const WHEN_FILTERS: readonly WhenFilter[] = ['demand', 'scheduled']
+export const WHAT_LABEL: Record<What, MessageKey> = { command: 'actionsTab.filter.what.command', agent: 'actionsTab.filter.what.agent' }
+export const WHEN_LABEL: Record<WhenFilter, MessageKey> = { demand: 'actionsTab.filter.when.demand', scheduled: 'actionsTab.filter.when.scheduled' }
+
 /** La méta de la barre (AO-4) : ce qui tourne, et ce qui attend une relecture. */
 export interface ActionsStatus {
   running: number
@@ -48,10 +54,10 @@ export function actionsStatus(items: readonly Automation[], works: readonly Sess
 }
 
 /**
- * Le compte de l'onglet Actions, dans la rangée d'un lieu comme dans le panneau (ACT-2) :
- * ambre « N à relire » d'abord, parce qu'une action à relire attend Tim ; sinon vert
- * « N en marche », ce qui tourne se contentant d'être là ; rien quand rien ne bouge.
- * `countTitle` se traduit avec `{ count }`.
+ * Le compte de l'onglet Actions, dans la rangée d'un lieu — un projet, le portefeuille —
+ * comme dans le panneau (ACT-2) : ambre « N à relire » d'abord, parce qu'une action à
+ * relire attend Tim ; sinon vert « N en marche », ce qui tourne se contentant d'être là ;
+ * rien quand rien ne bouge. `countTitle` se traduit avec `{ count }`.
  */
 export function actionsTabBadge(status: ActionsStatus): { count: number; tone: 'caution' | 'running'; countTitle: MessageKey } | null {
   if (status.toReview > 0) return { count: status.toReview, tone: 'caution', countTitle: 'actionsTab.status.review' }
@@ -79,11 +85,9 @@ export function filterTally(items: readonly Automation[]): FilterTally {
   }
 }
 
-type FilterValue<G extends keyof AutomationFilters> = AutomationFilters[G][number]
-
 /** Coche ou décoche une entrée d'un groupe ; les autres groupes ne bougent pas. */
-export function toggleFilter<G extends keyof AutomationFilters>(filters: AutomationFilters, group: G, value: FilterValue<G>): AutomationFilters {
-  const list = filters[group] as FilterValue<G>[]
+export function toggleFilter<F extends { [K in keyof F]: readonly string[] }, G extends keyof F>(filters: F, group: G, value: F[G][number]): F {
+  const list = filters[group]
   const next = list.includes(value) ? list.filter((entry) => entry !== value) : [...list, value]
   return { ...filters, [group]: next }
 }

@@ -1,9 +1,11 @@
-import { Flag, FolderKanban, Layers, Plus, SquareKanban, Target } from 'lucide-react'
+import { Flag, FolderKanban, Layers, Plus, SquareKanban, Target, Zap } from 'lucide-react'
 import { useMemo } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import { Button } from '@solera/ui'
 import { PortfolioCardSheetHost } from '../components/cards/PortfolioCardSheetHost'
 import { PlaceShell, type PlaceTab } from '../components/places/PlaceShell'
+import { actionsTabBadge } from '../lib/actions-tab'
+import { useActionsStatus } from '../lib/automations-query'
 import { useAllCards } from '../lib/cards'
 import { useTranslate } from '../lib/i18n'
 import { openLeafCount } from '../lib/place'
@@ -22,9 +24,8 @@ import { openSettings } from '../lib/settings-dialog'
  * l'instance, qui s'ouvrent en fenêtre.
  *
  * Travail porte le compte ambre de ce qui te demande quelque chose, dans tous les
- * projets. Actions n'a pas encore sa vue du portefeuille (#241) : son onglet est masqué
- * jusque-là, plutôt que de mener hors de la coque. Tableau et Jalons ont leur vue (#239,
- * #240).
+ * projets ; Actions, celui d'un projet pris sur tous (ACT-2) : ambre « à relire »
+ * d'abord, sinon vert « en marche ».
  *
  * La fiche d'une carte s'ouvre sur place, par-dessus la vue (`?fiche=<projet>:<N>`) :
  * son hôte est posé ici, une fois pour toutes les vues.
@@ -38,6 +39,7 @@ export function PortfolioLayout() {
   const { cards } = useAllCards(visible)
   const open = openLeafCount(cards)
   const asking = usePortfolioAskingCount()
+  const actions = actionsTabBadge(useActionsStatus(null))
 
   const tabs: PlaceTab[] = [
     { to: '/projects', end: true, label: t('project.view.overview'), icon: <Target size={15} /> },
@@ -57,6 +59,12 @@ export function PortfolioLayout() {
       countTitle: t(open === 1 ? 'place.count.openCards.one' : 'place.count.openCards.many', { count: open }),
     },
     { to: '/projects/timeline', label: t('project.view.timeline'), icon: <Flag size={15} /> },
+    {
+      to: '/projects/actions',
+      label: t('project.view.actions'),
+      icon: <Zap size={15} />,
+      ...(actions ? { count: actions.count, tone: actions.tone, countTitle: t(actions.countTitle, { count: actions.count }) } : {}),
+    },
   ]
 
   return (
