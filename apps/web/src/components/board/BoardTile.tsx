@@ -3,13 +3,14 @@ import { AlarmClock, CircleHelp, Inbox } from 'lucide-react'
 import type { MouseEventHandler, TouchEventHandler } from 'react'
 import { cx } from '@solera/ui'
 import { shortTitle, type BoardCard, type BoardMilestone } from '../../lib/board-model'
+import { isOpen } from '../../lib/card-state'
 import { relativeDate } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
 import { AgentIcon } from '../AgentIcon'
 import { tintDot, tintLabel } from './tints'
 
 /** L'étiquette d'un jalon : un point de sa teinte, son numéro, son titre court ; le titre entier en infobulle. */
-export function MilestoneTag({ milestone, className }: { milestone: BoardMilestone; className?: string }) {
+export function BoardMilestoneTag({ milestone, className }: { milestone: BoardMilestone; className?: string }) {
   const t = useTranslate()
   return (
     <span
@@ -25,7 +26,7 @@ export function MilestoneTag({ milestone, className }: { milestone: BoardMilesto
 }
 
 /** La barre fine des sous-tâches, et leur compte. */
-export function SubtaskBar({ done, total }: { done: number; total: number }) {
+function SubtaskBar({ done, total }: { done: number; total: number }) {
   const t = useTranslate()
   if (total === 0) return null
   return (
@@ -39,7 +40,7 @@ export function SubtaskBar({ done, total }: { done: number; total: number }) {
 }
 
 /** Les agents qui tournent sur la carte, trois au plus ; l'anneau ambre dit celui qui t'attend. */
-export function LiveAgents({ entry }: { entry: BoardCard }) {
+function LiveAgents({ entry }: { entry: BoardCard }) {
   const t = useTranslate()
   if (entry.live.length === 0) return null
   return (
@@ -65,7 +66,7 @@ export function LiveAgents({ entry }: { entry: BoardCard }) {
 }
 
 /** Les drapeaux qui changent ce qu'on fait d'une carte. */
-export function CardFlags({ entry }: { entry: BoardCard }) {
+function CardFlags({ entry }: { entry: BoardCard }) {
   const t = useTranslate()
   const { card } = entry
   return (
@@ -86,7 +87,7 @@ export function CardFlags({ entry }: { entry: BoardCard }) {
 }
 
 /** L'échéance, relative ; rouge quand elle est passée. */
-export function DueLabel({ entry }: { entry: BoardCard }) {
+function DueLabel({ entry }: { entry: BoardCard }) {
   const t = useTranslate()
   if (entry.card.dueAt === null) return null
   return (
@@ -100,14 +101,14 @@ const tileClass = (entry: BoardCard) =>
   cx(
     'flex w-full touch-manipulation flex-col gap-2 rounded-lg border bg-canvas p-3 text-left transition-colors',
     entry.waiting ? 'border-caution/60 shadow-[inset_3px_0_0_var(--sg-caution)]' : 'border-line',
-    (entry.card.column === 'done' || entry.card.column === 'abandoned') && 'opacity-60',
+    !isOpen(entry.card) && 'opacity-60',
   )
 
 /** Le contenu d'une tuile, commun à la tuile et au calque qui suit le pointeur. */
 function TileBody({ entry, showMilestone }: { entry: BoardCard; showMilestone: boolean }) {
   return (
     <>
-      {showMilestone && entry.milestone ? <MilestoneTag milestone={entry.milestone} /> : null}
+      {showMilestone && entry.milestone ? <BoardMilestoneTag milestone={entry.milestone} /> : null}
       <span className="line-clamp-2 text-sm leading-5 text-ink">{entry.card.title}</span>
       <span className="flex flex-wrap items-center gap-1.5 empty:hidden">
         <CardFlags entry={entry} />

@@ -10,14 +10,14 @@ import { isIdea } from './milestone-model'
  */
 
 /** Les colonnes montrées d'office ; Fait et Abandonné se règlent dans « Affichage ». */
-export const OPEN_COLUMNS: readonly CardColumn[] = ['todo', 'in_progress', 'review']
+const OPEN_COLUMNS: readonly CardColumn[] = ['todo', 'in_progress', 'review']
 const ALL_COLUMNS: readonly CardColumn[] = [...OPEN_COLUMNS, 'done', 'abandoned']
 
 /** Le nombre de teintes de jalon, qui tournent au-delà (`MilestoneTint`). */
 export const TINT_COUNT = 6
 
 /** Les fermées montrées dans Fait en « Les 5 récentes ». */
-export const DONE_SHOWN = 5
+const DONE_SHOWN = 5
 /** Les fermées montrées dans la cellule Fait d'un couloir, avant « N de plus ». */
 export const LANE_DONE_SHOWN = 2
 
@@ -162,7 +162,7 @@ export function activeFilters(filters: BoardFilters): number {
 
 export const BOARD_SORTS = ['waiting', 'recent', 'due', 'number'] as const
 export type BoardSort = (typeof BOARD_SORTS)[number]
-export const DONE_MODES = ['recent', 'all', 'hidden'] as const
+const DONE_MODES = ['recent', 'all', 'hidden'] as const
 export type DoneMode = (typeof DONE_MODES)[number]
 
 /** Les réglages de présentation, tenus par « Affichage ▾ » et retenus par projet. */
@@ -254,7 +254,11 @@ export function laneGroups(entries: readonly BoardCard[], milestones: readonly B
   ].filter((group) => group.entries.some((entry) => isOpen(entry.card)))
 }
 
-/** Le titre court d'un jalon : sans préfixe « Jalon — », coupé au premier séparateur. */
+/**
+ * Le titre court d'un jalon : sans le préfixe « Jalon — » que l'usage met en tête de ses
+ * titres (une convention de nommage des cartes, pas de l'interface), coupé au premier
+ * séparateur.
+ */
 export function shortTitle(title: string, max = 26): string {
   const bare = title.replace(/^jalon\s*[—:–-]\s*/i, '')
   const head = bare.split(/\s[:—–]\s/)[0]!.trim()

@@ -14,8 +14,8 @@ import {
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import type { CardColumn } from '@solera/protocol'
-import { cx } from '@solera/ui'
+import { CARD_CLOSED_COLUMNS, type CardColumn } from '@solera/protocol'
+import { Button, cx } from '@solera/ui'
 import {
   LANE_DONE_SHOWN,
   columnSlice,
@@ -44,7 +44,7 @@ export interface KanbanViewProps {
 }
 
 /** Fait et Abandonné : étroites et repliables, elles ne disent que ce qui est fini. */
-const isNarrow = (column: CardColumn) => column === 'done' || column === 'abandoned'
+const isNarrow = (column: CardColumn) => CARD_CLOSED_COLUMNS.includes(column)
 
 /**
  * Ce que le pointeur survole, avec un repli sur le recouvrement des rectangles :
@@ -179,7 +179,7 @@ function Column({
           <span aria-hidden className={cx('size-2 rounded-full', COLUMN_DOTS[column])} />
           <span className="text-sm font-medium text-ink">{label}</span>
           <span className="text-xs tabular-nums text-ink-faint">· {total}</span>
-          <ChevronRight size={13} aria-hidden className="ml-auto text-ink-faint" />
+          <ChevronRight size={14} aria-hidden className="ml-auto text-ink-faint" />
         </button>
       ) : (
         <ColumnHeader column={column} count={total} />
@@ -189,9 +189,9 @@ function Column({
           <BoardTile key={entry.card.id} entry={entry} onOpen={() => onOpen(entry.card.number)} />
         ))}
         {total > shown.length ? (
-          <button type="button" onClick={onSeeAll} className="rounded-md py-1.5 text-xs text-ink-faint hover:bg-surface-high hover:text-ink">
+          <Button variant="ghost" size="sm" onClick={onSeeAll}>
             {t('board.column.seeAll', { count: total })}
-          </button>
+          </Button>
         ) : null}
         {total === 0 ? <p className="px-2 py-1 text-meta text-ink-faint/70">{t('board.column.quietEmpty')}</p> : null}
       </div>
@@ -333,9 +333,9 @@ function LaneCell({
         <BoardTile key={entry.card.id} entry={entry} showMilestone={false} onOpen={() => onOpen(entry.card.number)} />
       ))}
       {total > shown.length ? (
-        <button type="button" onClick={() => setAll(true)} className="rounded-md py-1 text-xs text-ink-faint hover:bg-surface-high hover:text-ink">
+        <Button variant="ghost" size="sm" onClick={() => setAll(true)}>
           {t('board.lane.more', { count: total - shown.length })}
-        </button>
+        </Button>
       ) : null}
     </div>
   )

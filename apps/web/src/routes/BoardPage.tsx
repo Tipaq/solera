@@ -1,7 +1,7 @@
 import { Plus } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { agentKindSchema, type AgentKind, type CardColumn, type CardDto } from '@solera/protocol'
+import { agentKindSchema, type CardColumn, type CardDto } from '@solera/protocol'
 import { Button, EmptyState } from '@solera/ui'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { CardPanel } from '../components/board/CardPanel'
@@ -67,7 +67,15 @@ export function BoardPage() {
   const filters = filterState.projectId === projectId ? filterState.filters : NO_FILTERS
   const setFilters = (next: BoardFilters) => setFilterState({ projectId, filters: next })
   const set = (patch: Partial<BoardFilters>) => setFilters({ ...filters, ...patch })
-  const [display, setDisplay] = useStoredPref(viewStorageKey('tableau.affichage', projectId ?? null), readDisplay)
+  const [stored, setStored] = useStoredPref(viewStorageKey('tableau.affichage', projectId ?? null), readDisplay)
+  /* « Tout voir » de Terminé est une lecture du moment, pas un réglage : il déplie la
+     colonne sans toucher à l'affichage retenu. Un réglage choisi ensuite l'emporte. */
+  const [allDone, setAllDone] = useState(false)
+  const display = allDone ? { ...stored, done: 'all' as const } : stored
+  const setDisplay = (next: typeof stored) => {
+    setAllDone(false)
+    setStored(next)
+  }
 
   const visible = useMemo(() => cards.filter((entry) => matches(entry, query) && passes(entry, filters)), [cards, query, filters])
 
@@ -93,7 +101,13 @@ export function BoardPage() {
   }
   const showEditor = (number: number | null) =>
     writeParams((next) => (number === null ? next.delete(EDITOR_PARAM) : next.set(EDITOR_PARAM, String(number))))
-  const openSheet = (number: number) => setParams((current) => withSheet(current, number))
+  /* Un seul tiroir à la fois : la fiche remplace l'éditeur ouvert. */
+  const openSheet = (number: number) =>
+    setParams((current) => {
+      const next = withSheet(current, number)
+      next.delete(EDITOR_PARAM)
+      return next
+    })
   /* « + Carte » écrit `?nouvelle=1`, comme un lien d'ailleurs : un seul chemin vers le dialogue. */
   const creating = params.get(NEW_PARAM) === '1'
   const setCreating = (open: boolean) => writeParams((next) => (open ? next.set(NEW_PARAM, '1') : next.delete(NEW_PARAM)))
@@ -111,9 +125,11 @@ export function BoardPage() {
 
   const openMilestones = milestones.filter((milestone) => milestone.done < milestone.leaves.length)
   const loose = cards.filter((entry) => entry.milestone === null && isOpen(entry.card)).length
-  const agents = agentKindSchema.options.filter((agent) => cards.some((entry) => entry.card.conversations.some((session) => session.agent === agent)))
+  // Les agents présents : ceux d'une session non archivée, la seule que le filtre retient.
+  const agents = agentKindSchema.options.filter((agent) =>
+    cards.some((entry) => entry.card.conversations.some((session) => session.archivedAt === null && session.agent === agent)),
+  )
   const toggleIn = <T,>(list: T[], value: T) => (list.includes(value) ? list.filter((item) => item !== value) : [...list, value])
-  const agentName = (agent: AgentKind) => AGENT_LABELS[agent]
 
   /* Les puces des filtres posés, sur la même ligne (B-1.3). */
   const chips = [
@@ -145,7 +161,7 @@ export function BoardPage() {
     ) : null,
     ...filters.agents.map((agent) => (
       <FilterChip key={`a-${agent}`} onClear={() => set({ agents: filters.agents.filter((item) => item !== agent) })}>
-        {agentName(agent)}
+        {AGENT_LABELS[agent]}
       </FilterChip>
     )),
     filters.column ? (
@@ -193,7 +209,7 @@ export function BoardPage() {
           {agents.map((agent) => (
             <MenuCheck key={agent} checked={filters.agents.includes(agent)} onChange={() => set({ agents: toggleIn(filters.agents, agent) })}>
               <span className="inline-flex items-center gap-1.5">
-                <AgentIcon agent={agent} size={13} decorative /> {agentName(agent)}
+                <AgentIcon agent={agent} size={14} decorative /> {AGENT_LABELS[agent]}
               </span>
             </MenuCheck>
           ))}
@@ -277,7 +293,7 @@ export function BoardPage() {
           onOpen={openSheet}
           onMove={(entry, column: CardColumn) => move.mutate({ id: entry.card.id, projectId, column })}
           // En attendant la Liste (#181), « Tout voir » déplie Fait sur place.
-          onSeeAllDone={() => setDisplay({ ...display, done: 'all' })}
+          onSeeAllDone={() => setAllDone(true)}
         />
       </div>
 
