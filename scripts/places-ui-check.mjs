@@ -725,39 +725,10 @@ try {
   await page.goto(`${base}/projects`)
   await portfolio.waitFor()
 
-  /*
-    Le board global : les cartes de **tous** les projets dans quatre colonnes, chacune
-    disant d'où elle sort. C'est ce qui le distingue d'un board de projet, et ce qu'une
-    relecture ne verrait pas — rien dans le code ne garantit que les cartes de deux
-    projets atterrissent bien dans la même colonne.
-  */
+  // Le Tableau du portefeuille : ses couloirs, filtres et clics sont dans `board-ui-check`.
   await portfolio.getByRole('link', { name: /^Tableau/ }).click()
   await page.waitForURL('**/projects/board')
-  const todo = page.getByRole('region', { name: 'À faire', exact: true })
-  await todo.waitFor()
-  const mixed = await page.evaluate(() => {
-    const names = [...document.querySelectorAll('[data-card-open]')]
-      .map((tile) => tile.textContent ?? '')
-    return names.length
-  })
-  assert.ok(mixed > 0, 'Le board global porte des cartes')
-  assert.equal(
-    await page.getByRole('region', { name: 'Abandonné', exact: true }).count(),
-    0,
-    "L'abandon est un classement, pas une étape du board global",
-  )
-  // Le filtre par projet vit dans l'adresse : un board filtré se partage par lien.
-  await page.goto(`${base}/projects/board?projet=${nimbus.id}`)
-  await todo.waitFor()
-  await page.getByRole('button', { name: /^Retirer le filtre/ }).waitFor()
-  const others = projects.filter((entry) => entry.id !== nimbus.id).map((entry) => entry.name)
-  for (const name of others) {
-    assert.equal(
-      await page.locator('[data-card-open]').filter({ hasText: name }).count(),
-      0,
-      `Le filtre retire les cartes de « ${name} »`,
-    )
-  }
+  await page.locator('[data-portfolio-board] [data-card-tile]').first().waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-board.png') })
 
   /*
@@ -791,24 +762,6 @@ try {
   await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-jalons-gantt.png') })
   await bar.click()
   await page.waitForURL(`**/p/${nimbus.id}/timeline/${milestone.number}`)
-
-  // Le filtre *Jalon* du board global : il liste des **cartes**, puisqu'un jalon en est
-  // une, et il se partage par lien comme les deux autres. L'ancien nom du paramètre,
-  // d'avant l'arbre de cartes (#83), mène encore au filtre.
-  await page.goto(`${base}/projects/board?jalon=${milestone.id}`)
-  await page.waitForURL(`**/projects/board?parente=${milestone.id}`)
-  await page.getByRole('button', { name: /^Retirer le filtre/ }).waitFor()
-  const attached = cards.filter((entry) => entry.parent?.id === milestone.id)
-  assert.ok(attached.length > 0, 'Le jeu d’essai rattache des cartes à son jalon')
-  /* Attendre une **tuile** et non la colonne : la colonne est rendue avant que les
-     cartes du projet arrivent, et compter à ce moment-là rend zéro quel que soit le
-     filtre. C'est la course qui a fait tomber cette assertion la première fois. */
-  await page.locator(`[data-card-open="${attached[0].id}"]`).waitFor()
-  assert.equal(
-    await page.locator('[data-card-open]').count(),
-    attached.length,
-    'Le filtre Jalon ne laisse que les cartes rattachées',
-  )
 
   /*
     Le Journal : sept sources mêlées, et c'est leur **alignement** qu'une relecture ne

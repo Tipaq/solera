@@ -89,8 +89,8 @@ const MilestonePage = lazy(() =>
  * d'arrivée : l'accueil, le portefeuille, la vue d'ensemble d'un projet, la conversation.
  */
 const NewProjectPage = lazy(() => import('./routes/NewProjectPage').then((m) => ({ default: m.NewProjectPage })))
-const PortfolioBoardPage = lazy(() =>
-  import('./routes/PortfolioBoardPage').then((m) => ({ default: m.PortfolioBoardPage })),
+const PortfolioTableauPage = lazy(() =>
+  import('./routes/PortfolioTableauPage').then((m) => ({ default: m.PortfolioTableauPage })),
 )
 const PortfolioMilestonesPage = lazy(() =>
   import('./routes/PortfolioMilestonesPage').then((m) => ({ default: m.PortfolioMilestonesPage })),
@@ -259,7 +259,7 @@ export function App() {
           <Route path="/projects/new" element={<Deferred><NewProjectPage /></Deferred>} />
           <Route path="/projects" element={<PortfolioLayout />}>
             <Route index element={<PortfolioOverviewPage />} />
-            <Route path="board" element={<Deferred><PortfolioBoardPage /></Deferred>} />
+            <Route path="board" element={<Deferred><PortfolioTableauPage /></Deferred>} />
             <Route path="timeline" element={<Deferred><PortfolioMilestonesPage /></Deferred>} />
             <Route path="travail" element={<Deferred><PortfolioTravailPage /></Deferred>} />
             {/* Les anciennes vues mènent à Travail, qui les a reprises : l'Activité et le
