@@ -31,6 +31,8 @@ export type InboxItem =
       title: string
       /** Le nom du projet, quand la liste en mêle plusieurs. */
       project: string | null
+      /** Le projet de la session, null pour un fil libre : le portefeuille filtre par lui. */
+      projectId: string | null
       agent: AgentKind
       /** `broken` : la session s'est arrêtée (erreur, interruption) et attend qu'on la relance. */
       tone: 'awaiting' | 'broken'
@@ -83,6 +85,7 @@ export type InboxItem =
       tone: 'review-card' | 'review-pr'
       title: string
       project: string | null
+      projectId: string
       /** Le numéro de la carte ou de la PR. */
       number: number
       to: string
@@ -148,6 +151,7 @@ export function buildInbox(input: InboxInput): InboxItem[] {
       conversationId: conversation.id,
       title: conversation.title,
       project: projectName(projectId),
+      projectId,
       agent: conversation.agent,
       tone: state === 'broken' ? 'broken' : 'awaiting',
       // L'âge de la demande, comme dans l'Activité ; à défaut, la dernière écriture du fil.
@@ -176,6 +180,7 @@ export function buildInbox(input: InboxInput): InboxItem[] {
       tone: 'review-card',
       title: card.title,
       project: projectName(card.projectId),
+      projectId: card.projectId,
       number: card.number,
       to: `/p/${card.projectId}/board?carte=${card.number}`,
       external: false,
@@ -190,6 +195,7 @@ export function buildInbox(input: InboxInput): InboxItem[] {
       tone: 'review-pr',
       title: pullRequest.title,
       project: projectName(projectId),
+      projectId,
       number: pullRequest.number,
       to: pullRequest.url,
       external: true,

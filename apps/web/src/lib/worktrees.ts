@@ -171,6 +171,8 @@ export function useCleanWorktree(projectId: string) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: worktreesKey(projectId) })
       void queryClient.invalidateQueries({ queryKey: worktreeStatusKey(projectId) })
+      // Celle du portefeuille aussi : Travail y nettoie projet par projet.
+      void queryClient.invalidateQueries({ queryKey: ['worktree-status'], exact: true })
       void queryClient.invalidateQueries({ queryKey: ['conversations'] })
       void queryClient.invalidateQueries({ queryKey: ['branches'] })
       void queryClient.invalidateQueries({ queryKey: ['services'] })

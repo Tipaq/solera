@@ -116,6 +116,9 @@ test('boîte : hors d’un projet, chaque ligne dit le sien ; un fil libre s’o
   assert.equal(a.threadPath, '/p/p2/c/a')
   assert.equal(free.project, null)
   assert.equal(free.threadPath, '/c/free')
+  // Le portefeuille filtre par projet : chaque ligne porte le sien, nommé ou non.
+  assert.equal(a.projectId, 'p2')
+  assert.equal(free.projectId, null)
 })
 
 test('boîte : les cartes feuilles à relire et les PR prêtes, en lignes légères', () => {
@@ -140,12 +143,12 @@ test('boîte : les cartes feuilles à relire et les PR prêtes, en lignes légè
   const [pr, review] = items
   assert.ok(pr?.kind === 'light' && review?.kind === 'light')
   assert.deepEqual(
-    { tone: review.tone, number: review.number, to: review.to, external: review.external, since: review.since },
-    { tone: 'review-card', number: 12, to: '/p/p1/board?carte=12', external: false, since: 50 },
+    { tone: review.tone, number: review.number, to: review.to, external: review.external, since: review.since, projectId: review.projectId },
+    { tone: 'review-card', number: 12, to: '/p/p1/board?carte=12', external: false, since: 50, projectId: 'p1' },
   )
   assert.deepEqual(
-    { tone: pr.tone, number: pr.number, title: pr.title, to: pr.to, external: pr.external },
-    { tone: 'review-pr', number: 17, title: 'PR 17', to: 'https://github.com/o/r/pull/17', external: true },
+    { tone: pr.tone, number: pr.number, title: pr.title, to: pr.to, external: pr.external, projectId: pr.projectId },
+    { tone: 'review-pr', number: 17, title: 'PR 17', to: 'https://github.com/o/r/pull/17', external: true, projectId: 'p1' },
   )
 })
 

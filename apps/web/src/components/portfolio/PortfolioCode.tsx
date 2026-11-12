@@ -4,7 +4,7 @@ import { CODE_SHOWN, type PortfolioTree } from '../../lib/portfolio-overview'
 import { AgentIcon } from '../AgentIcon'
 import { PrTag } from '../code/PrTag'
 import { VerdictDot, verdictReason } from '../code/VerdictDot'
-import { OverviewSection } from '../overview/OverviewSection'
+import { MoreLink, OverviewSection } from '../overview/OverviewSection'
 import { ProjectPip } from '../places/ProjectPip'
 
 /**
@@ -12,6 +12,7 @@ import { ProjectPip } from '../places/ProjectPip'
  * projets (`activeTrees`), les douze premiers, le titre comptant tous les autres. Une
  * ligne par arbre — son verdict, son projet, sa branche, pourquoi elle est là et sa
  * carte, les agents qui y vivent, sa PR —, qui ouvre l'arbre dans Travail du projet.
+ * « Tout le travail » mène à Travail du portefeuille.
  *
  * Une liste et non le graphe de l'Aperçu d'un projet : le graphe dessine les branches
  * d'**un** dépôt autour de sa base, et douze dépôts mêlés n'en ont pas de commune.
@@ -19,7 +20,11 @@ import { ProjectPip } from '../places/ProjectPip'
 export function PortfolioCode({ trees }: { trees: PortfolioTree[] }) {
   const t = useTranslate()
   return (
-    <OverviewSection title={t('portfolio.overview.code')} count={trees.length}>
+    <OverviewSection
+      title={t('portfolio.overview.code')}
+      count={trees.length}
+      more={<MoreLink to="/projects/travail">{t('portfolio.overview.allWork')}</MoreLink>}
+    >
       {trees.length === 0 ? (
         <p className="text-sm text-ink-faint">{t('portfolio.overview.nothingRunning')}</p>
       ) : (
