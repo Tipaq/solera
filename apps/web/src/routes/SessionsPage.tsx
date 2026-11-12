@@ -24,6 +24,7 @@ import {
   byProject,
   byState,
   filterSessions,
+  inScope,
   readSessionQuery,
   sortSessions,
   writeSessionQuery,
@@ -110,12 +111,12 @@ export function SessionsPage() {
   const { filters } = query
   const [search, setSearch] = useSearchDraft(query.search, (next) => update({ search: next }))
 
-  const inScope = useMemo(() => rows.filter((row) => row.archived === (query.scope === 'archivees')), [rows, query.scope])
-  const agents = useMemo(() => [...new Set(inScope.map((row) => row.agent))], [inScope])
-  const hasLoose = inScope.some((row) => row.project === null)
+  const scoped = useMemo(() => rows.filter((row) => inScope(row, query.scope)), [rows, query.scope])
+  const agents = useMemo(() => [...new Set(scoped.map((row) => row.agent))], [scoped])
+  const hasLoose = scoped.some((row) => row.project === null)
   const shown = useMemo(() => sortSessions(filterSessions(rows, query, Date.now()), query.sort), [rows, query])
-  const counted = (keep: (row: SessionRow) => boolean) => inScope.filter(keep).length
-  const scopeCount = (scope: SessionScope) => rows.filter((row) => row.archived === (scope === 'archivees')).length
+  const counted = (keep: (row: SessionRow) => boolean) => scoped.filter(keep).length
+  const scopeCount = (scope: SessionScope) => rows.filter((row) => inScope(row, scope)).length
   const filtered = activeFilterCount(filters)
 
   const chips = [

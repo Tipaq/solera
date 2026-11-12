@@ -33,6 +33,10 @@ export function useSessionRows(): { rows: SessionRow[]; projects: ProjectDto[]; 
       projects: new Map((projectList ?? []).map((project) => [project.id, project])),
       branches,
     })
-    return { rows, projects: (projectList ?? []).filter((project) => !project.archivedAt), pending: isPending }
+    // Les projets visibles, et ceux qu'on a archivés mais dont il reste des sessions :
+    // sans eux, ces sessions ne se filtreraient pas, et leur puce dirait un identifiant.
+    const used = new Set(rows.map((row) => row.project?.id))
+    const projects = (projectList ?? []).filter((project) => !project.archivedAt || used.has(project.id))
+    return { rows, projects, pending: isPending }
   }, [all, live, statuses, projectList, isPending])
 }

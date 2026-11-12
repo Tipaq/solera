@@ -1,4 +1,4 @@
-import type { AgentKind, CardColumn, ConversationDto, ConversationStatus, ProjectDto } from '@solera/protocol'
+import { agentKindSchema, type AgentKind, type CardColumn, type ConversationDto, type ConversationStatus, type ProjectDto } from '@solera/protocol'
 
 /*
  * La page `/sessions` (#232) : toutes les conversations, de tous les projets et sans
@@ -108,7 +108,6 @@ export interface SessionQuery {
 export const NO_PROJECT = 'none'
 
 const SORTS: readonly SessionSort[] = ['recent', 'attente', 'nom']
-const AGENTS: readonly AgentKind[] = ['claude', 'codex', 'opencode', 'grok']
 
 /** Les mots de l'adresse, en français comme ses clés : `?etat=attend,erreur`. */
 const STATE_SLUG: Record<SessionState, string> = { awaiting: 'attend', error: 'erreur', review: 'relire', running: 'travaille', done: 'terminee' }
@@ -127,7 +126,7 @@ function slugged<T extends string>(slugs: Record<T, string>, slug: string | null
 /** Ce que l'adresse demande ; une valeur inconnue est ignorée plutôt que de tout vider. */
 export function readSessionQuery(params: URLSearchParams): SessionQuery {
   const states = list(params, KEYS.states).flatMap((slug) => slugged(STATE_SLUG, slug) ?? [])
-  const agents = list(params, KEYS.agents).filter((value): value is AgentKind => (AGENTS as readonly string[]).includes(value))
+  const agents = list(params, KEYS.agents).filter((value): value is AgentKind => (agentKindSchema.options as readonly string[]).includes(value))
   const sort = params.get(KEYS.sort)
   return {
     search: params.get(KEYS.search) ?? '',
@@ -187,22 +186,33 @@ function periodStart(period: Exclude<SessionPeriod, 'all'>, now: number): number
   return now - (period === 'week' ? 7 : 30) * DAY
 }
 
+/** Vrai si la ligne est de cette portée : les actives, ou les archivées. */
+export function inScope(row: SessionRow, scope: SessionScope): boolean {
+  return row.archived === (scope === 'archivees')
+}
+
+/**
+ * Un `#N` de la recherche vise un numéro de carte, par son début comme au Tableau :
+ * `#4` trouve #4 et #42 pendant qu'on tape, et ne s'égare pas dans les titres.
+ */
+function matchesSearch(row: SessionRow, needle: string): boolean {
+  if (/^#\d+$/.test(needle)) return row.cardNumber !== null && String(row.cardNumber).startsWith(needle.slice(1))
+  return [row.title, row.project?.name ?? '', row.branch ?? ''].some((text) => text.toLocaleLowerCase().includes(needle))
+}
+
 /** La portée, les filtres et la recherche (titre, projet, branche, `#carte`). */
 export function filterSessions(rows: readonly SessionRow[], query: SessionQuery, now: number): SessionRow[] {
   const { filters } = query
   const needle = query.search.trim().toLocaleLowerCase()
   const since = filters.period === 'all' ? null : periodStart(filters.period, now)
   return rows.filter((row) => {
-    if (row.archived !== (query.scope === 'archivees')) return false
+    if (!inScope(row, query.scope)) return false
     if (filters.projects.size > 0 && !filters.projects.has(row.project?.id ?? NO_PROJECT)) return false
     if (filters.states.size > 0 && !filters.states.has(row.state)) return false
     if (filters.agents.size > 0 && !filters.agents.has(row.agent)) return false
     if (since !== null && row.at < since) return false
     if (filters.pinned && !row.pinned) return false
-    if (!needle) return true
-    return [row.title, row.project?.name ?? '', row.branch ?? '', row.cardNumber === null ? '' : `#${row.cardNumber}`].some((text) =>
-      text.toLocaleLowerCase().includes(needle),
-    )
+    return !needle || matchesSearch(row, needle)
   })
 }
 

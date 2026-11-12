@@ -199,6 +199,7 @@ test('la recherche lit le titre, le projet, la branche et le numéro de carte, s
   assert.deepEqual(search('atlas'), ['icons'])
   assert.deepEqual(search('prefetch'), ['radar'])
   assert.deepEqual(search('#4'), ['radar'])
+  assert.deepEqual(search('#9'), [], 'un `#N` ne vise que les numéros de carte')
   assert.deepEqual(search('  '), ['radar', 'icons', 'loose', 'waiting'])
 })
 

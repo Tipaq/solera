@@ -45,7 +45,7 @@ export function SessionLine({ row, compact = false, hideProject = false }: { row
       <Link
         to={row.path}
         data-session={row.id}
-        className="flex min-h-11 w-full min-w-0 items-center gap-3 px-1 text-left text-sm transition-colors hover:bg-surface-high/50 md:min-h-10"
+        className="flex min-h-11 w-full min-w-0 items-center gap-3 px-1 text-left text-sm transition-colors hover:bg-surface-high/50 md:min-h-10 pointer-coarse:min-h-11"
       >
         <span className="relative shrink-0 text-ink-soft" title={word}>
           <AgentIcon agent={row.agent} size={15} />

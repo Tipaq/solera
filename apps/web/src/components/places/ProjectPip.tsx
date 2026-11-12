@@ -41,7 +41,11 @@ export function ProjectGroupHeader({ project, count, aside }: { project: PipProj
   return (
     <div className="flex min-w-0 items-center gap-2 py-1">
       <ProjectAvatar project={project} className="size-4 shrink-0" />
-      <Link to={`/p/${project.id}`} className="truncate text-sm font-medium text-ink underline-offset-2 hover:underline">
+      {/* Un lien de texte : sa cible de 44 px au doigt vient d'un calque invisible. */}
+      <Link
+        to={`/p/${project.id}`}
+        className="relative truncate text-sm font-medium text-ink underline-offset-2 hover:underline pointer-coarse:after:absolute pointer-coarse:after:-inset-3"
+      >
         {project.name}
       </Link>
       {count !== undefined ? <span className="text-xs tabular-nums text-ink-faint">{count}</span> : null}
