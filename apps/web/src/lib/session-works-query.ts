@@ -1,6 +1,6 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
-import { projectBackgroundKey, stopBackgroundTask, useConversations, useProjectBackground } from './conversations'
+import { projectBackgroundKey, projectBackgroundQuery, stopBackgroundTask, useAllConversations, useConversations, useProjectBackground } from './conversations'
 import { SERVICES_KEY, stopService, useServices } from './services'
 import { mergeWorks, type SessionWork } from './session-works'
 
@@ -28,6 +28,37 @@ export function useSessionWorks(projectId: string | undefined, { conversationId 
           })
         : [],
     [projectId, services.data, background.data, conversations, conversationId],
+  )
+}
+
+/**
+ * Les mêmes, pour plusieurs projets à la fois (le portefeuille) : rangés par projet. Les
+ * processus viennent de la liste de l'instance, que la page Services relit déjà ; les
+ * travaux de fond, d'une requête par projet, la même que `useSessionWorks` (cache commun).
+ */
+export function useAllSessionWorks(projectIds: readonly string[]): Map<string, SessionWork[]> {
+  const services = useServices()
+  const { data: conversations } = useAllConversations()
+  const backgrounds = useQueries({
+    queries: projectIds.map(projectBackgroundQuery),
+  })
+  // Le tableau que rend `useQueries` change à chaque rendu : on mémorise sur les réponses.
+  const stamps = backgrounds.map((query) => query.dataUpdatedAt).join(',')
+  return useMemo(
+    () =>
+      new Map(
+        projectIds.map((projectId, index) => [
+          projectId,
+          mergeWorks({
+            projectId,
+            services: services.data?.supported ? services.data.services : null,
+            background: backgrounds[index]?.data ?? [],
+            conversations: conversations ?? [],
+          }),
+        ]),
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [projectIds.join(','), stamps, services.data, conversations],
   )
 }
 

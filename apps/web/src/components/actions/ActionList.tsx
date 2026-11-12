@@ -64,12 +64,9 @@ export function ActionList({
   actions,
   conversationId,
   handlers,
-  compact = false,
 }: {
   projectId: string
   actions: ProjectActionDto[]
-  /** Dans le lanceur, plus étroit : marges resserrées et geste réduit à son icône. */
-  compact?: boolean
   /** Depuis une conversation, l'action tourne dans son worktree. */
   conversationId?: string
   handlers: ActionHandlers
@@ -100,7 +97,7 @@ export function ActionList({
         </div>
       ) : null}
 
-      <ul className={cx('flex flex-col', compact ? '' : 'gap-2 p-3')}>
+      <ul className="flex flex-col gap-2 p-3">
         {actions.map((listed) => {
           // Une instance par worktree : le geste vise celle de cet arbre-ci.
           const action = actionInTree(listed, served.trees, here)
@@ -110,7 +107,6 @@ export function ActionList({
               projectId={projectId}
               action={action}
               busy={run.isPending && run.variables?.action.id === action.id}
-              compact={compact}
               served={served.byAutomation.get(actionAutomationId(action.id)) ?? null}
               instances={servedInstances(fromAction(listed), served.trees)}
               targets={served.trees}
@@ -231,7 +227,6 @@ function ActionRow({
   projectId,
   action,
   busy,
-  compact,
   served,
   instances,
   targets,
@@ -245,7 +240,6 @@ function ActionRow({
   projectId: string
   action: ProjectActionDto
   busy: boolean
-  compact: boolean
   /** Ce qu'il sert, s'il tourne. */
   served: ServedRow | null
   /** Une instance par worktree : toutes les siennes, à la place de ce qu'il sert. */
@@ -267,7 +261,7 @@ function ActionRow({
   const switchable = served?.switchable ? switchTargets(targets, served) : []
 
   const body = (
-        <div className={cx('flex items-start gap-3', compact ? 'px-3 py-2.5' : 'px-5 py-4')}>
+        <div className="flex items-start gap-3 px-5 py-4">
           <span
             className={cx(
               'mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md',
@@ -290,12 +284,10 @@ function ActionRow({
               {isService && view.live ? <Badge tone="positive">{t('actions.badge.running')}</Badge> : null}
               {view.failed ? <Badge tone="critical">{t('actions.badge.failed')}</Badge> : null}
             </div>
-            {compact ? null : (
-              <p title={action.command} className="truncate font-mono text-xs text-ink-faint">
-                {action.subdir ? `${action.subdir}/ · ` : ''}
-                {action.command}
-              </p>
-            )}
+            <p title={action.command} className="truncate font-mono text-xs text-ink-faint">
+              {action.subdir ? `${action.subdir}/ · ` : ''}
+              {action.command}
+            </p>
             {view.href ? (
               <a
                 href={view.href}
@@ -324,7 +316,7 @@ function ActionRow({
               icon={busy ? <Loader size={14} className="animate-spin" /> : primary.icon}
               onClick={onPrimary}
             >
-              <span className={cx(compact && 'sr-only')}>{t(primary.label)}</span>
+              {t(primary.label)}
             </Button>
             <Menu trigger={<IconButton label={t('actions.more')} size="sm"><MoreHorizontal size={16} /></IconButton>}>
               {isService && view.live ? (
@@ -360,7 +352,5 @@ function ActionRow({
         </div>
   )
 
-  // Dans le lanceur, une carte par action ferait une pile de boîtes dans une boîte :
-  // même anatomie, séparée par des filets.
-  return compact ? <li className="border-b border-line last:border-b-0">{body}</li> : <li><Card>{body}</Card></li>
+  return <li><Card>{body}</Card></li>
 }

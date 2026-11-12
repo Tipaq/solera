@@ -128,12 +128,16 @@ export function useConversations(projectId: string | undefined) {
  * nombre d'une session bouge.
  */
 export function useProjectBackground(projectId: string | undefined) {
-  return useQuery({
-    queryKey: projectBackgroundKey(projectId ?? ''),
+  return useQuery({ ...projectBackgroundQuery(projectId ?? ''), enabled: Boolean(projectId) })
+}
+
+/** La requête de `useProjectBackground`, pour qui en lit plusieurs (`useQueries`) : même clé, même cache. */
+export function projectBackgroundQuery(projectId: string) {
+  return {
+    queryKey: projectBackgroundKey(projectId),
     queryFn: () => api.get<ProjectBackgroundDto[]>(`/api/projects/${projectId}/background`),
-    enabled: Boolean(projectId),
     staleTime: 15_000,
-  })
+  }
 }
 
 /** Sans projet, la clé de tous : un fil dont on ignore le projet les fait tous relire. */

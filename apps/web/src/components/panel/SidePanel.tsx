@@ -27,7 +27,8 @@ import { PanelFocus } from '../PanelFocus'
 import type { SubAgent } from '../../lib/subagents'
 import { useRefreshTree } from '../../lib/tree'
 import { useProjectEnvironments, useProjects } from '../../lib/projects'
-import { useActions } from '../../lib/actions'
+import { actionsTabBadge } from '../../lib/actions-tab'
+import { useActionsStatus } from '../../lib/automations-query'
 import { useCards } from '../../lib/cards'
 import { toReviewCount } from '../../lib/project-pane'
 import { IconButton, cx } from '@solera/ui'
@@ -168,11 +169,6 @@ export const SidePanel = memo(function SidePanel({
   // board qui réclame quelqu'un, et le reste se lit en ouvrant l'onglet.
   const { data: cards } = useCards(conversationId && projectId ? projectId : undefined)
   const reviewCount = toReviewCount(cards)
-  // Le badge d'*Actions* ne compte que celles à relire : elles seules attendent quelqu'un.
-  const { data: actions } = useActions()
-  const proposedActions = (actions ?? []).filter(
-    (action) => action.projectId === projectId && action.status === 'proposed',
-  ).length
   const selectedSubAgent = useSelectedSubAgent()
   /**
    * Le premier rendu se fait volontairement hors écran, l'entrée n'étant lancée qu'au
@@ -371,7 +367,7 @@ export const SidePanel = memo(function SidePanel({
         hasWeb={hasWeb}
         agentBadge={subAgents.filter((entry) => entry.status === 'running').length + background.length}
         projectBadge={reviewCount}
-        actionsBadge={proposedActions}
+        projectId={projectId}
       />
 
       {/* Monté même quand un autre onglet est devant : revenir aux fichiers ne doit
@@ -533,7 +529,7 @@ export const SidePanel = memo(function SidePanel({
  * *Agent* et *Projet*. Sur un fil libre il ne reste qu'*Agent* — sans board, *Projet*
  * n'a rien à montrer — et le trait n'a donc rien à séparer.
  */
-function ViewBar({ band, closable, tab, hasWorkspace, showRootViews, hasConversation, hasWeb, agentBadge, projectBadge, actionsBadge }: {
+function ViewBar({ band, closable, tab, hasWorkspace, showRootViews, hasConversation, hasWeb, agentBadge, projectBadge, projectId }: {
   /** Vrai quand cette rangée *est* le segment de bande du panneau, à sa hauteur. */
   band: boolean
   /** Le panneau recouvre le bouton du fil : il porte alors sa propre fermeture. */
@@ -549,8 +545,7 @@ function ViewBar({ band, closable, tab, hasWorkspace, showRootViews, hasConversa
   agentBadge: number
   /** Cartes du projet en attente de relecture. */
   projectBadge: number
-  /** Actions du projet proposées par un agent, en attente de relecture. */
-  actionsBadge: number
+  projectId: string | null
 }) {
   const t = useTranslate()
   const views = (
@@ -567,9 +562,7 @@ function ViewBar({ band, closable, tab, hasWorkspace, showRootViews, hasConversa
             <>
               <Tab icon={<SquareTerminal size={15} />} label={t('panel.tab.terminals')} keepLabel={!band}
                 active={tab === 'terminals'} onSelect={() => setPanelTab('terminals')} />
-              <Tab icon={<Zap size={15} />} label={t('panel.tab.actions')} keepLabel={!band}
-                badge={actionsBadge} badgeLabel={(label, count) => t('panel.tab.actions.badge', { label, count })}
-                badgeTone="caution" active={tab === 'actions'} onSelect={() => setPanelTab('actions')} />
+              {projectId ? <ActionsTab projectId={projectId} band={band} active={tab === 'actions'} /> : null}
             </>
           ) : null}
         </>
@@ -620,6 +613,20 @@ function ViewBar({ band, closable, tab, hasWorkspace, showRootViews, hasConversa
   )
 }
 
+/**
+ * L'onglet *Actions* : son compte est celui de l'onglet du projet, ce qui attend d'abord,
+ * sinon ce qui tourne. À part pour ne lire l'état des actions que là où il y a un projet.
+ */
+function ActionsTab({ projectId, band, active }: { projectId: string; band: boolean; active: boolean }) {
+  const t = useTranslate()
+  const badge = actionsTabBadge(useActionsStatus(projectId))
+  return (
+    <Tab icon={<Zap size={15} />} label={t('panel.tab.actions')} keepLabel={!band}
+      badge={badge?.count} badgeTone={badge?.tone} active={active} onSelect={() => setPanelTab('actions')}
+      badgeLabel={badge ? (label, count) => t('panel.tab.actions.badge', { label, status: t(badge.countTitle, { count }) }) : undefined} />
+  )
+}
+
 function Tab({
   icon,
   label,
@@ -637,8 +644,9 @@ function Tab({
   badge?: number
   /** Ce que le décompte compte, dit au lecteur d'écran. Par défaut, ce qui tourne. */
   badgeLabel?: (label: string, count: number) => string
-  /** En `caution`, le décompte dit que quelqu'un attend, et non que quelque chose tourne. */
-  badgeTone?: 'accent' | 'caution'
+  /** En `caution`, le décompte dit que quelqu'un attend ; en `running`, comme dans la
+      rangée d'un lieu, que quelque chose tourne tout seul. */
+  badgeTone?: 'accent' | 'caution' | 'running'
   /** Garde son nom à l'étroit quand il est actif : le cas du panneau qui recouvre. */
   keepLabel?: boolean
   onSelect: () => void
@@ -667,7 +675,11 @@ function Tab({
       {badge > 0 ? (
         <span className={cx(
           'flex size-4 shrink-0 items-center justify-center rounded-full text-micro font-semibold',
-          badgeTone === 'caution' ? 'bg-caution/12 text-caution' : 'bg-accent text-accent-ink',
+          badgeTone === 'caution'
+            ? 'bg-caution/12 text-caution'
+            : badgeTone === 'running'
+              ? 'bg-positive/12 text-positive'
+              : 'bg-accent text-accent-ink',
         )}>
           {badge}
         </span>

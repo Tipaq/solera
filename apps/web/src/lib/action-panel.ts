@@ -50,6 +50,11 @@ const NEW_PARAMS: Record<string, NewActionKind> = {
   planifier: 'schedule',
 }
 
+/** La valeur de `?nouvelle=` qui ouvre cette création : un lien venu d'ailleurs l'écrit. */
+export function newActionParam(kind: NewActionKind): string {
+  return Object.entries(NEW_PARAMS).find(([, entry]) => entry === kind)![0]
+}
+
 /** `?nouvelle=` : l'éditeur pré-réglé, ou le choix d'une action à planifier ; null sinon. */
 export function actionPanelOf(value: string | null): ActionPanel | null {
   const kind = value === null ? undefined : NEW_PARAMS[value]
