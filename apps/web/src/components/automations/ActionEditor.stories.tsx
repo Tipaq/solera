@@ -1,22 +1,14 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import type { ActionSuggestion } from '@solera/protocol'
 import { cx } from '@solera/ui'
 import type { EditorSeed } from '../../lib/action-editor'
 import { ACTIONS_KEY } from '../../lib/actions'
 import { ActionEditor } from './ActionEditor'
 import { ActionChromeProvider } from './ActionSheet'
-import { AGENT, PROJECT_ID, SERVICE_ON, SERVICE_SCHEDULED, SeededWorktrees } from './automation-fixtures'
+import { AGENT, PROJECT_ID, SERVICE_ON, SERVICE_SCHEDULED, SUGGESTIONS, SeededWorktrees } from './automation-fixtures'
 
 const ignore = () => {}
-
-const SUGGESTIONS: ActionSuggestion[] = [
-  { source: 'package.json', name: 'dev', kind: 'service', reason: 'service-name', command: 'pnpm dev', subdir: '', url: 'http://localhost:{port}' },
-  { source: 'package.json', name: 'test', kind: 'task', reason: 'task', command: 'pnpm test', subdir: '', url: null },
-  { source: 'apps/web/package.json', name: 'storybook', kind: 'service', reason: 'service-name', command: 'pnpm storybook', subdir: 'apps/web', url: 'http://localhost:{port}' },
-  { source: 'Makefile', name: 'backup', kind: 'task', reason: 'task', command: 'make backup', subdir: '', url: null },
-]
 
 /** Le dépôt et ses branches dans le cache : l'éditeur les lit sans requête. */
 function Seeded({ children }: { children: ReactNode }) {

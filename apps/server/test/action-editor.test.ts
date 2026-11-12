@@ -105,6 +105,12 @@ test('editorStateOf : prefill remplit libellé, commande, lien et description', 
   assert.equal(state.description, 'Vite')
 })
 
+test('editorStateOf : prefill d’une suggestion du dépôt remplit aussi son dossier', () => {
+  const state = editorStateOf({ preset: { what: 'command', kind: 'task' }, prefill: { label: 'Tests', command: 'pnpm test', subdir: 'apps/web' } })
+  assert.equal(state.subdir, 'apps/web')
+  assert.equal(editorStateOf({ prefill: { command: 'pnpm test' } }).subdir, '')
+})
+
 test('editorStateOf : from relit une commande planifiée, son placement et sa branche', () => {
   const item = fromAction(
     action({

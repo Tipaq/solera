@@ -41,14 +41,16 @@ export interface ActionHandlers {
  * service et sa bascule d'un arbre à l'autre, son journal, dupliquer, supprimer.
  *
  * Hors conversation, un lancement part à la racine du projet, ou dans le worktree choisi.
- * Une commande lancée ouvre son passage dans le tiroir (`onPanel`, mode `run`). Un service
- * qui tourne déjà ailleurs ouvre le dialogue de bascule au lieu de se taire (SRV-4).
+ * Depuis le panneau d'une conversation (`conversationId`), il part dans son worktree, et
+ * un service s'y démarre et s'y arrête selon son placement (PACT-7). Une commande lancée
+ * ouvre son passage dans le tiroir (`onPanel`, mode `run`). Un service qui tourne déjà
+ * ailleurs ouvre le dialogue de bascule au lieu de se taire (SRV-4).
  *
  * Les gestes sont rendus en `handlers`, prêts pour `ActionTile` et `ActionRow`. L'hôte rend
  * `dialogs` (la bascule, la confirmation de suppression) hors des menus qui les ont
  * ouverts, et `error` en tête de sa vue.
  */
-export function useActionGestures(projectId: string, onPanel: (panel: ActionPanel) => void) {
+export function useActionGestures(projectId: string, onPanel: (panel: ActionPanel) => void, { conversationId }: { conversationId?: string } = {}) {
   const t = useTranslate()
   const mutations = useAutomationMutations(projectId)
   const run = useRunAction()
@@ -56,7 +58,8 @@ export function useActionGestures(projectId: string, onPanel: (panel: ActionPane
   const switching = useServiceSwitch()
   const served = useServedIndex(projectId)
   const nameOf = useTargetName()
-  const atRoot = useLaunchHere(served.trees)
+  // Là où « Basculer » redémarrerait le service : l'arbre de la conversation, sinon la racine.
+  const here = useLaunchHere(served.trees, conversationId)
   const [error, setError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<Automation | null>(null)
   const [busy, setBusy] = useState(false)
@@ -71,14 +74,15 @@ export function useActionGestures(projectId: string, onPanel: (panel: ActionPane
       mutations.run(item).catch(fail)
       return
     }
+    const where = conversationId ? { conversationId } : worktreeId ? { worktreeId } : {}
     run.mutate(
-      { action, ...(worktreeId ? { worktreeId } : {}), reveal: false },
+      { action, ...where, reveal: false },
       {
         onSuccess: (result) => {
           if (result.terminal && action.kind === 'task') onPanel({ mode: 'run', terminalId: result.terminal.id, back: item.id })
         },
         onError: (reason) => {
-          if (!switching.askIfElsewhere(action, reason, atRoot)) fail(reason)
+          if (!switching.askIfElsewhere(action, reason, here)) fail(reason)
         },
       },
     )
@@ -89,7 +93,7 @@ export function useActionGestures(projectId: string, onPanel: (panel: ActionPane
     const action = actionOf(item)
     if (!action) return
     setError(null)
-    run.mutate({ action, op }, { onError: fail })
+    run.mutate({ action, op, ...(conversationId ? { conversationId } : {}) }, { onError: fail })
   }
 
   /** « Servir… » (SRV-5) : les arbres où basculer un service en marche, et la demande. */

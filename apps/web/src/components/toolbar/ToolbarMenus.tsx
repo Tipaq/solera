@@ -79,14 +79,23 @@ export function FilterMenu({ active, onClearAll, compact = false, children }: {
  *
  * Une page qui n'a qu'une vue ne passe pas `views` : pas de tuile seule, une icône de
  * réglages à la place.
+ *
+ * `compact` le range dans la ligne d'outils d'un onglet du panneau : l'icône seule, à
+ * toute largeur, et choisir une vue ferme le menu — il n'y a pas la place de regarder
+ * la vue changer dessous.
  */
 export function DisplayMenu<K extends string>(
-  props: { children?: ReactNode } & ({ views: ViewOption<K>[]; value: K; onChange: (next: K) => void } | { views?: undefined }),
+  props: { children?: ReactNode; compact?: boolean } & ({ views: ViewOption<K>[]; value: K; onChange: (next: K) => void } | { views?: undefined }),
 ) {
   const t = useTranslate()
   const [open, setOpen] = useState(false)
   const label = t('toolbar.display')
   const current = props.views?.find((option) => option.key === props.value)
+  const pick = (next: K) => {
+    if (!props.views) return
+    props.onChange(next)
+    if (props.compact) setOpen(false)
+  }
   return (
     <Popover
       open={open}
@@ -103,12 +112,12 @@ export function DisplayMenu<K extends string>(
           aria-label={current ? t('toolbar.display.current', { view: current.label }) : label}
         >
           {current?.icon ?? <SlidersHorizontal size={16} />}
-          <span className="hidden sm:inline">{label}</span>
+          {props.compact ? null : <span className="hidden sm:inline">{label}</span>}
         </TooltipButton>
       }
     >
       <div className="max-h-[70vh] overflow-y-auto pb-3">
-        {props.views ? <ViewTiles options={props.views} value={props.value} onChange={props.onChange} /> : null}
+        {props.views ? <ViewTiles options={props.views} value={props.value} onChange={pick} /> : null}
         {props.children}
       </div>
     </Popover>

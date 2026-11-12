@@ -15,8 +15,11 @@ const ENTRIES: { kind: Exclude<NewActionKind, 'any'>; icon: ReactNode; title: Me
  * « + Action ▾ » (AO-6) : la nature d'abord — une commande, un service, une tâche
  * d'agent — ou planifier une action qui existe déjà. Chaque entrée dit en une ligne ce
  * qu'elle crée.
+ *
+ * `button` remplace le mot du bouton : « Nouvelle » dans le panneau, où « Actions » est
+ * déjà le titre de la ligne.
  */
-export function NewActionMenu({ onPick }: { onPick: (kind: NewActionKind) => void }) {
+export function NewActionMenu({ onPick, button }: { onPick: (kind: NewActionKind) => void; button?: string }) {
   const t = useTranslate()
   const [open, setOpen] = useState(false)
   const pick = (kind: NewActionKind) => {
@@ -33,7 +36,7 @@ export function NewActionMenu({ onPick }: { onPick: (kind: NewActionKind) => voi
       className="w-72 p-1"
       trigger={
         <Button size="sm" icon={<Plus size={14} />} aria-label={t('actionsTab.new.label')}>
-          {t('actionsTab.new.button')} <ChevronDown size={13} className="-mr-1" aria-hidden />
+          {button ?? t('actionsTab.new.button')} <ChevronDown size={13} className="-mr-1" aria-hidden />
         </Button>
       }
     >

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import type { EditorSeed } from './action-editor'
 
 /**
  * État du panneau latéral droit, partagé hors de React.
@@ -355,6 +356,50 @@ export function clearSubAgent(): void {
   if (subAgentId === null) return
   subAgentId = null
   for (const listener of listeners) listener()
+}
+
+/**
+ * « En faire une action » depuis un autre onglet du panneau (PACT-8, PAG-12) : l'onglet
+ * Actions ouvre son éditeur pré-rempli. Il n'est pas forcément monté au moment de la
+ * demande — l'onglet Agent est devant — : la graine attend qu'il la prenne, une fois.
+ * Une demande plus récente remplace celle qui attendait.
+ */
+let actionEdit: EditorSeed | null = null
+const actionEditListeners = new Set<() => void>()
+
+export function requestActionEdit(seed: EditorSeed): void {
+  actionEdit = seed
+  setPanelTab('actions')
+  setPanelOpen(true)
+  for (const listener of actionEditListeners) listener()
+}
+
+/** La graine en attente, une seule fois. */
+export function takeActionEdit(): EditorSeed | null {
+  const seed = actionEdit
+  actionEdit = null
+  return seed
+}
+
+export function onActionEditRequest(listener: () => void): () => void {
+  actionEditListeners.add(listener)
+  return () => actionEditListeners.delete(listener)
+}
+
+/** Côté onglet Actions : prend la graine qui attendait au montage, puis celles qui arrivent. */
+export function useActionEditRequest(onSeed: (seed: EditorSeed) => void): void {
+  const latest = useRef(onSeed)
+  useEffect(() => {
+    latest.current = onSeed
+  })
+  useEffect(() => {
+    const take = () => {
+      const seed = takeActionEdit()
+      if (seed) latest.current(seed)
+    }
+    take()
+    return onActionEditRequest(take)
+  }, [])
 }
 
 /**
