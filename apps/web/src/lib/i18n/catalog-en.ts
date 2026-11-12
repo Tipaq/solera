@@ -4110,6 +4110,8 @@ export const en = {
   'served.behind.one': "{count} commit behind the base",
   'served.behind.other': "{count} commits behind the base",
   'served.uncommittedTitle': "Uncommitted files: the working tree is what gets served",
+  'served.uncommitted.one': "{count} uncommitted file, served as is",
+  'served.uncommitted.other': "{count} uncommitted files, served as is",
   'served.block.tree': "Tree",
   'served.block.root': "Project root",
   'served.block.unrecognized': "not recognized",

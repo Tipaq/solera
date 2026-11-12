@@ -1,3 +1,4 @@
+import type { WorktreeState } from '@solera/protocol'
 import type { Automation, Translate } from './automations'
 
 /**
@@ -24,7 +25,7 @@ export interface TreeRef {
 export interface ServedTree extends TreeRef {
   name: string
   branch: string | null
-  state: string
+  state: WorktreeState | 'root'
   ahead: number
   behind: number
   uncommitted: number
@@ -177,6 +178,11 @@ export function runningElsewhereOf(error: unknown): RunningElsewhere | null {
       .filter((port) => Number.isInteger(port) && port > 0),
     href: text('href'),
   }
+}
+
+/** L'erreur à montrer : aucune quand c'est un service en marche ailleurs, que le dialogue dit. */
+export function unlessElsewhere<E>(error: E | null): E | null {
+  return error && !runningElsewhereOf(error) ? error : null
 }
 
 /** Une branche tient sur une ligne de tuile : 28 caractères au plus. */

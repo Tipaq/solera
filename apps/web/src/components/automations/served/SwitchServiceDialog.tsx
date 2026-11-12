@@ -3,9 +3,11 @@ import { Fragment, useState, type ReactNode } from 'react'
 import type { ProjectActionDto } from '@solera/protocol'
 import { ConfirmDialog } from '@solera/ui'
 import { useRunAction } from '../../../lib/actions'
+import { useConversation } from '../../../lib/conversations'
 import { useTranslate } from '../../../lib/i18n'
-import { runningElsewhereOf, servedName, type ServedVersion } from '../../../lib/served'
+import { runningElsewhereOf, servedName, type ServedTree, type ServedVersion } from '../../../lib/served'
 import { WebLink } from '../../WebLink'
+import { useTargetName } from './ServeMenu'
 
 /** Ce qui tourne : un service en marche (`ServedVersion`) ou le corps d'un 409. */
 export type SwitchFrom = Pick<ServedVersion, 'root' | 'branch' | 'cwd' | 'ports' | 'href'>
@@ -22,6 +24,23 @@ export interface SwitchRequest {
   action: ProjectActionDto
   from: SwitchFrom
   to: SwitchTo
+}
+
+/**
+ * Où un lancement d'ici partirait : le worktree de la conversation, sinon la racine,
+ * nommé comme « Basculer sur » le nomme.
+ */
+export function useLaunchHere(trees: readonly ServedTree[], conversationId?: string): SwitchTo {
+  const { data: conversation } = useConversation(conversationId)
+  const nameOf = useTargetName()
+  const worktreeId = conversation?.worktreeId ?? null
+  const tree = trees.find((entry) => (worktreeId ? entry.id === worktreeId : entry.root))
+  return { name: tree ? nameOf(tree) : null, ...(conversationId ? { conversationId } : {}) }
+}
+
+/** Vers un arbre choisi dans « Basculer sur » : son worktree, ou la racine. */
+export function switchToTree(tree: ServedTree, name: string): SwitchTo {
+  return { name, ...(tree.id ? { worktreeId: tree.id } : {}) }
 }
 
 /**

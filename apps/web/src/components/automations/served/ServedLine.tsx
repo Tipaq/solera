@@ -29,12 +29,14 @@ export function ServedLine({
           title={t(behind > 1 ? 'served.behind.other' : 'served.behind.one', { count: behind })}
         >
           <ArrowDown size={10} aria-hidden />
-          {behind}
+          <span aria-hidden>{behind}</span>
+          <span className="sr-only">{t(behind > 1 ? 'served.behind.other' : 'served.behind.one', { count: behind })}</span>
         </span>
       ) : null}
       {uncommitted > 0 ? (
         <span className="shrink-0 tabular-nums text-caution" title={t('served.uncommittedTitle')}>
-          ●{uncommitted}
+          <span aria-hidden>●{uncommitted}</span>
+          <span className="sr-only">{t(uncommitted > 1 ? 'served.uncommitted.other' : 'served.uncommitted.one', { count: uncommitted })}</span>
         </span>
       ) : null}
     </span>

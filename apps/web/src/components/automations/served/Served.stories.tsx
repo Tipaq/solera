@@ -10,7 +10,7 @@ import { PlacementField } from './PlacementField'
 import { ServedBlock, type ServedBlockTree } from './ServedBlock'
 import { ServedLine } from './ServedLine'
 import { ServeIcon, ServeMenu } from './ServeMenu'
-import { SwitchServiceDialog, type SwitchRequest } from './SwitchServiceDialog'
+import { SwitchServiceDialog, switchToTree, type SwitchRequest } from './SwitchServiceDialog'
 
 const ignore = () => {}
 
@@ -55,7 +55,7 @@ function Block({ item }: { item: typeof IN_TREE }) {
           served={item}
           base="main"
           targets={switchTargets(TREES, item)}
-          onSwitch={(target) => setRequest({ action: action(SERVICE_TREE), from: item, to: { name: target.branch, worktreeId: target.id ?? undefined } })}
+          onSwitch={(target) => setRequest({ action: action(SERVICE_TREE), from: item, to: switchToTree(target, target.branch ?? target.name) })}
         />
       </ActionBlock>
       <SwitchServiceDialog request={request} onClose={() => setRequest(null)} onConfirm={() => setRequest(null)} />
@@ -81,7 +81,7 @@ function Tile() {
             serve={
               <ServeMenu
                 targets={switchTargets(TREES, IN_TREE)}
-                onSwitch={(target) => setRequest({ action: action(SERVICE_TREE), from: IN_TREE, to: { name: target.branch, worktreeId: target.id ?? undefined } })}
+                onSwitch={(target) => setRequest({ action: action(SERVICE_TREE), from: IN_TREE, to: switchToTree(target, target.branch ?? target.name) })}
                 trigger={
                   <button type="button" aria-label={t('served.serveNamed', { label: SERVICE_TREE.label })} className={quietGestureClass()}>
                     <ServeIcon /> {t('served.serve')}

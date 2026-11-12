@@ -2,8 +2,9 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { ActionPlacement, ActionServedVersion } from '@solera/protocol'
 import type { Automation } from '../../web/src/lib/automations.js'
+import type { ServedTree } from '../../web/src/lib/served.js'
 
-const { runningElsewhereOf, servedByTree, servedIndex, servedName, shortBranch, switchTargets } = await import('../../web/src/lib/served.js')
+const { runningElsewhereOf, servedByTree, servedIndex, servedName, shortBranch, switchTargets, unlessElsewhere } = await import('../../web/src/lib/served.js')
 
 const served = (over: Partial<ActionServedVersion>): ActionServedVersion => ({
   path: null, worktreeId: null, root: false, branch: null, head: null, ahead: null, behind: null, dirtyFiles: null, ...over,
@@ -20,9 +21,8 @@ const service = (
     live: running ? { kind: 'service', ports, since: null, href } : null,
     source: { kind: 'action', action: { id, placement, service: { unit: 'u', state: running ? 'active' : 'inactive', cwd, ports, startedAt: null, served: version } } },
   }) as unknown as Automation
-const tree = (key: string, over: Record<string, unknown> = {}) => ({
-  key, root: false, id: null as string | null, path: key, name: key, branch: null as string | null, state: 'unmerged' as string,
-  ahead: 0, behind: 0, uncommitted: 0, ...over,
+const tree = (key: string, over: Partial<ServedTree> = {}): ServedTree => ({
+  key, root: false, id: null, path: key, name: key, branch: null, state: 'unmerged', ahead: 0, behind: 0, uncommitted: 0, ...over,
 })
 const trees = [
   tree('root', { root: true, path: '/p', branch: 'main', state: 'root', behind: 9 }),
@@ -123,6 +123,11 @@ test('le 409 « déjà en marche ailleurs » se lit depuis ses paramètres', () 
   )
   assert.equal(runningElsewhereOf(Object.assign(new Error('…'), { code: 'action_not_found' })), null)
   assert.equal(runningElsewhereOf(new Error('réseau')), null)
+  // Le refus s'ouvre en dialogue : il ne s'affiche pas en plus comme une erreur.
+  assert.equal(unlessElsewhere(error), null)
+  const other = Object.assign(new Error('…'), { code: 'action_not_found' })
+  assert.equal(unlessElsewhere(other), other)
+  assert.equal(unlessElsewhere(null), null)
 })
 
 test("le nom de ce qui est servi : la racine dit sa branche, une longue branche s'abrège", () => {

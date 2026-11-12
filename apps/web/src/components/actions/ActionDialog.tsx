@@ -15,7 +15,7 @@ import {
 } from '@solera/protocol'
 import { useCreateAction, useUpdateAction } from '../../lib/actions'
 import { useTranslate } from '../../lib/i18n'
-import { useServedIndex } from '../../lib/served-query'
+import { useBranches } from '../../lib/worktrees'
 import { Banner, Button, Field, IconButton, cx } from '@solera/ui'
 import { PlacementField } from '../automations/served/PlacementField'
 
@@ -46,10 +46,11 @@ export function ActionDialog({
   const [subdir, setSubdir] = useState(action?.subdir ?? '')
   const [url, setUrl] = useState(action?.url ?? '')
   const [placement, setPlacement] = useState<ActionPlacement>(action?.placement ?? 'follow')
-  const { trees } = useServedIndex(projectId)
-  const rootBranch = trees.find((tree) => tree.root)?.branch ?? null
-  const [pinnedBranch, setPinnedBranch] = useState(action?.pinnedBranch ?? rootBranch ?? '')
-  const branches = [...new Set(trees.flatMap((tree) => (tree.branch ? [tree.branch] : [])))]
+  // Les branches du dépôt, et celle où la racine se trouve : la seule où il tourne aujourd'hui.
+  const { data: repo } = useBranches(projectId)
+  const rootBranch = repo?.current ?? null
+  const branches = repo?.branches ?? []
+  const [pinnedBranch, setPinnedBranch] = useState(action?.pinnedBranch ?? '')
 
   const subdirValid = actionSubdirSchema.safeParse(subdir).success
   const urlValid = actionUrlSchema.safeParse(url).success
@@ -177,8 +178,7 @@ export function ActionDialog({
                     value={placement}
                     onChange={(next) => {
                       setPlacement(next)
-                      // La racine d'abord : c'est la seule branche où il tourne aujourd'hui.
-                      if (next === 'branch' && !pinnedBranch && rootBranch) setPinnedBranch(rootBranch)
+                        if (next === 'branch' && !pinnedBranch && rootBranch) setPinnedBranch(rootBranch)
                     }}
                     branch={pinnedBranch}
                     onBranch={setPinnedBranch}

@@ -11,30 +11,40 @@ export function useTargetName(): (tree: Pick<ServedTree, 'root' | 'branch' | 'na
 }
 
 /**
- * « Basculer sur » (SRV-3, SRV-5) : les arbres où servir ce service à la place. Le choix
- * ne bascule rien : il ouvre le dialogue qui dit ce que la bascule redémarre.
+ * « Basculer sur » (SRV-3, SRV-5) : les arbres où servir ce service à la place, à poser
+ * dans un menu. Le choix ne bascule rien : il ouvre le dialogue qui dit ce que la bascule
+ * redémarre.
  */
+export function ServeItems<T extends ServedTree>({ targets, onSwitch }: { targets: T[]; onSwitch: (tree: T) => void }) {
+  const t = useTranslate()
+  const nameOf = useTargetName()
+  return (
+    <>
+      <MenuLabel>{t('served.switchTo')}</MenuLabel>
+      {targets.map((tree) => (
+        <MenuItem key={tree.key} icon={<Repeat size={15} />} onSelect={() => onSwitch(tree)}>
+          <span className="block truncate font-mono text-xs">{nameOf(tree)}</span>
+        </MenuItem>
+      ))}
+    </>
+  )
+}
+
+/** « Servir… » : un menu à lui seul, sur la tuile et dans le détail. Rien sans cible. */
 export function ServeMenu<T extends ServedTree>({
   trigger,
   targets,
   onSwitch,
 }: {
   trigger: ReactNode
-  /** `switchTargets` : jamais vide, le menu ne se pose pas sans cible. */
+  /** `switchTargets`. */
   targets: T[]
   onSwitch: (tree: T) => void
 }) {
-  const t = useTranslate()
-  const nameOf = useTargetName()
   if (targets.length === 0) return null
   return (
     <Menu trigger={trigger}>
-      <MenuLabel>{t('served.switchTo')}</MenuLabel>
-      {targets.map((tree) => (
-        <MenuItem key={tree.key} onSelect={() => onSwitch(tree)}>
-          <span className="block truncate font-mono text-xs">{nameOf(tree)}</span>
-        </MenuItem>
-      ))}
+      <ServeItems targets={targets} onSwitch={onSwitch} />
     </Menu>
   )
 }

@@ -1,6 +1,6 @@
 import { ArrowDown, ArrowUp, ArrowUpRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { cx } from '@solera/ui'
+import { Button, cx } from '@solera/ui'
 import { useTranslate } from '../../../lib/i18n'
 import type { ServedTree, ServedVersion } from '../../../lib/served'
 import { ServeIcon, ServeMenu } from './ServeMenu'
@@ -123,12 +123,9 @@ export function ServedBlock<T extends ServedBlockTree>({
           targets={targets}
           onSwitch={onSwitch}
           trigger={
-            <button
-              type="button"
-              className="inline-flex h-9 w-fit items-center gap-1.5 rounded-md border border-line px-2.5 text-xs text-ink-soft transition-colors hover:bg-surface-high hover:text-ink focus-visible:outline-2 focus-visible:outline-accent pointer-coarse:h-11"
-            >
-              <ServeIcon /> {t('served.block.switch')}
-            </button>
+            <Button type="button" size="sm" variant="secondary" icon={<ServeIcon />} className="w-fit">
+              {t('served.block.switch')}
+            </Button>
           }
         />
       ) : (

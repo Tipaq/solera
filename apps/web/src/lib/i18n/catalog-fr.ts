@@ -4104,6 +4104,8 @@ export const fr: Catalog = {
   "served.behind.one": "{count} commit en retard sur la base",
   "served.behind.other": "{count} commits en retard sur la base",
   "served.uncommittedTitle": "Fichiers non commités : c’est l’arbre de travail qui est servi",
+  "served.uncommitted.one": "{count} fichier non commité, servi tel quel",
+  "served.uncommitted.other": "{count} fichiers non commités, servis tels quels",
   "served.block.tree": "Arbre",
   "served.block.root": "Racine du projet",
   "served.block.unrecognized": "non reconnu",

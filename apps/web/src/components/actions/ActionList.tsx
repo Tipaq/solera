@@ -4,7 +4,6 @@ import {
   MoreHorizontal,
   Pencil,
   Play,
-  Repeat,
   RotateCw,
   ScrollText,
   Server,
@@ -23,15 +22,15 @@ import {
   useDeleteAction,
   useRunAction,
 } from '../../lib/actions'
-import { useConversation } from '../../lib/conversations'
+import { actionAutomationId } from '../../lib/automations'
 import { useTranslate } from '../../lib/i18n'
 import { showTerminal } from '../../lib/panel'
-import { runningElsewhereOf, switchTargets } from '../../lib/served'
+import { switchTargets, unlessElsewhere } from '../../lib/served'
 import { useServedIndex, type ServedData, type ServedRow } from '../../lib/served-query'
-import { Badge, Banner, Button, Card, ConfirmDialog, IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, cx } from '@solera/ui'
+import { Badge, Banner, Button, Card, ConfirmDialog, IconButton, Menu, MenuItem, MenuSeparator, cx } from '@solera/ui'
 import { ServedLine } from '../automations/served/ServedLine'
-import { useTargetName } from '../automations/served/ServeMenu'
-import { useServiceSwitch, type SwitchRequest, type SwitchTo } from '../automations/served/SwitchServiceDialog'
+import { ServeItems, useTargetName } from '../automations/served/ServeMenu'
+import { switchToTree, useLaunchHere, useServiceSwitch, type SwitchRequest } from '../automations/served/SwitchServiceDialog'
 
 /** L'édition d'une action, chargée à son ouverture (#128) : hors du paquet d'entrée. */
 const ActionDialog = lazy(() => import('./ActionDialog').then((m) => ({ default: m.ActionDialog })))
@@ -55,18 +54,6 @@ export interface ActionHandlers {
   onElsewhere: (action: ProjectActionDto, error: unknown) => boolean
 }
 
-/**
- * Où un lancement d'ici partirait : le worktree de la conversation, sinon la racine,
- * nommé comme « Basculer sur » le nomme.
- */
-export function useLaunchHere(served: ServedData, conversationId?: string): SwitchTo {
-  const { data: conversation } = useConversation(conversationId)
-  const nameOf = useTargetName()
-  const worktreeId = conversation?.worktreeId ?? null
-  const tree = served.trees.find((entry) => (worktreeId ? entry.id === worktreeId : entry.root))
-  return { name: tree ? nameOf(tree) : null, ...(conversationId ? { conversationId } : {}) }
-}
-
 export function ActionList({
   projectId,
   actions,
@@ -85,7 +72,7 @@ export function ActionList({
   const run = useRunAction()
   const served = useServedIndex(projectId)
   // Le refus d'un service qui tourne ailleurs n'est pas une erreur : il ouvre le dialogue.
-  const failure = run.error && !runningElsewhereOf(run.error) ? run.error : null
+  const failure = unlessElsewhere(run.error)
 
   const primary = (action: ProjectActionDto) => {
     const view = actionView(action)
@@ -114,7 +101,7 @@ export function ActionList({
             action={action}
             busy={run.isPending && run.variables?.action.id === action.id}
             compact={compact}
-            served={served.byAutomation.get(`a-${action.id}`) ?? null}
+            served={served.byAutomation.get(actionAutomationId(action.id)) ?? null}
             targets={served.trees}
             onSwitch={handlers.onSwitch}
             onPrimary={() => primary(action)}
@@ -142,8 +129,8 @@ export function useActionDialogs(projectId: string, conversationId?: string) {
   const [deleting, setDeleting] = useState<ProjectActionDto | null>(null)
   const [editing, setEditing] = useState<ProjectActionDto | 'new' | null>(null)
   const switching = useServiceSwitch()
-  const here = useLaunchHere(useServedIndex(projectId), conversationId)
-  const failure = approve.error ?? remove.error ?? (run.error && !runningElsewhereOf(run.error) ? run.error : null)
+  const here = useLaunchHere(useServedIndex(projectId).trees, conversationId)
+  const failure = approve.error ?? remove.error ?? unlessElsewhere(run.error)
 
   const handlers: ActionHandlers = {
     onReview: setReviewing,
@@ -319,18 +306,7 @@ function ActionRow({
               ) : null}
               {served && switchable.length > 0 ? (
                 <>
-                  <MenuLabel>{t('served.switchTo')}</MenuLabel>
-                  {switchable.map((tree) => (
-                    <MenuItem
-                      key={tree.key}
-                      icon={<Repeat size={15} />}
-                      onSelect={() =>
-                        onSwitch({ action, from: served, to: { name: nameOf(tree), ...(tree.id ? { worktreeId: tree.id } : {}) } })
-                      }
-                    >
-                      <span className="block truncate font-mono text-xs">{nameOf(tree)}</span>
-                    </MenuItem>
-                  ))}
+                  <ServeItems targets={switchable} onSwitch={(tree) => onSwitch({ action, from: served, to: switchToTree(tree, nameOf(tree)) })} />
                   <MenuSeparator />
                 </>
               ) : null}
