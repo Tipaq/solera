@@ -32,6 +32,7 @@
     "test:explorer-ui": "node scripts/explorer-ui-check.mjs",
     "test:places-ui": "node scripts/places-ui-check.mjs",
     "test:panel-project-ui": "node scripts/panel-project-ui-check.mjs",
+    "test:panel-agent-ui": "node scripts/panel-agent-ui-check.mjs",
     "test:toolbar-ui": "node scripts/toolbar-ui-check.mjs",
     "test:sessions-ui": "node scripts/sessions-ui-check.mjs",
     "test:travail-ui": "node scripts/travail-ui-check.mjs",
