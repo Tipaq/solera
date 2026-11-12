@@ -4,12 +4,13 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import type { CardDto } from '@solera/protocol'
 import { Badge, EmptyState, cx, useMediaQuery } from '@solera/ui'
 import { cardDestinationHref } from '../../lib/card-destination'
-import { awaitsMe, cardState, isLate, liveSessions, loadedStatus, type CardState, type StatusOf } from '../../lib/card-state'
+import { awaitsMe, cardState, isLate, liveSessions, loadedStatus, type StatusOf } from '../../lib/card-state'
 import { formatDay } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
 import {
   GANTT_HEAD,
   GANTT_ROW,
+  LOOSE_GROUP,
   deliveredIds,
   ganttGroups,
   ganttRows,
@@ -17,7 +18,7 @@ import {
   plottedCards,
   stateMix,
 } from '../../lib/milestone-gantt'
-import { milestoneBar } from '../../lib/milestone-horizon'
+import { milestoneBar, type MilestoneBarGeometry } from '../../lib/milestone-horizon'
 import type { MilestoneEntry } from '../../lib/milestone-model'
 import { CardInfoButton } from '../cards/CardInfoButton'
 import { BAR_H, CardBar } from '../gantt/CardBar'
@@ -27,6 +28,7 @@ import { GanttGrid, TodayLine } from '../gantt/GanttGrid'
 import { useAxisWidth, useScrollToNow } from '../gantt/hooks'
 import { anchorsOf, chainOf, scaleOf, type Scale, type Zoom } from '../gantt/scale'
 import { STATE_DOT } from '../gantt/tones'
+import { STATE_MIX } from './tones'
 
 /** La colonne des libellés ; plus étroite au téléphone, pour laisser l'axe se lire. */
 const LIST_WIDE = 296
@@ -37,16 +39,7 @@ const GUTTER_MD = 24
 /** Le retrait d'une carte sous son jalon. */
 const INDENT = 20
 const GAUGE_H = 12
-
-/** Le remplissage de la jauge d'un jalon, par état de ses cartes. */
-const MIX_FILL: Record<CardState, string> = {
-  done: 'bg-positive/70',
-  review: 'bg-positive/35',
-  running: 'bg-accent/60',
-  blocked: 'bg-caution/60',
-  todo: 'bg-ink-faint/25',
-  abandoned: 'bg-transparent',
-}
+const NOTHING_FOLDED: ReadonlySet<string> = new Set()
 
 /**
  * Le **Gantt détaillé** des Jalons (GNT) : la liste à gauche, jalons repliables et cartes
@@ -57,12 +50,14 @@ const MIX_FILL: Record<CardState, string> = {
  * la liste ou sur sa barre — la surligne sur toute la largeur, éclaire sa chaîne de
  * dépendances et ouvre son infobulle.
  *
- * `entries` arrivent filtrés par la barre (BAR-8) ; `cards` sont toutes celles du projet,
- * pour le groupe « Hors jalon ».
+ * `entries` sont tous les jalons : `keep` dit ceux que la barre garde (BAR-8). L'échelle
+ * les englobe tous, pour qu'une recherche ne déplace pas l'axe à chaque frappe. `cards`
+ * sont toutes celles du projet, pour le groupe « Hors jalon ».
  */
 export function MilestoneGantt({
   projectId,
   entries,
+  keep,
   cards,
   zoom,
   statusOf = loadedStatus,
@@ -70,6 +65,7 @@ export function MilestoneGantt({
 }: {
   projectId: string
   entries: MilestoneEntry[]
+  keep: (entry: MilestoneEntry) => boolean
   cards: CardDto[]
   zoom: Zoom
   statusOf?: StatusOf
@@ -89,8 +85,9 @@ export function MilestoneGantt({
   const [hovered, setHovered] = useState<string | null>(null)
 
   // Peu de cartes : recalculé à chaque rendu, sans mémo que `now` invaliderait de toute façon.
-  const groups = ganttGroups(entries, cards, foldedSet, now)
-  const plotted = plottedCards(groups)
+  const groups = ganttGroups(entries.filter(keep), cards, foldedSet, now)
+  const everything = ganttGroups(entries, cards, NOTHING_FOLDED, now)
+  const plotted = plottedCards(everything)
   const axisWidth = useAxisWidth(scroller, listWidth)
   const scale = scaleOf(plotted, zoom, now, axisWidth)
   useScrollToNow(scroller, scale, listWidth, now)
@@ -99,7 +96,8 @@ export function MilestoneGantt({
   const anchors = anchorsOf(plotted, centers, scale, now)
 
   if (groups.length === 0) {
-    return <EmptyState icon={<Flag size={22} />} title={t('gantt.empty')} />
+    // Des jalons que la barre cache tous ne font pas un projet vide.
+    return <EmptyState icon={<Flag size={22} />} title={t(everything.length ? 'gantt.noMatch' : 'gantt.empty')} />
   }
 
   const toggle = (id: string) => {
@@ -135,10 +133,12 @@ export function MilestoneGantt({
             const entry = group.entry
             const open = entry ? !foldedSet.has(entry.card.id) : true
             const bar = entry ? milestoneBar(entry, now) : null
+            // Lancé : un pilotage en marche ou en pause, ou sa PR finale ouverte (MAT-2).
+            const launched = entry?.maturity === 'launched'
             return (
               <section
                 key={group.key}
-                data-gantt-group={entry ? entry.card.number : 'loose'}
+                data-gantt-group={entry ? entry.card.number : LOOSE_GROUP}
                 aria-label={entry ? `#${entry.card.number} ${entry.card.title}` : t('gantt.outside')}
                 className={cx('relative', entry && 'bg-surface-high/20')}
               >
@@ -158,15 +158,15 @@ export function MilestoneGantt({
                           onClick={() => toggle(entry.card.id)}
                           aria-expanded={open}
                           aria-label={open ? t('gantt.fold') : t('gantt.unfold')}
-                          className="rounded p-0.5 text-ink-faint hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+                          className="rounded p-0.5 text-ink-faint hover:text-ink"
                         >
                           {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
                         </button>
-                        <Flag size={13} aria-hidden className={cx('shrink-0', entry.run ? 'text-accent' : 'text-ink-faint')} />
+                        <Flag size={13} aria-hidden className={cx('shrink-0', launched ? 'text-accent' : 'text-ink-faint')} />
                         <Link to={milestoneHref(entry.card.number)} className="min-w-0 flex-1 truncate text-sm font-semibold hover:text-accent">
                           {entry.card.title}
                         </Link>
-                        {entry.run ? <Badge tone="accent">{t('gantt.launched')}</Badge> : null}
+                        {launched ? <Badge tone="accent">{t('gantt.launched')}</Badge> : null}
                         <span className="shrink-0 text-xs text-ink-faint tabular-nums">
                           {bar.done}/{bar.total}
                         </span>
@@ -176,9 +176,11 @@ export function MilestoneGantt({
                     )}
                   </div>
                   <div className="relative flex-1">
-                    {entry ? (
+                    {entry && bar ? (
                       <MilestoneGauge
                         entry={entry}
+                        bar={bar}
+                        launched={launched}
                         members={group.members}
                         scale={scale}
                         now={now}
@@ -271,12 +273,16 @@ export function MilestoneGantt({
  */
 function MilestoneGauge({
   entry,
+  bar,
+  launched,
   members,
   scale,
   now,
   onOpen,
 }: {
   entry: MilestoneEntry
+  bar: MilestoneBarGeometry
+  launched: boolean
   members: CardDto[]
   scale: Scale
   now: number
@@ -284,7 +290,7 @@ function MilestoneGauge({
 }) {
   const t = useTranslate()
   const span = milestoneSpan(entry, now)
-  const bar = milestoneBar(entry, now)
+  const tip = t('gantt.gaugeTip', { title: entry.card.title, done: bar.done, total: bar.total })
   const mix = stateMix(members)
   const late = bar.lateDays > 0
   const due = entry.card.dueAt
@@ -299,18 +305,18 @@ function MilestoneGauge({
         type="button"
         data-milestone-gauge={entry.card.number}
         onClick={onOpen}
-        title={t('gantt.gaugeTip', { title: entry.card.title, done: bar.done, total: bar.total })}
-        aria-label={t('gantt.gaugeTip', { title: entry.card.title, done: bar.done, total: bar.total })}
+        title={tip}
+        aria-label={tip}
         className={cx(
-          'absolute flex overflow-hidden rounded-full border bg-surface-high/60 hover:brightness-105 focus-visible:outline-2 focus-visible:outline-accent',
+          'absolute flex overflow-hidden rounded-full border bg-surface-high/60 hover:brightness-105',
           late ? 'border-critical/70' : 'border-line-strong',
           due === null && 'border-dashed',
-          entry.run && 'shadow-[0_0_0_2px_color-mix(in_oklab,var(--color-accent)_55%,transparent)]',
+          launched && 'shadow-[0_0_0_2px_color-mix(in_oklab,var(--color-accent)_55%,transparent)]',
         )}
         style={{ left, width, top, height: GAUGE_H }}
       >
         {mix.map((part) => (
-          <span key={part.state} data-state={part.state} className={MIX_FILL[part.state]} style={{ width: `${(part.count / members.length) * 100}%` }} />
+          <span key={part.state} data-state={part.state} className={STATE_MIX[part.state]} style={{ width: `${(part.count / members.length) * 100}%` }} />
         ))}
       </button>
       {due !== null ? (

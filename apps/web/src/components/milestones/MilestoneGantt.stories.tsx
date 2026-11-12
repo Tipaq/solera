@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { CardConversationDto, CardDto, CardLinkDto, MilestoneRunDto } from '@solera/protocol'
-import { horizonOf } from '../../lib/milestone-model'
+import { horizonOf, type MilestoneEntry } from '../../lib/milestone-model'
 import { fixtureCard } from '../board/card-fixtures'
 import { DAY } from '../gantt/scale'
 import { MilestoneGantt } from './MilestoneGantt'
@@ -64,6 +64,8 @@ const CARDS = [
 ]
 const RUNS = [{ id: 'run-910', cardId: 'card-910', state: 'running', createdAt: now - 4 * DAY, cards: [] } as unknown as MilestoneRunDto]
 const ENTRIES = horizonOf({ cards: CARDS, runs: RUNS, requests: new Map() })
+const keepAll = (_entry: MilestoneEntry): boolean => true
+const keepNone = (_entry: MilestoneEntry): boolean => false
 
 const meta = {
   title: "Composants d'application/Gantt des jalons",
@@ -77,8 +79,8 @@ const meta = {
       },
     },
   },
-  args: { projectId: 'p-1', entries: ENTRIES, cards: CARDS, zoom: 'month' },
-  argTypes: { zoom: { control: 'inline-radio', options: ['week', 'month'] } },
+  args: { projectId: 'p-1', entries: ENTRIES, keep: keepAll, cards: CARDS, zoom: 'month' },
+  argTypes: { zoom: { control: 'inline-radio', options: ['week', 'month'] }, keep: { control: false } },
   // Le Gantt prend la hauteur de sa page : on lui en donne une.
   render: (args) => (
     <div className="h-[36rem]">
@@ -98,3 +100,8 @@ export const Semaine: Story = { args: { zoom: 'week' } }
 
 /** Aucun jalon découpé ni carte datée. */
 export const Vide: Story = { args: { entries: [], cards: [] } }
+
+/** Des jalons, que la barre cache tous, et aucune carte libre datée : ce n'est pas un projet vide. */
+export const RienNeCorrespond: Story = {
+  args: { keep: keepNone, cards: CARDS.filter((card) => card.parent !== null || card.milestone) },
+}

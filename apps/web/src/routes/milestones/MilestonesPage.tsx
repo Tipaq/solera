@@ -129,7 +129,14 @@ function Milestones({ project }: { project: ProjectDto }) {
       {view === 'gantt' ? (
         // Le Gantt défile seul, dans les deux sens : l'axe et la liste y restent collés.
         <div className="min-h-0 flex-1">
-          <MilestoneGantt projectId={project.id} entries={shown} cards={cards} zoom={zoom} statusOf={statusOf} />
+          <MilestoneGantt
+            projectId={project.id}
+            entries={entries}
+            keep={(entry) => keepMilestone(entry, query, filters, now)}
+            cards={cards}
+            zoom={zoom}
+            statusOf={statusOf}
+          />
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">

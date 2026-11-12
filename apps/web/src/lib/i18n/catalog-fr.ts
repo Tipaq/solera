@@ -3237,6 +3237,7 @@ export const fr: Catalog = {
   'gantt.unfold': 'Déplier',
   'gantt.launched': 'lancé',
   'gantt.empty': 'Aucun jalon ni carte datée',
+  'gantt.noMatch': 'Aucun jalon ne correspond à ces filtres',
   'gantt.percent': '{value} %',
   'gantt.gaugeTip': '{title} — {done}/{total}',
   'gantt.dueTip': 'Échéance {date}',

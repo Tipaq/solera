@@ -1437,10 +1437,12 @@ async function ganttStep(width) {
   await page.keyboard.press('Escape')
   await page.getByRole('dialog').waitFor({ state: 'detached' })
 
-  console.log(width, 'BAR-8 : la recherche filtre les jalons, « Hors jalon » reste')
+  console.log(width, 'BAR-8 : la recherche filtre les jalons, « Hors jalon » reste, l’axe ne bouge pas')
+  const axisBefore = await gantt.evaluate((element) => [element.scrollWidth, element.scrollLeft])
   await page.getByRole('searchbox', { name: 'Chercher un jalon' }).fill('#920')
   await page.waitForFunction(() => document.querySelectorAll('[data-gantt-group]').length === 2)
   assert.equal(await group(920).count(), 1)
+  assert.deepEqual(await gantt.evaluate((element) => [element.scrollWidth, element.scrollLeft]), axisBefore, 'l’échelle englobe tous les jalons')
   await page.getByRole('searchbox', { name: 'Chercher un jalon' }).fill('')
   await page.waitForFunction(() => document.querySelectorAll('[data-gantt-group]').length === 6)
 
@@ -1473,6 +1475,12 @@ async function ganttStep(width) {
   await mountHorizon(page, `/p/${PROJECT}/timeline?vue=gantt`)
   await page.getByText('Aucun jalon ni carte datée').waitFor()
   await shot(page.locator('[data-place-content]'), 'vide')
+
+  console.log(width, 'BAR-8 : des jalons que la barre cache tous ne font pas un projet vide')
+  cards = ganttBoard().filter((entry) => entry.number < 960)
+  await open()
+  await page.getByRole('searchbox', { name: 'Chercher un jalon' }).fill('introuvable')
+  await page.getByText('Aucun jalon ne correspond à ces filtres').waitFor()
 
   assert.deepEqual(errors, [])
   await context.close()
@@ -1651,7 +1659,7 @@ try {
     await context.close()
   }
   console.log('OK : horizon — trois temps et leur ordre, chaîne, axe (barre, lancement, retard, infobulle), tuiles, ℹ, recherche, filtres et puces, échelle, cap, « + Jalon », carte cochée en idée ; ordinateur et téléphone.')
-  console.log('OK : gantt — bascule et mémoire de vue, groupes par échéance et « Hors jalon », livrés repliés, déplier et replier, en-tête collé, jauge (états, retard, pointillé, halo, losange, %), destinations des lignes, repères de session, alignement au pixel, gouttière, survol et chaîne, ℹ, recherche, échelle, titre et jauge vers la page, vide ; ordinateur et téléphone.')
+  console.log('OK : gantt — bascule et mémoire de vue, groupes par échéance et « Hors jalon », livrés repliés, déplier et replier, en-tête collé, jauge (états, retard, pointillé, halo, losange, %), destinations des lignes, repères de session, alignement au pixel, gouttière, survol et chaîne, ℹ, recherche (axe fixe), échelle, titre et jauge vers la page, vide, rien ne correspond ; ordinateur et téléphone.')
   console.log('OK : page — en-tête, prochaine action et son geste (défiler, affiner, fusionner, fiche), étapes expliquées, affinage en tête quand il attend, vagues (colonnes, arêtes, cycle, chaîne, empilées au téléphone, ambre, ajoutées) ; ordinateur et téléphone.')
   console.log('OK : affinage — quatre états et le mode, outil en cours, question asynchrone de Codex, réponses gardées puis envoyées ensemble, brouillon corrigé (renommer, monter, lier, ajouter, retirer) puis validé, affinage pré-rempli (questions d’abord, découpage direct) ; ordinateur et téléphone.')
   console.log('OK : à régler et ajout — préciser (à la session, sinon dans la description), accepter, rompre un cycle, liste absente quand vide ; « Ajouter au jalon » (à la session d’affinage, sinon brouillon pré-rempli), absent d’un jalon livré ; ajout proposé en sous-tâches (déjà là signalée) accepté, en cartes laissé ; ordinateur et téléphone.')

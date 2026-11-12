@@ -3241,6 +3241,7 @@ export const en = {
   'gantt.unfold': 'Expand',
   'gantt.launched': 'launched',
   'gantt.empty': 'No milestone or dated card',
+  'gantt.noMatch': 'No milestone matches these filters',
   'gantt.percent': '{value}%',
   'gantt.gaugeTip': '{title} — {done}/{total}',
   'gantt.dueTip': 'Due {date}',
