@@ -234,6 +234,71 @@ export function orderLines(trees: TreeRow[]): TreeRow[] {
   })
 }
 
+/* ------------------------------------------------------------------ les gestes d'un arbre */
+
+type GestureTarget = Pick<TreeFields, 'id' | 'root' | 'sessions' | 'anySessionId'>
+
+/** La session vivante d'un arbre : celle qui attend, sinon la première. */
+export function liveSessionId(tree: Pick<TreeFields, 'sessions'>): string | null {
+  return tree.sessions.find((session) => session.tone !== 'running')?.id ?? tree.sessions[0]?.id ?? null
+}
+
+/**
+ * La session où s'ouvre le diff d'un arbre (T-13.1) : la vivante, sinon la plus récente.
+ * Rouvrir une session close ne relance rien.
+ */
+export function treeSessionId(tree: Pick<TreeFields, 'sessions' | 'anySessionId'>): string | null {
+  return liveSessionId(tree) ?? tree.anySessionId
+}
+
+/**
+ * Faux pour un arbre créé au shell et sans session : Solera n'en a pas l'identifiant, et
+ * n'a donc aucune portée par laquelle l'ouvrir. Le geste ne se montre pas.
+ */
+export function canDiffTree(tree: GestureTarget): boolean {
+  return tree.root || tree.id !== null || treeSessionId(tree) !== null
+}
+
+/** Faux pour la racine (on ne rebase pas la base sur elle-même), et comme `canDiffTree`. */
+export function canRebaseTree(tree: GestureTarget): boolean {
+  return !tree.root && (tree.id !== null || liveSessionId(tree) !== null)
+}
+
+/** Un geste d'une ligne du graphe des branches (A-4.7), sans son texte. */
+export type LineGesture =
+  | { kind: 'session'; sessionId: string; reply: boolean }
+  | { kind: 'launch'; treeId: string }
+  | { kind: 'diff'; count: number }
+  | { kind: 'pr'; action: 'merge' | 'ci' | 'open'; number: number; url: string }
+  | { kind: 'rebase'; behind: number }
+  | { kind: 'clean' }
+
+/**
+ * Les gestes d'une ligne dépliée, dans leur ordre : sa session (y répondre si elle
+ * attend) ou en lancer une ici, son diff, sa PR, le rebase si elle est en retard, et le
+ * nettoyage d'un arbre fusionné ou sans session. La racine n'a que sa session et son
+ * diff. Un arbre créé au shell sans session n'est joignable par aucun geste.
+ */
+export function lineGestures(tree: TreeRow): LineGesture[] {
+  const out: LineGesture[] = []
+  const sessionId = treeSessionId(tree)
+  if (sessionId) {
+    const lead = tree.sessions.find((session) => session.id === sessionId)
+    out.push({ kind: 'session', sessionId, reply: lead?.tone === 'awaiting' })
+  } else if (!tree.root && tree.id) {
+    out.push({ kind: 'launch', treeId: tree.id })
+  }
+  if (canDiffTree(tree)) out.push({ kind: 'diff', count: tree.uncommitted })
+  if (tree.root) return out
+  if (tree.pr?.url) {
+    const action = tree.pr.state === 'ready' ? 'merge' : tree.pr.state === 'failing' ? 'ci' : 'open'
+    out.push({ kind: 'pr', action, number: tree.pr.number, url: tree.pr.url })
+  }
+  if (tree.behind > 0 && canRebaseTree(tree)) out.push({ kind: 'rebase', behind: tree.behind })
+  if (tree.id && (tree.pr?.state === 'merged' || tree.sessions.length === 0)) out.push({ kind: 'clean' })
+  return out
+}
+
 /* ------------------------------------------------------------------ les branches sans arbre */
 
 export type BranchKind = 'pr' | 'unmerged' | 'remote' | 'merged'

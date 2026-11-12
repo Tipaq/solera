@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
@@ -92,6 +92,22 @@ try {
   const nimbus = projects.find((entry) => entry.name === 'Nimbus')
   const docs = projects.find((entry) => entry.name === 'Docs')
   assert.ok(nimbus && docs)
+  /*
+    Pour le « Code en cours » de l'Aperçu (plus bas), avant toute lecture de l'état des
+    arbres, que le serveur garde 30 s : un commit sur main, pour que les arbres prennent
+    du retard, et un arbre vide créé au shell. Le dépôt est celui du jeu d'essai, dans le
+    dossier temporaire de la suite.
+  */
+  const gitIn = (cwd, ...args) => execFileSync('git', args, {
+    cwd,
+    stdio: 'pipe',
+    env: {
+      ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
+      GIT_AUTHOR_NAME: 'Suite', GIT_AUTHOR_EMAIL: 'suite@example.com', GIT_COMMITTER_NAME: 'Suite', GIT_COMMITTER_EMAIL: 'suite@example.com',
+    },
+  })
+  gitIn(nimbus.workspacePath, 'commit', '--allow-empty', '-q', '-m', 'Bump main for the overview suite')
+  gitIn(nimbus.workspacePath, 'worktree', 'add', '-q', '-b', 'feat/deja-fini', join(data, 'shell-tree'), 'main')
 
   const page = await context.newPage()
   const errors = []
@@ -359,6 +375,130 @@ try {
   await events.screenshot({ animations: 'disabled', path: join(shots, 'apercu-evenements-mobile.png') })
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.unroute('**/api/actions')
+
+  // ─── Code en cours : le graphe des branches et ses gestes (A-4) ──────────
+  /*
+    Le dépôt de Nimbus est celui du jeu d'essai, dans le dossier temporaire de la suite :
+    les gestes y agissent pour de vrai (rebase, nettoyage), jamais sur un dépôt réel. Il
+    a reçu un commit sur main et un arbre vide créé au shell : sans session, celui-ci est
+    compté à nettoyer, pas montré. La forge n'existe pas ici : une PR prête est servie
+    pour une branche, et sa fusion interceptée.
+  */
+  const statuses = await (await context.request.get(`${base}/api/projects/${nimbus.id}/worktrees/status`)).json()
+  const quietTree = statuses.worktrees.find((tree) => tree.branch === 'feat/radar-prefetch')
+  assert.ok(quietTree && quietTree.behind > 0, `feat/radar-prefetch a pris du retard : ${JSON.stringify(quietTree)}`)
+  const prUrl = 'https://github.com/o/nimbus/pull/42'
+  await page.route(`**/api/projects/${nimbus.id}/pull-requests`, (route) => route.fulfill({
+    json: {
+      available: true, fetchedAt: Date.now(),
+      pullRequests: [{ number: 42, url: prUrl, title: 'Radar prefetch', branch: 'feat/radar-prefetch', base: 'main', state: 'ready', checks: { passed: 3, pending: 0, failed: [] }, review: null, updatedAt: Date.now() }],
+    },
+  }))
+  const merged = []
+  await page.route('**/api/projects/*/pull-requests/*/merge', (route) => {
+    merged.push(new URL(route.request().url()).pathname)
+    return route.fulfill({ json: { number: 42, url: prUrl, branch: 'feat/radar-prefetch', base: 'main' } })
+  })
+
+  await page.goto(`${base}/p/${nimbus.id}`)
+  const code = page.getByRole('region', { name: 'Code en cours', exact: true })
+  await code.waitFor()
+  const lineButtons = code.locator('[data-line] button[aria-expanded]')
+  await code.locator('[data-line]').filter({ hasText: 'feat/radar-prefetch' }).waitFor()
+  const lineNames = await lineButtons.allInnerTexts()
+  // A-4.5 et A-4.6 : la racine en tête ; l'arbre vide et sans session n'est que compté.
+  assert.equal(lineNames[0], nimbus.git.branch, `La racine en tête : ${lineNames}`)
+  assert.ok(lineNames.includes('feat/offline-cache') && lineNames.includes('feat/radar-prefetch'), `Les arbres vivants : ${lineNames}`)
+  assert.ok(!lineNames.includes('feat/deja-fini'), 'Un arbre vide sans session est compté, pas montré')
+  // A-4.2, A-4.4 : lignes de 56 px, colonnes fixes, en grand écran dans la moitié gauche.
+  const lineOfCode = (branch) => code.locator('[data-line]').filter({ has: page.getByRole('button', { name: branch, exact: true }) })
+  const radar = lineOfCode('feat/radar-prefetch')
+  assert.equal(Math.round((await radar.boundingBox()).height), 56)
+  assert.ok((await code.boundingBox()).x + (await code.boundingBox()).width < (await actions.boundingBox()).x, 'Le code est à gauche de la pile')
+  await radar.getByText('prête à fusionner', { exact: true }).waitFor()
+  await radar.getByText(/^#42$/).waitFor()
+  await radar.getByText(new RegExp(`↓${quietTree.behind}`)).waitFor()
+  await code.screenshot({ animations: 'disabled', path: join(shots, 'apercu-code.png') })
+
+  // A-4.7 : un clic n'importe où sur la ligne la déplie ; une ligne à la fois.
+  const radarToggle = radar.getByRole('button', { name: 'feat/radar-prefetch', exact: true })
+  const radarBox = await radar.boundingBox()
+  await page.mouse.click(radarBox.x + radarBox.width * 0.6, radarBox.y + 8)
+  assert.equal(await radarToggle.getAttribute('aria-expanded'), 'true', 'Un clic sur la ligne la déplie')
+  const radarGestures = page.locator(`[id="${await radarToggle.getAttribute('aria-controls')}"]`)
+  for (const label of ['Voir le diff', 'Fusionner la PR #42', `Rebaser sur main (↓${quietTree.behind})`, 'Nettoyer l’arbre']) {
+    await radarGestures.getByRole('button', { name: new RegExp(`^${label.replace(/[()]/g, '\\$&')}`) }).waitFor()
+  }
+  await radarGestures.getByText(/PR #42 · prête/).waitFor()
+  await code.screenshot({ animations: 'disabled', path: join(shots, 'apercu-code-gestes.png') })
+  const offlineToggle = lineOfCode('feat/offline-cache').getByRole('button', { name: 'feat/offline-cache', exact: true })
+  await offlineToggle.focus()
+  await page.keyboard.press('Enter')
+  assert.equal(await offlineToggle.getAttribute('aria-expanded'), 'true', 'Entrée déplie une ligne')
+  assert.equal(await radarToggle.getAttribute('aria-expanded'), 'false', 'Une seule ligne dépliée à la fois')
+  await page.keyboard.press(' ')
+  assert.equal(await offlineToggle.getAttribute('aria-expanded'), 'false', 'Espace la replie')
+
+  // Fusionner la PR : une confirmation, puis la vraie route de fusion.
+  await radarToggle.click()
+  await radarGestures.getByRole('button', { name: 'Fusionner la PR #42' }).click()
+  const mergeDialog = page.getByRole('alertdialog').or(page.getByRole('dialog'))
+  await mergeDialog.getByText('Fusionner la PR #42 ?').waitFor()
+  await mergeDialog.getByRole('button', { name: 'Fusionner', exact: true }).click()
+  await code.getByText('PR #42 fusionnée.').waitFor()
+  assert.deepEqual(merged, [`/api/projects/${nimbus.id}/pull-requests/42/merge`])
+  await page.unroute('**/api/projects/*/pull-requests/*/merge')
+
+  // Nettoyer : le dialogue avec le plan réel ; on ne nettoie pas, on regarde.
+  await radarGestures.getByRole('button', { name: 'Nettoyer l’arbre' }).click()
+  const cleanDialog = page.getByRole('alertdialog').or(page.getByRole('dialog'))
+  await cleanDialog.getByText(/feat\/radar-prefetch/).first().waitFor()
+  await cleanDialog.getByText(/Supprimer la branche|branche/).first().waitFor()
+  await page.keyboard.press('Escape')
+  await cleanDialog.waitFor({ state: 'detached' })
+
+  // Rebaser : sans session vivante, l'arbre est rebasé sur place, dans le dépôt d'essai.
+  if ((await radarToggle.getAttribute('aria-expanded')) !== 'true') await radarToggle.click()
+  await radarGestures.getByRole('button', { name: /^Rebaser sur main/ }).click()
+  await code.getByText(/feat\/radar-prefetch rebasée sur main\.|Rebase demandé à sa session\./).waitFor()
+  await code.getByText('feat/radar-prefetch rebasée sur main.', { exact: true }).waitFor()
+  // Dans le dépôt lui-même : le cache de l'état des arbres n'a pas à être cru sur parole.
+  assert.equal(String(gitIn(nimbus.workspacePath, 'rev-list', '--count', 'feat/radar-prefetch..main')).trim(), '0', 'Le rebase a été fait pour de vrai')
+
+  // « + 1 arbre fusionné à nettoyer » mène à Travail, Par arbre, filtré « À nettoyer ».
+  const settledLink = code.getByRole('link', { name: /^\+ \d+ arbres? fusionnés? à nettoyer$/ })
+  assert.match(await settledLink.getAttribute('href'), new RegExp(`/p/${nimbus.id}/travail\\?vue=couloirs&etat=cleanup$`))
+  await settledLink.click()
+  await page.waitForURL(`**/p/${nimbus.id}/travail?vue=couloirs`)
+  await page.locator('[data-filter-chip]').filter({ hasText: 'À nettoyer' }).waitFor()
+  await page.unroute(`**/api/projects/${nimbus.id}/pull-requests`)
+  // Le filtre imposé est retenu comme un autre : on le retire pour la suite.
+  await page.locator('[data-filter-chip]').filter({ hasText: 'À nettoyer' }).getByRole('button', { name: 'Retirer ce filtre' }).click()
+
+  // Voir le diff : la racine ouvre le panneau git sur place, ou dans sa session.
+  await page.goto(`${base}/p/${nimbus.id}`)
+  await code.waitFor()
+  const rootToggle = lineButtons.first()
+  await rootToggle.click()
+  const rootGestures = page.locator(`[id="${await rootToggle.getAttribute('aria-controls')}"]`)
+  assert.equal(await rootGestures.getByRole('button', { name: /^Rebaser/ }).count(), 0, 'On ne rebase pas la racine')
+  assert.equal(await rootGestures.getByRole('button', { name: /Nettoyer/ }).count(), 0, 'On ne nettoie pas la racine')
+  await rootGestures.getByRole('button', { name: /^Voir le diff/ }).click()
+  await page.getByRole('tab', { name: 'Git', selected: true }).or(page.getByRole('button', { name: 'Git', pressed: true })).first().waitFor()
+
+  // Au téléphone : le graphe, le texte et le `⋯` ; la dérive passe au pied d'une ligne dépliée.
+  await page.goto(`${base}/p/${nimbus.id}`)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await code.waitFor()
+  await page.waitForTimeout(300)
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Le graphe ne déborde pas à 390 px')
+  assert.equal(
+    await lineOfCode('feat/offline-cache').evaluate((line) => [...line.children].filter((cell) => cell.getBoundingClientRect().width > 0).length),
+    3,
+    'Au téléphone, trois cases : le graphe, le texte, le ⋯',
+  )
+  await code.screenshot({ animations: 'disabled', path: join(shots, 'apercu-code-mobile.png') })
+  await page.setViewportSize({ width: 1440, height: 900 })
 
   /*
     La chronologie : les jalons en lignes, les cartes en barres. Ce qu'une relecture ne
