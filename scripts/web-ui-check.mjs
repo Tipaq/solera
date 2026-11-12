@@ -22,7 +22,9 @@ import { launchBrowser } from './checks/browser.mjs'
  *   porte un script qui écrirait dans le titre de la fenêtre s'il tournait ;
  * - **un lien de la page lue reste dans la vue**, et l'historique en revient ;
  * - **un site qui refuse le cadre le dit**, au lieu d'un cadre vide ;
- * - **un lien d'une réponse** s'ouvre aussi dans la vue.
+ * - **un lien d'une réponse** s'ouvre aussi dans la vue ;
+ * - **la barre d'adresse est la ligne d'outils du cadre commun** (#224) : 48 px,
+ *   l'adresse au format de la recherche, Lecture et Direct en un seul bouton qui bascule.
  *
  * Les pages viennent d'un serveur local monté ici : la suite ne dépend pas du réseau.
  *
@@ -186,6 +188,12 @@ try {
   const shots = join(root, 'docs/audits/2026-10-17-panneau-web')
   await mkdir(shots, { recursive: true })
   const panel = page.locator('[data-panel="workspace"]')
+  /** Lecture ou Direct : un seul bouton, qui porte le mode affiché et bascule vers l'autre. */
+  const modeButton = panel.getByRole('button', { name: /^(Lecture|Direct) — passer en / })
+  const setMode = async (mode) => {
+    if (!(await modeButton.getAttribute('aria-label')).startsWith(mode)) await modeButton.click()
+    await panel.getByRole('button', { name: new RegExp(`^${mode} — passer en `) }).waitFor()
+  }
 
   await page.goto(`${base}/p/${nimbus.id}/c/${thread.id}`)
   await page.getByText('Cherche comment marche une solera.').first().waitFor()
@@ -204,8 +212,23 @@ try {
   await panel.screenshot({ animations: 'disabled', path: join(shots, 'direct-refuse.png') })
   console.log('OK : un résultat de recherche s’ouvre dans le panneau, et un site qui refuse le cadre le dit.')
 
+  // ─── La barre d'adresse est la ligne d'outils commune ─────────────────────
+  const address = panel.getByRole('textbox', { name: 'Adresse de la page' })
+  const line = await address.evaluate((input) => {
+    const row = input.closest('.h-12')
+    return row ? row.getBoundingClientRect().height : null
+  })
+  assert.equal(line, 48, 'la barre d’adresse est la ligne d’outils de 48 px')
+  assert.equal(await panel.getByRole('radiogroup', { name: 'Mode d’affichage' }).count(), 0, 'plus de segments Lecture / Direct')
+  assert.equal(await modeButton.count(), 1, 'un seul bouton bascule le mode')
+  assert.equal(await panel.getByRole('button', { name: 'Page précédente', exact: true }).isDisabled(), true, 'rien avant la première page')
+  // Les gestes à la hauteur commune : 36 px à la souris, comme `Button size="sm"`.
+  const gesture = await panel.getByRole('button', { name: 'Recharger', exact: true }).boundingBox()
+  assert.equal(Math.round(gesture.height), 36)
+  console.log('OK : la barre d’adresse tient sur la ligne d’outils commune, et un seul bouton bascule Lecture / Direct.')
+
   // ─── Lecture : le texte, sans script ni menu du site ──────────────────────
-  await panel.getByRole('radio', { name: 'Lecture' }).click()
+  await setMode('Lecture')
   await panel.getByRole('heading', { name: 'La méthode solera' }).waitFor()
   await panel.getByText(/recomplétant la vieille barrique/).first().waitFor()
   assert.equal(await panel.getByText('Accueil · Blog · Contact').count(), 0, 'la navigation du site est retirée')
@@ -223,9 +246,9 @@ try {
   console.log('OK : un lien de la page lue reste dans la vue, et « précédente » y revient.')
 
   // ─── Direct : un site qui accepte le cadre s'affiche ──────────────────────
-  await panel.getByRole('textbox', { name: 'Adresse de la page' }).fill(`${origin}/suite`)
-  await panel.getByRole('textbox', { name: 'Adresse de la page' }).press('Enter')
-  await panel.getByRole('radio', { name: 'Direct' }).click()
+  await address.fill(`${origin}/suite`)
+  await address.press('Enter')
+  await setMode('Direct')
   const frame = panel.frameLocator('iframe')
   await frame.getByRole('heading', { name: 'La suite' }).waitFor()
   assert.equal(await panel.getByText(/refuse d’être affiché/).count(), 0)
@@ -243,7 +266,6 @@ try {
   // Le mode Direct garde `allow-same-origin` pour un site tiers ; si ce site redirige
   // le cadre vers Solera, la page y aurait l'origine de Solera et la main sur
   // `parent.document`. Solera refuse tout cadre : le navigateur n'y charge rien.
-  const address = panel.getByRole('textbox', { name: 'Adresse de la page' })
   for (const path of ['/vers-solera', '/script-vers-solera']) {
     await address.fill(`${origin}${path}`)
     await address.press('Enter')
@@ -291,7 +313,7 @@ try {
   })
   await address.fill(`${origin}/piege`)
   await address.press('Enter')
-  await panel.getByRole('radio', { name: 'Lecture' }).click()
+  await setMode('Lecture')
   await panel.getByText('Après le piège.').waitFor()
   await delay(300)
   assert.notEqual(await page.title(), 'XSS', 'l’image du commentaire ne s’exécute pas')

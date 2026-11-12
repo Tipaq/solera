@@ -70,8 +70,8 @@ export function ToolbarSearch({
   return (
     <label
       className={cx(
-        'group flex h-11 min-w-0 shrink items-center gap-2.5 rounded-md border border-line px-2.5 text-sm text-ink-soft md:h-9 pointer-coarse:h-11',
-        'transition-[width,background-color,border-color] hover:bg-surface-high focus-within:border-line-strong focus-within:text-ink',
+        'group shrink transition-[width,background-color,border-color]',
+        toolbarFieldClass(),
         value
           ? 'w-56'
           : 'w-36 focus-within:w-56 max-sm:group-has-[[data-filter-chip]]/toolbar:w-11 max-sm:group-has-[[data-filter-chip]]/toolbar:focus-within:w-56',
@@ -96,13 +96,31 @@ export function ToolbarSearch({
 }
 
 /**
+ * Un champ de la barre au format de *Rechercher* dans la sidebar : mêmes coins, même
+ * icône à gauche, même encre, même survol, un filet en plus. La hauteur de `Button
+ * size="sm"`. La recherche de la barre, celle du panneau et l'adresse d'une page web
+ * le partagent ; chacun pose sa largeur et sa transition. `invalid` borde de rouge.
+ */
+export const toolbarFieldClass = (invalid = false) =>
+  cx(
+    'flex h-11 min-w-0 items-center gap-2.5 rounded-md border px-2.5 text-sm text-ink-soft hover:bg-surface-high focus-within:text-ink md:h-9 pointer-coarse:h-11',
+    invalid ? 'border-critical' : 'border-line focus-within:border-line-strong',
+  )
+
+/**
+ * Ce qu'on ajoute à un outil fait d'une seule icône : carré de 36 px à la souris, et
+ * 44 px de large au doigt comme de haut (*Gabarit tactile*).
+ */
+export const iconToolClass = 'justify-center min-w-11 md:min-w-9 pointer-coarse:min-w-11'
+
+/**
  * Le bouton d'un menu de la barre (« Filtrer », « Affichage ») : icône, libellé, compte.
  * La hauteur de `Button size="sm"` (« + Carte »), 36 px à la souris et 44 au doigt, pour
  * que la ligne reste alignée. Actif quand un filtre est posé.
  */
 export const toolbarButtonClass = (active: boolean) =>
   cx(
-    'inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors md:h-9 pointer-coarse:h-11',
+    'inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors md:h-9 pointer-coarse:h-11 focus-visible:outline-2 focus-visible:outline-accent',
     active ? 'border-line-strong bg-surface-high text-ink' : 'border-line text-ink-soft hover:border-line-strong hover:text-ink',
   )
 
