@@ -63,20 +63,28 @@ export function PortfolioTravailPage() {
   const [query, setQuery] = useState('')
 
   const set = (patch: Partial<WorkFilters>) => setFilters({ ...filters, ...patch })
-  const selected = useMemo(() => new Set(filters.projects), [filters.projects])
+  // Un projet coché puis archivé reste dans la mémoire du navigateur : il ne filtre plus
+  // rien, sinon la page se viderait sans puce ni « Effacer » pour en sortir.
+  const kept = useMemo(() => ({ ...filters, projects: filters.projects.filter((id) => byId.has(id)) }), [filters, byId])
+  const selected = useMemo(() => new Set(kept.projects), [kept.projects])
+  // « Effacer tous les filtres » : la barre vide les projets puis appelle ceci ; les deux
+  // écritures partent du même état, la dernière doit donc tout vider.
+  const clearAll = () => setFilters({ projects: [], states: [] })
+  // « À nettoyer » réclame les fusionnés : « Montrer » se lit coché tant qu'il est posé.
+  const forced = filters.states.includes('clean')
   const toggleState = (state: WorkState) =>
     set({ states: filters.states.includes(state) ? filters.states.filter((entry) => entry !== state) : [...filters.states, state] })
 
   const layout = useMemo(
-    () => workLayout({ projects: code.groups, filters, query, showMerged, reasonOf: (tree) => verdictReason(t, tree.reason) }),
-    [code.groups, filters, query, showMerged, t],
+    () => workLayout({ projects: code.groups, filters: kept, query, showMerged, reasonOf: (tree) => verdictReason(t, tree.reason) }),
+    [code.groups, kept, query, showMerged, t],
   )
   const events = useMemo(
-    () => workEvents(journal?.entries ?? [], { projects: byId, selected: filters.projects, query }),
-    [journal, byId, filters.projects, query],
+    () => workEvents(journal?.entries ?? [], { projects: byId, selected: kept.projects, query }),
+    [journal, byId, kept.projects, query],
   )
   const days = useJournalDays(events, 'all')
-  const asking = inboxInProjects(inbox, filters.projects)
+  const asking = inboxInProjects(inbox, kept.projects)
 
   const meta = [
     t(`travail.summary.trees.${pluralOf(layout.summary.count)}`, { count: layout.summary.count }),
@@ -109,7 +117,7 @@ export function PortfolioTravailPage() {
             </>
           }
           extraActive={filters.states.length}
-          onClearExtra={() => set({ projects: [], states: [] })}
+          onClearExtra={clearAll}
           extraChips={filters.states.map((state) => (
             <FilterChip key={state} onClear={() => toggleState(state)}>
               {t(STATE_LABEL[state])}
@@ -122,7 +130,7 @@ export function PortfolioTravailPage() {
             view === 'moment' ? null : (
               <>
                 <MenuHeading>{t('toolbar.show')}</MenuHeading>
-                <MenuCheck checked={showMerged} onChange={setShowMerged}>
+                <MenuCheck checked={showMerged || forced} onChange={(next) => (forced ? undefined : setShowMerged(next))}>
                   {t('portfolio.work.showMerged')}
                 </MenuCheck>
               </>

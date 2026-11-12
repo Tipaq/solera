@@ -4,7 +4,7 @@ import type { JournalEntryDto } from '@solera/protocol'
 import type { BranchInfo, TreeFields, TreeRow } from '../../web/src/lib/code-model.js'
 
 const { verdictOf } = await import('../../web/src/lib/code-model.js')
-const { workLayout, readWorkFilters, workEvents, inboxInProjects, NO_WORK_FILTERS } = await import('../../web/src/lib/portfolio-work.js')
+const { workLayout, readWorkFilters, workEvents, inboxInProjects, foldedOffers, NO_WORK_FILTERS } = await import('../../web/src/lib/portfolio-work.js')
 
 /*
  * Travail du portefeuille (#238, `coque.md` PF-14 à PF-21) : les arbres de tous les
@@ -197,4 +197,21 @@ test('les filtres retenus : ce qui n’a plus cours est écarté', () => {
   assert.deepEqual(readWorkFilters(null), NO_WORK_FILTERS)
   assert.deepEqual(readWorkFilters('pas du json'), NO_WORK_FILTERS)
   assert.deepEqual(readWorkFilters(JSON.stringify({ projects: ['a', 3], states: ['waiting', 'inconnu'] })), { projects: ['a'], states: ['waiting'] })
+})
+
+test('le repli « Nettoyer » ne propose que ses arbres, projet par projet, et pas ceux que Solera n’a pas créés', () => {
+  const shell = merged('shell', { id: null })
+  const { folded, offers } = layout({
+    projects: [
+      { project: project('a'), base: 'main', trees: [root(), merged('vieux'), shell], branches: [branch('fini', { kind: 'merged', merged: true })] },
+      { project: project('b'), base: 'dev', trees: [root(), merged('ancien')], branches: [] },
+    ],
+  })
+  assert.deepEqual(
+    foldedOffers(folded, offers).map((offer) => ({ project: offer.project.id, base: offer.base, trees: offer.request.trees.map((row) => row.key), branches: offer.request.branches, count: offer.count })),
+    [
+      { project: 'a', base: 'main', trees: ['vieux'], branches: [], count: 1 },
+      { project: 'b', base: 'dev', trees: ['ancien'], branches: [], count: 1 },
+    ],
+  )
 })

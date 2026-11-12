@@ -3,9 +3,9 @@ import type { JournalEntryDto, ProjectDto } from '@solera/protocol'
 import { Button, cx } from '@solera/ui'
 import { formatBytes, pluralOf } from '../../lib/code-model'
 import { shortAge } from '../../lib/dates'
-import { locale, useLocale, useTranslate } from '../../lib/i18n'
+import { useLocale, useTranslate } from '../../lib/i18n'
 import type { JournalDay } from '../../lib/journal'
-import type { WorkCleanOffer, WorkTree } from '../../lib/portfolio-work'
+import { foldedOffers, type WorkCleanOffer, type WorkTree } from '../../lib/portfolio-work'
 import { sizeOf } from '../../lib/travail-clean'
 import { AgentIcon } from '../AgentIcon'
 import { PrTag } from '../code/PrTag'
@@ -140,10 +140,6 @@ export function WorkFolded({ trees, offers }: { trees: Tree[]; offers: WorkClean
   const lang = useLocale()
   if (trees.length === 0) return null
   const bytes = sizeOf(trees)
-  const targets = offers.flatMap((offer) => {
-    const mine = trees.filter((tree) => tree.project.id === offer.project.id && tree.id !== null)
-    return mine.length > 0 ? [{ ...offer, request: { trees: mine, branches: [] }, count: mine.length }] : []
-  })
   return (
     <div data-work-folded className="flex min-h-11 items-center gap-2 px-3 py-1 text-xs text-ink-faint">
       <span aria-hidden className="size-2 shrink-0 rounded-full bg-positive/60" />
@@ -153,7 +149,7 @@ export function WorkFolded({ trees, offers }: { trees: Tree[]; offers: WorkClean
           .join(' · ')}
       </span>
       <CleanChooser
-        targets={targets}
+        targets={foldedOffers(trees, offers)}
         trigger={(open) => (
           <Button size="sm" variant="ghost" onClick={open} className="shrink-0">
             {t('travail.cleanup.action')}
@@ -165,8 +161,8 @@ export function WorkFolded({ trees, offers }: { trees: Tree[]; offers: WorkClean
 }
 
 /** Le jour d'un groupe, écrit en entier dans la langue de l'app : « lundi 10 novembre ». */
-function dayTitle(at: number): string {
-  return new Intl.DateTimeFormat(locale(), { weekday: 'long', day: 'numeric', month: 'long' }).format(at)
+function dayTitle(at: number, lang: string): string {
+  return new Intl.DateTimeFormat(lang, { weekday: 'long', day: 'numeric', month: 'long' }).format(at)
 }
 
 /**
@@ -176,14 +172,15 @@ function dayTitle(at: number): string {
  */
 export function WorkMoments({ days, projects }: { days: JournalDay[]; projects: ReadonlyMap<string, WorkProject> }) {
   const t = useTranslate()
+  const lang = useLocale()
   if (days.length === 0) return <p className="text-sm text-ink-faint">{t('portfolio.work.emptyPeriod')}</p>
-  const time = new Intl.DateTimeFormat(locale(), { hour: '2-digit', minute: '2-digit' })
+  const time = new Intl.DateTimeFormat(lang, { hour: '2-digit', minute: '2-digit' })
   return (
     <div className="flex flex-col gap-5">
       {days.map((day) => (
         <section key={day.at} data-work-day className="flex flex-col gap-1">
           <SectionTitle count={day.entries.length}>
-            <span className="inline-block first-letter:uppercase">{dayTitle(day.at)}</span>
+            <span className="inline-block first-letter:uppercase">{dayTitle(day.at, lang)}</span>
           </SectionTitle>
           <ul className="flex flex-col border-l border-line pl-3">
             {day.entries.map((entry) => (

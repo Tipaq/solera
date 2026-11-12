@@ -160,6 +160,17 @@ export function workLayout<P extends WorkProjectRef>({
 }
 
 /**
+ * Ce que « Nettoyer » d'un repli propose : ses arbres seulement, projet par projet, ceux
+ * que Solera sait retirer (créés par lui), avec la base de leur projet.
+ */
+export function foldedOffers<P extends WorkProjectRef>(folded: WorkTree<P>[], offers: WorkCleanOffer<P>[]): WorkCleanOffer<P>[] {
+  return offers.flatMap((offer) => {
+    const trees = folded.filter((tree) => tree.project.id === offer.project.id && tree.id !== null)
+    return trees.length > 0 ? [{ ...offer, request: { trees, branches: [] }, count: trees.length }] : []
+  })
+}
+
+/**
  * Par moment (PF-19) : les événements du journal des projets cochés, que la recherche
  * garde par leur titre ou le nom de leur projet. Un événement d'un projet que la liste
  * ne montre plus (archivé entre deux lectures) est écarté plutôt que montré sans avatar.
