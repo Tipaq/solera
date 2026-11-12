@@ -307,6 +307,13 @@ export const cards = sqliteTable(
      * par le balayage. Un jalon reste « Lancé » jusque-là, « Livré » ensuite.
      */
     branchPrMergedAt: timestamp('branch_pr_merged_at'),
+    /**
+     * Quand la forge l'a vue fermée sans fusion (#198) ; levée si elle est rouverte. Le
+     * jalon le dit au lieu de proposer une fusion que la forge refuserait.
+     */
+    branchPrClosedAt: timestamp('branch_pr_closed_at'),
+    /** La branche que vise cette PR, relevée à l'ouverture ou sur la forge (#198). */
+    branchPrBase: text('branch_pr_base'),
     createdBy: text('created_by')
       .notNull()
       .references(() => users.id),
