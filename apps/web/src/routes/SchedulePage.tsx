@@ -10,7 +10,7 @@ import { Badge, Banner, Button, Card, CardBody, ConfirmDialog, EmptyState, IconB
 import { cronToHuman } from '../lib/cron'
 import { relativeDate } from '../lib/dates'
 import { NEW_AGENT_TASK } from '../lib/action-editor'
-import type { ActionPanel } from '../lib/action-panel'
+import { detailPanel, type ActionPanel } from '../lib/action-panel'
 import { fromTask } from '../lib/automations'
 import { useAutomations } from '../lib/automations-query'
 import { locale, useTranslate } from '../lib/i18n'
@@ -65,7 +65,7 @@ export function SchedulePage() {
    * d'ailleurs puisse l'ouvrir.
    */
   const { items } = useAutomations({ projectId: projectId ?? '' })
-  const [opened, setPanel] = useState<ActionPanel | null>(null)
+  const [opened, setOpened] = useState<ActionPanel | null>(null)
   const [params, setParams] = useSearchParams()
   const creating = params.get(NEW_PARAM) === '1'
   const closeCreating = () => {
@@ -85,7 +85,7 @@ export function SchedulePage() {
       <div className="flex flex-col gap-4">
         <div className="flex items-start gap-3">
           <p className="max-w-prose flex-1 text-sm text-ink-soft">{t('schedule.description')}</p>
-          <Button size="sm" icon={<Plus size={15} />} onClick={() => setPanel(newTask)}>
+          <Button size="sm" icon={<Plus size={15} />} onClick={() => setOpened(newTask)}>
             {t('project.action.newTask')}
           </Button>
         </div>
@@ -104,8 +104,8 @@ export function SchedulePage() {
               <TaskCard
                 key={task.id}
                 task={task}
-                onOpen={() => setPanel({ mode: 'detail', id: fromTask(task).id })}
-                onEdit={() => setPanel({ mode: 'edit', seed: { from: fromTask(task) }, back: null })}
+                onOpen={() => setOpened(detailPanel(fromTask(task).id))}
+                onEdit={() => setOpened({ mode: 'edit', seed: { from: fromTask(task) }, back: null })}
               />
             ))}
           </ul>
@@ -119,10 +119,10 @@ export function SchedulePage() {
           panel={panel}
           onPanel={(next) => {
             if (creating) closeCreating()
-            setPanel(next)
+            setOpened(next)
           }}
           onClose={() => {
-            setPanel(null)
+            setOpened(null)
             if (creating) closeCreating()
           }}
         />

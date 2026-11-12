@@ -20,6 +20,11 @@ export type ActionPanel =
   | { mode: 'pick' }
   | { mode: 'run'; terminalId: string; back: string }
 
+/** Le détail d'une action ; `review` quand on l'ouvre par « Relire » (DET-3). */
+export function detailPanel(id: string, review = false): ActionPanel {
+  return review ? { mode: 'detail', id, review } : { mode: 'detail', id }
+}
+
 /** Les entrées de « + Action ▾ » : la nature d'abord, ou planifier une action qui existe. */
 export type NewActionKind = 'command' | 'service' | 'agent' | 'schedule' | 'any'
 

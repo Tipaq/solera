@@ -5,6 +5,7 @@ import type { MessageKey, MessageParams } from '../../web/src/lib/i18n/index.js'
 
 const {
   actionPanelOf,
+  detailPanel,
   editorKey,
   firstOpenRun,
   newActionPanel,
@@ -106,6 +107,11 @@ test('newActionPanel : la nature choisie d’avance, ou le choix d’une action 
   assert.deepEqual(newActionPanel('agent'), { mode: 'edit', seed: { preset: { what: 'agent' } }, back: null })
   assert.deepEqual(newActionPanel('schedule'), { mode: 'pick' })
   assert.deepEqual(newActionPanel('any'), { mode: 'edit', seed: {}, back: null })
+})
+
+test('detailPanel : le détail, sur la relecture quand on l’ouvre par « Relire »', () => {
+  assert.deepEqual(detailPanel('a-a1'), { mode: 'detail', id: 'a-a1' })
+  assert.deepEqual(detailPanel('a-a1', true), { mode: 'detail', id: 'a-a1', review: true })
 })
 
 test('actionPanelOf : `?nouvelle=` ouvre l’éditeur pré-réglé ; une valeur inconnue n’ouvre rien', () => {

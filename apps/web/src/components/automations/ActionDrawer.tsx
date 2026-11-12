@@ -2,7 +2,7 @@ import { AlarmClock } from 'lucide-react'
 import { Suspense, lazy, useRef, useState, type ReactNode } from 'react'
 import { Button } from '@solera/ui'
 import { editorKey, panelBack, panelItem, panelLabel, pickable, type ActionPanel } from '../../lib/action-panel'
-import { natureOf, type Automation } from '../../lib/automations'
+import { actionOf, natureOf, type Automation } from '../../lib/automations'
 import { commandRunOf } from '../../lib/command-runs'
 import { useDetailSurface } from '../../lib/detail-surface'
 import { useEscapeLayer } from '../../lib/escape-layers'
@@ -245,7 +245,7 @@ function RunPane({
   const { data: terminals } = useTerminals(projectId, true, RUN_POLL_MS)
   const terminal = terminals?.find((entry) => entry.id === terminalId)
   if (!terminal) return null
-  const action = item.source.kind === 'action' ? item.source.action : null
+  const action = actionOf(item)
   return (
     <CommandRunDetail
       key={terminal.id}

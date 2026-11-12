@@ -383,7 +383,10 @@ export function reviewReason(review: Review, t: Translate): string {
 /** Le dernier passage fini, celui dont la phrase parle. */
 const lastFinished = (item: Automation): UnifiedRun | undefined => item.runs.find((run) => !RUN_VERDICTS[run.status].live)
 
-const isService = (item: Automation) => item.what === 'command' && item.commandKind === 'service'
+export const isService = (item: Automation): boolean => item.what === 'command' && item.commandKind === 'service'
+
+/** L'action de projet derrière une commande ; null pour une tâche d'agent. */
+export const actionOf = (item: Automation): ProjectActionDto | null => (item.source.kind === 'action' ? item.source.action : null)
 const serviceFailed = (item: Automation) =>
   item.source.kind === 'action' && item.source.action.service?.state === 'failed'
 

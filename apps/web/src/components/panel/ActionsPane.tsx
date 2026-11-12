@@ -2,7 +2,7 @@ import { memo, useRef, useState } from 'react'
 import type { ProjectActionDto } from '@solera/protocol'
 import { Loader, Plus, Zap } from 'lucide-react'
 import { useActions } from '../../lib/actions'
-import { newActionPanel, type ActionPanel } from '../../lib/action-panel'
+import { detailPanel, newActionPanel, panelItem, type ActionPanel } from '../../lib/action-panel'
 import { actionAutomationId, fromAction } from '../../lib/automations'
 import { useAutomations } from '../../lib/automations-query'
 import { useEscapeLayer } from '../../lib/escape-layers'
@@ -26,15 +26,16 @@ export const ActionsPane = memo(function ActionsPane({ projectId, conversationId
   const dialogs = useActionDialogs(projectId, conversationId)
   const { dialogs: hosted, failure } = dialogs
   const actions = (data ?? []).filter((action) => action.projectId === projectId)
-  const { items } = useAutomations({ projectId })
+  const { items, isPending: itemsPending } = useAutomations({ projectId })
   const [panel, setPanel] = useState<ActionPanel | null>(null)
-  const detail = (action: ProjectActionDto, review = false): ActionPanel => ({ mode: 'detail', id: actionAutomationId(action.id), ...(review ? { review } : {}) })
+  // Une action supprimée ailleurs referme son détail, sans le rouvrir si elle revenait.
+  if (panel && !itemsPending && !panelShows(panel, items)) setPanel(null)
+  const detail = (action: ProjectActionDto, review = false) => detailPanel(actionAutomationId(action.id), review)
   const handlers: ActionHandlers = {
     ...dialogs.handlers,
     onOpen: (action) => setPanel(detail(action)),
     onReview: (action) => setPanel(detail(action, true)),
-    onEdit: (action) =>
-      setPanel({ mode: 'edit', seed: { from: items.find((item) => item.id === actionAutomationId(action.id)) ?? fromAction(action) }, back: null }),
+    onEdit: (action) => setPanel({ mode: 'edit', seed: { from: panelItem(detail(action), items) ?? fromAction(action) }, back: null }),
   }
   const create = () => setPanel(newActionPanel('any'))
   const runs = useCommandRuns(projectId, conversationId)

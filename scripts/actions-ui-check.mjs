@@ -423,7 +423,11 @@ async function checkDetail(page, base, project, api, context) {
   await stack.getByText(/^Dernier passage échoué il y a .* \(code 2\)\.$/).waitFor()
   await stack.locator('[data-run]').first().getByText('code 2').waitFor()
   await stack.getByLabel('Sortie du passage').getByText('hello-from-action', { exact: false }).waitFor({ timeout: 15000 })
-  await stack.getByText('Créée par toi', { exact: false }).waitFor()
+  // Un agent l'a modifiée depuis (la relecture refusée plus haut) : l'origine le dit.
+  await stack.getByText('Proposée par un agent dans', { exact: false }).waitFor()
+  // Depuis une conversation, « Lancer » part droit dans son arbre : pas de chevron.
+  await stack.getByRole('button', { name: 'Lancer « Dire bonjour »', exact: true }).first().waitFor()
+  assert.equal(await stack.getByRole('button', { name: 'Lancer « Dire bonjour » dans…', exact: true }).count(), 0)
   await page.screenshot({ path: join(shots, 'detail-runs-1280.png') })
   await page.keyboard.press('Escape')
   await stack.waitFor({ state: 'detached' })
@@ -701,6 +705,19 @@ try {
   await review.getByRole('button', { name: 'Refuser', exact: true }).click()
   await stack.waitFor({ state: 'detached' })
   assert.equal((await api('/api/actions')).some((entry) => entry.label === 'Tout effacer'), false)
+
+  // Refuser une commande validée qu'un agent a modifiée rétablit ce qui avait été validé.
+  const modified = await mcp(env, conversation.id, project.id, 'register_action', { id: task.id, label: 'Dire bonjour', kind: 'task', command: 'echo autre-chose' })
+  assert.ok(!modified.isError, modified.content[0].text)
+  await page.getByRole('button', { name: 'Relire : Dire bonjour' }).first().click({ timeout: 15000 })
+  const changes = review.getByRole('group', { name: 'Ce qui a changé depuis la dernière validation' })
+  assert.deepEqual(await changes.locator('del').allTextContents(), ['- echo hello-from-action; exit 2'])
+  assert.deepEqual(await changes.locator('ins').allTextContents(), ['+ echo autre-chose'])
+  await review.getByRole('button', { name: 'Refuser', exact: true }).click()
+  await stack.waitFor({ state: 'detached' })
+  const restored = (await api('/api/actions')).find((entry) => entry.id === task.id)
+  assert.equal(restored.command, 'echo hello-from-action; exit 2')
+  assert.equal(restored.status, 'approved')
 
   await page.getByRole('button', { name: 'Lancer : Serveur statique' }).first().click()
 

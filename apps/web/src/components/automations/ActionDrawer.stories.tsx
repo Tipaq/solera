@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useState, type ReactNode } from 'react'
 import { Button } from '@solera/ui'
-import type { ActionPanel } from '../../lib/action-panel'
+import { detailPanel as detail, type ActionPanel } from '../../lib/action-panel'
 import { DetailSurfaceContext, type DetailSurface } from '../../lib/detail-surface'
 import { useTranslate } from '../../lib/i18n'
 import { DrawerLayer } from '../shell/Drawer'
@@ -65,8 +65,6 @@ function Seeded({ children }: { children: ReactNode }) {
     </SeededWorktrees>
   )
 }
-
-const detail = (id: string, review = false): ActionPanel => ({ mode: 'detail', id, ...(review ? { review } : {}) })
 
 const meta = {
   title: "Composants d'application/Actions/Tiroir d'une action",

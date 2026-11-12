@@ -43,7 +43,9 @@ import {
   duplicateDraft,
   formatDateTime,
   formatDuration,
+  actionOf,
   fromAction,
+  isService,
   natureOf,
   stateSentence,
   whenWords,
@@ -51,12 +53,11 @@ import {
   type UnifiedRun,
 } from '../../lib/automations'
 import { conversationPath } from '../../lib/conversation-route'
-import { useConversation } from '../../lib/conversations'
 import { useEscapeLayer } from '../../lib/escape-layers'
 import { locale, useTranslate } from '../../lib/i18n'
 import { upcoming } from '../../lib/schedule-rule'
 import { useServerTimeZone } from '../../lib/schedules'
-import { switchTargets, unlessElsewhere } from '../../lib/served'
+import { actionInTree, servedInstances, switchTargets, unlessElsewhere, type TreeRef } from '../../lib/served'
 import { useServedIndex } from '../../lib/served-query'
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
 import { WebLink } from '../WebLink'
@@ -64,8 +65,9 @@ import { LaunchButton, type LaunchHere } from './ActionGestures'
 import { STATE_DOT } from './ActionMarks'
 import { ActionBlock, ActionBody, ActionFooter, ActionHeader, Chip } from './ActionSheet'
 import { ServedBlock } from './served/ServedBlock'
+import { ServiceInstances } from './served/ServiceInstances'
 import { useTargetName } from './served/ServeMenu'
-import { switchToTree, useLaunchHere, useServiceSwitch } from './served/SwitchServiceDialog'
+import { switchToTree, useHereTree, useLaunchHere, useServiceSwitch } from './served/SwitchServiceDialog'
 
 /*
  * Le détail d'une action (`actions.md` §1.D) : l'état en une phrase et le geste principal
@@ -75,11 +77,16 @@ import { switchToTree, useLaunchHere, useServiceSwitch } from './served/SwitchSe
  * le **même** tiroir (`ActionDrawer`), qui y revient.
  */
 
-/** Les passages d'une commande avec leur extrait ; ceux d'une tâche sont déjà dans la liste. */
-function useDetailed(item: Automation): Automation {
-  const actionId = item.source.kind === 'action' ? item.source.action.id : null
-  const { data: runs } = useActionRuns(actionId)
-  return item.source.kind === 'action' && runs ? fromAction(item.source.action, runs) : item
+/**
+ * Les passages d'une commande avec leur extrait ; ceux d'une tâche sont déjà dans la
+ * liste. Un service « une instance par worktree » se lit depuis l'arbre d'où l'on regarde.
+ */
+function useDetailed<T extends TreeRef>(item: Automation, trees: readonly T[], here: T | null): Automation {
+  const action = actionOf(item)
+  const { data: runs } = useActionRuns(action?.id ?? null)
+  if (!action) return item
+  const seen = actionInTree(action, trees, here)
+  return seen === action && !runs ? item : fromAction(seen, runs)
 }
 
 export function ActionDetail({
@@ -102,17 +109,20 @@ export function ActionDetail({
   const t = useTranslate()
   const lang = locale()
   const timeZone = useServerTimeZone()
-  const detailed = useDetailed(listed)
   const mutations = useAutomationMutations(projectId)
   const run = useRunAction()
   const switching = useServiceSwitch()
   const served = useServedIndex(projectId)
   const nameOf = useTargetName()
   const launchHere = useLaunchHere(served.trees, conversationId)
-  const { data: conversation } = useConversation(conversationId)
+  // L'arbre de la conversation ; hors conversation, on ne lance pas « ici ».
+  const hereTree = useHereTree(served.trees, conversationId)
+  const detailed = useDetailed(listed, served.trees, conversationId ? hereTree : null)
 
-  // La pause se lit tout de suite, avant que la liste relue la confirme (DET-11).
+  // La pause se lit tout de suite, avant que la liste relue la confirme (DET-11) ; une
+  // fois confirmée, c'est la liste qui parle, pour suivre un changement venu d'ailleurs.
   const [paused, setPaused] = useState<boolean | null>(null)
+  if (paused !== null && detailed.schedule?.enabled === !paused) setPaused(null)
   const item = paused === null ? detailed : withPaused(detailed, paused)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -127,14 +137,14 @@ export function ActionDetail({
     return () => cancelAnimationFrame(frame)
   }, [focusReview, listed.review])
 
-  const action: ProjectActionDto | null = item.source.kind === 'action' ? item.source.action : null
+  const action = actionOf(item)
+  const instances = action?.placement === 'per-worktree' ? servedInstances(item, served.trees) : null
   const now = Date.now()
   const sentence = stateSentence(item, now, t)
   const servedRow = served.byAutomation.get(item.id) ?? null
   const review = reviewOf(item)
   const failure = error ?? unlessElsewhere(run.error)?.message ?? null
-  const tree = conversation?.worktreeId ? served.trees.find((entry) => entry.id === conversation.worktreeId) : undefined
-  const here: LaunchHere | null = conversation?.worktreeId && tree ? { worktreeId: tree.id!, name: nameOf(tree) } : null
+  const here: LaunchHere | null = conversationId && hereTree?.id ? { worktreeId: hereTree.id, name: nameOf(hereTree) } : null
 
   /** Un geste qui attend sa requête : l'erreur s'affiche en tête, rien ne se ferme. */
   const act = (gesture: () => Promise<unknown>, after?: () => void, undo?: () => void) => {
@@ -157,7 +167,7 @@ export function ActionDetail({
    */
   const placeOf = (worktreeId: string | null, kind: ProjectActionDto['kind']) => {
     if (!conversationId) return worktreeId ? { worktreeId } : {}
-    const ours = kind === 'service' || worktreeId === (conversation?.worktreeId ?? null)
+    const ours = kind === 'service' || worktreeId === (hereTree?.id ?? null)
     return ours ? { conversationId } : worktreeId ? { worktreeId } : {}
   }
 
@@ -185,6 +195,7 @@ export function ActionDetail({
     <DetailGesture
       item={item}
       here={here}
+      direct={Boolean(conversationId)}
       busy={busy || run.isPending}
       onReview={() => reviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
       onStart={() => launch(null)}
@@ -230,7 +241,11 @@ export function ActionDetail({
           />
         ) : null}
 
-        {servedRow && action ? (
+        {instances && instances.length > 0 ? (
+          <ActionBlock title={t('actionDetail.block.served')}>
+            <ServiceInstances projectId={projectId} instances={instances} />
+          </ActionBlock>
+        ) : servedRow && action ? (
           <ActionBlock title={t('actionDetail.block.served')}>
             <ServedBlock
               projectId={projectId}
@@ -301,7 +316,7 @@ export function ActionDetail({
         </ActionBlock>
 
         <ActionBlock title={t('actionDetail.block.origin')}>
-          <OriginLine item={item} projectId={projectId} />
+          <OriginLine item={item} projectId={projectId} timeZone={timeZone} />
         </ActionBlock>
       </ActionBody>
 
@@ -363,6 +378,7 @@ const SESSION_LINK = cx(LINK_BOX, 'bg-accent px-3 font-medium text-accent-ink ho
 function DetailGesture({
   item,
   here,
+  direct,
   busy,
   onReview,
   onStart,
@@ -372,6 +388,8 @@ function DetailGesture({
 }: {
   item: Automation
   here: LaunchHere | null
+  /** Depuis une conversation : « Lancer » part droit dans son arbre, sans chevron. */
+  direct: boolean
   busy: boolean
   onReview: () => void
   onStart: () => void
@@ -388,7 +406,7 @@ function DetailGesture({
       </Button>
     )
   }
-  if (item.what === 'command' && item.commandKind === 'service') {
+  if (isService(item)) {
     if (live?.kind !== 'service') {
       return (
         <Button size="sm" icon={<Play size={13} />} disabled={busy} onClick={onStart}>
@@ -423,6 +441,21 @@ function DetailGesture({
       </Button>
     )
   }
+  if (direct) {
+    const where = item.what === 'agent' ? t('launcher.launch.newSession') : here ? t('launcher.launch.inTree', { tree: here.name }) : t('launcher.launch.atRoot')
+    return (
+      <Button
+        size="sm"
+        icon={<Play size={13} />}
+        aria-label={t('launcher.launch.named', { label: item.label })}
+        title={where}
+        disabled={busy}
+        onClick={() => onLaunch(here?.worktreeId ?? null)}
+      >
+        {t('launcher.launch.button')}
+      </Button>
+    )
+  }
   return <LaunchButton item={item} onLaunch={onLaunch} here={here} disabled={busy} />
 }
 
@@ -442,8 +475,10 @@ function ReviewBlock({
   onReject: () => void
 }) {
   const t = useTranslate()
-  const field = (name: 'command' | 'subdir' | 'url', value: string | null) =>
-    name === 'command' ? (value ?? t('actionDetail.review.none')) : `${t(`actionDetail.review.field.${name}`)} : ${value ?? t('actionDetail.review.none')}`
+  const field = (name: 'command' | 'subdir' | 'url', value: string | null) => {
+    const shown = value ?? t('actionDetail.review.none')
+    return name === 'command' ? shown : t('actionDetail.review.fieldValue', { field: t(`actionDetail.review.field.${name}`), value: shown })
+  }
   return (
     <section
       ref={ref}
@@ -511,7 +546,7 @@ function What({ item }: { item: Automation }) {
       </div>
     )
   }
-  const url = item.source.kind === 'action' ? item.source.action.url : null
+  const url = actionOf(item)?.url ?? null
   return (
     <div className="flex flex-col gap-2">
       <code className="flex gap-2 rounded-md bg-surface-high/50 px-3 py-2.5 font-mono text-sm text-ink">
@@ -660,17 +695,23 @@ function RunLine({
 
 /* ------------------------------------------------------------------ origine */
 
-function OriginLine({ item, projectId }: { item: Automation; projectId: string }) {
+/** Où la phrase traduite reçoit le lien de la session. */
+const SLOT = '\u0000'
+
+function OriginLine({ item, projectId, timeZone }: { item: Automation; projectId: string; timeZone: string }) {
   const t = useTranslate()
   const origin = originOf(item)
-  const date = <span className="text-ink-faint"> · {formatDateTime(origin.at, locale())}</span>
+  const date = <span className="text-ink-faint"> · {formatDateTime(origin.at, locale(), timeZone)}</span>
   if (origin.by === 'agent') {
+    // La phrase est traduite d'un bloc ; le lien s'y pose là où la langue le place.
+    const [before, after] = t('actionDetail.origin.agent', { session: SLOT }).split(SLOT)
     return (
       <p className="text-sm text-ink-soft">
-        {t('actionDetail.origin.agent')}{' '}
+        {before}
         <Link to={conversationPath({ id: origin.conversationId, projectId })} className="text-ink hover:underline">
           {origin.title === null ? t('actionDetail.origin.gone') : t('actionDetail.origin.session', { title: origin.title })}
         </Link>
+        {after}
         {date}
       </p>
     )
