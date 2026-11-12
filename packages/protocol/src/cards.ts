@@ -207,8 +207,12 @@ export interface CardLinkDto {
 export interface CardBranchPrDto {
   number: number
   url: string
+  /** La branche qu'elle vise ; `null` tant que Solera ne l'a pas relevée sur la forge. */
+  base: string | null
   /** Fusionnée depuis Solera ou vue fusionnée sur la forge ; `null` tant qu'elle ne l'est pas. */
   mergedAt: number | null
+  /** Vue fermée sans fusion sur la forge (#198) ; `null` ouverte, ou rouverte depuis. */
+  closedAt: number | null
 }
 
 /**

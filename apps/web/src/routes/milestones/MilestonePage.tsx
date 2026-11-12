@@ -3,13 +3,13 @@ import { useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { DEFAULT_MILESTONE_CONCURRENCY } from '@solera/protocol'
 import { Badge, Button, EmptyState, cx } from '@solera/ui'
-import { CardMilestone } from '../../components/board/CardMilestone'
 import { CardInfoButton } from '../../components/cards/CardInfoButton'
 import { CardSheetHost } from '../../components/cards/CardSheetHost'
 import { LaunchPanel } from '../../components/milestones/LaunchPanel'
 import { MaturityPill } from '../../components/milestones/MaturityPill'
 import { ExplainedSteps } from '../../components/milestones/MaturitySteps'
 import { RefinementPanel } from '../../components/milestones/RefinementPanel'
+import { RunPanel } from '../../components/milestones/RunPanel'
 import { WaveGraph } from '../../components/milestones/WaveGraph'
 import { withSheet } from '../../lib/card-sheet'
 import type { StatusOf } from '../../lib/card-state'
@@ -36,9 +36,8 @@ import { refineHref } from '../../lib/refinement'
  *
  * Deux emplacements, `#affinage` et `#lancer`, que la prochaine action fait défiler.
  * `#affinage` porte la session d'affinage résumée (#195), `#lancer` le panneau Lancer
- * (#197). En attendant « À régler avant de partir » (#196) et le suivi d'un jalon lancé
- * (#198), ils portent aussi ce que `main` savait déjà faire : les raisons à régler, le
- * suivi du pilotage (`CardMilestone`).
+ * (#197) puis, une fois lancé, son suivi et sa PR finale (#198). En attendant « À régler
+ * avant de partir » (#196), `#affinage` porte aussi les raisons à régler.
  */
 export function MilestonePage() {
   const { projectId, number } = useParams()
@@ -164,7 +163,7 @@ function MilestoneView({ projectId, entry, statusOf }: { projectId: string; entr
           </div>
           <div id="lancer" className="min-w-0 scroll-mt-4 xl:sticky xl:top-0 xl:col-start-2 xl:row-span-3 xl:row-start-1">
             {launchStage(entry) === 'launched' ? (
-              <RunSlot projectId={projectId} entry={entry} />
+              <RunPanel projectId={projectId} entry={entry} merge={merge} statusOf={statusOf} />
             ) : (
               <LaunchPanel projectId={projectId} entry={entry} concurrency={concurrency} onConcurrency={setConcurrency} statusOf={statusOf} />
             )}
@@ -231,24 +230,6 @@ function SettleSlot({ entry }: { entry: MilestoneEntry }) {
           <li key={reason.kind}>{reasonText(reason, t)}</li>
         ))}
       </ul>
-    </section>
-  )
-}
-
-/**
- * Le suivi d'un jalon lancé, en attendant son panneau (#198) : le pilotage tel que la
- * fiche du board l'offre.
- */
-function RunSlot({ projectId, entry }: { projectId: string; entry: MilestoneEntry }) {
-  const t = useTranslate()
-  const [, setParams] = useSearchParams()
-  return (
-    <section aria-label={t('milestone.page.launch')} className="rounded-xl border border-line p-3.5">
-      <CardMilestone
-        card={entry.card}
-        projectId={projectId}
-        onSelectCard={(number) => setParams((current) => withSheet(current, number))}
-      />
     </section>
   )
 }

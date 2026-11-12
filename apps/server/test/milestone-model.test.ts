@@ -257,10 +257,20 @@ test('MAT-2 : un pilotage fini ou arrêté ne lance plus le jalon', () => {
 })
 
 test('MAT-2 : Lancé tant que la PR du jalon est ouverte et pas fusionnée, ses cartes closes', () => {
-  const open = milestone(1, [card(2, { column: 'done' })], { branch: 'jalon/1', branchPr: { number: 7, url: 'u', mergedAt: null } })
+  const open = milestone(1, [card(2, { column: 'done' })], { branch: 'jalon/1', branchPr: { number: 7, url: 'u', base: 'main', mergedAt: null, closedAt: null } })
   assert.equal(only(open).maturity, 'launched')
-  const merged = milestone(1, [card(2, { column: 'done' })], { branch: 'jalon/1', branchPr: { number: 7, url: 'u', mergedAt: NOW } })
+  const merged = milestone(1, [card(2, { column: 'done' })], { branch: 'jalon/1', branchPr: { number: 7, url: 'u', base: 'main', mergedAt: NOW, closedAt: null } })
   assert.equal(only(merged).maturity, 'delivered')
+})
+
+test('MAT-2 : une PR de jalon fermée sans fusion le garde Lancé, sans proposer de la fusionner', () => {
+  const pr = { number: 7, url: 'https://forge/pr/7', base: 'main', mergedAt: null, closedAt: NOW }
+  const entry = only(milestone(1, [card(2, { column: 'done' })], { branch: 'jalon/1', branchPr: pr }))
+  assert.equal(entry.maturity, 'launched', 'sa branche n’est pas dans main : pas livré')
+  assert.deepEqual(nextAction(entry), { kind: 'prClosed', pr })
+  assert.deepEqual(gestureOf(entry), { kind: 'scroll', target: 'lancer' }, 'le suivi dit quoi faire de la PR fermée')
+  assert.deepEqual(maturityReasons(entry), [{ kind: 'merged', done: 1, total: 1 }, { kind: 'prClosed' }])
+  assert.deepEqual(milestoneAsks(entry), [], 'rien à fusionner : la forge refuserait')
 })
 
 test('MAT-2 : Livré quand aucune carte n’est ouverte', () => {
@@ -373,7 +383,7 @@ test('MAT-6 : lancé, la PR ouverte d’abord, puis la session qui attend, sinon
   const follow = nextAction(only(entries, { runs: [run('c-1', { state: 'paused' })] }))
   assert.deepEqual(follow, { kind: 'follow', done: 1, total: 3, added: 1, paused: true })
 
-  const pr = { number: 7, url: 'https://forge/pr/7', mergedAt: null }
+  const pr = { number: 7, url: 'https://forge/pr/7', base: 'main', mergedAt: null, closedAt: null }
   const merge = nextAction(only(milestone(1, [card(2, { column: 'done' })], { branch: 'jalon/1', branchPr: pr })))
   assert.deepEqual(merge, { kind: 'merge', pr })
 })
@@ -434,7 +444,7 @@ test('MAT-7 : les raisons concrètes de chaque étape', () => {
   const waiting = card(2, { conversations: [session('s2', 'awaiting_input')] })
   const launched = milestone(1, [waiting, card(3, { column: 'done' })], {
     branch: 'jalon/1',
-    branchPr: { number: 7, url: 'u', mergedAt: null },
+    branchPr: { number: 7, url: 'u', base: 'main', mergedAt: null, closedAt: null },
   })
   assert.deepEqual(maturityReasons(only(launched, { runs: [run('c-1', { state: 'paused' })] })), [
     { kind: 'merged', done: 1, total: 2 },
@@ -468,9 +478,9 @@ test('MAT-12 : ce qui t’attend dans un jalon — questions d’affinage, broui
     { kind: 'draft', key: 'draft-c-1', milestone: asked, conversationId: 'split-1', requestId: 'd-1', count: 3 },
   ])
 
-  const [parent, ...rest] = milestone(2, [card(3, { column: 'done' })], { branch: 'jalon/2', branchPr: { number: 7, url: 'u', mergedAt: null } })
+  const [parent, ...rest] = milestone(2, [card(3, { column: 'done' })], { branch: 'jalon/2', branchPr: { number: 7, url: 'u', base: 'main', mergedAt: null, closedAt: null } })
   assert.deepEqual(milestoneAsks(only([parent!, ...rest])), [
-    { kind: 'merge', key: 'merge-c-2', milestone: parent, branch: 'jalon/2', pr: { number: 7, url: 'u', mergedAt: null } },
+    { kind: 'merge', key: 'merge-c-2', milestone: parent, branch: 'jalon/2', pr: { number: 7, url: 'u', base: 'main', mergedAt: null, closedAt: null } },
   ])
 })
 
@@ -495,7 +505,7 @@ test('JAL-6 : le geste de chaque prochaine action', () => {
   assert.deepEqual(gestureOf(settle), { kind: 'scroll', target: 'affinage' }, 'À régler défile jusqu’à l’affinage')
   assert.deepEqual(gestureOf(only(milestone(1, [card(2)]))), { kind: 'scroll', target: 'lancer' }, 'Prêt défile jusqu’à Lancer')
 
-  const pr = { number: 7, url: 'https://forge/pr/7', mergedAt: null }
+  const pr = { number: 7, url: 'https://forge/pr/7', base: 'main', mergedAt: null, closedAt: null }
   assert.deepEqual(gestureOf(only(milestone(1, [card(2, { column: 'done' })], { branch: 'jalon/1', branchPr: pr }))), { kind: 'merge' })
 
   const waiting = card(2, { conversations: [session('s2', 'awaiting_input')] })

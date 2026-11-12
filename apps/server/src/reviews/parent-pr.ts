@@ -77,7 +77,8 @@ export class ParentPullRequests {
   /**
    * Relit les PR de parente ouvertes, et pose leur date de fusion quand la forge les dit
    * fusionnées : une fusion faite sur GitHub livre le jalon comme celle faite depuis
-   * Solera. Une PR fermée sans fusion peut être rouverte : elle se relit à la demi-heure.
+   * Solera. Une PR fermée sans fusion le dit (#198), et peut être rouverte : elle se
+   * relit à la demi-heure.
    *
    * À part de `sweep`, et lancée sans être attendue : un `gh` par jalon ouvert, jusqu'à
    * vingt secondes chacun quand la forge traîne, retarderait les demandes d'agent.
@@ -114,6 +115,7 @@ export class ParentPullRequests {
         recordBranchPrMerged(this.ctx, parent, pr, pr.mergedAt ?? now)
       } else {
         this.checkAt.set(parent.id, now + (pr.state === 'CLOSED' ? RETRY_MS : CHECK_MS))
+        recordBranchPrState(this.ctx, parent, pr, now)
       }
     }
   }
@@ -190,7 +192,7 @@ export class ParentPullRequests {
     this.retryAt.delete(parent.id)
     this.ctx.db
       .update(cards)
-      .set({ branchPrNumber: pr.number, branchPrUrl: pr.url })
+      .set({ branchPrNumber: pr.number, branchPrUrl: pr.url, branchPrBase: base })
       .where(and(eq(cards.id, parent.id), isNull(cards.branchPrNumber)))
       .run()
     this.note(
@@ -242,25 +244,43 @@ export async function mergeBranchPullRequest(
   try {
     pr = await mergeReadyPullRequest(forge, project.workspacePath, String(card.branchPrNumber), token)
   } catch (err) {
-    if (err instanceof PullRequestNotReady && err.reason === 'merged') {
-      recordBranchPrMerged(ctx, card, err.pullRequest, err.pullRequest.mergedAt ?? Date.now())
+    if (err instanceof PullRequestNotReady) {
+      if (err.reason === 'merged') recordBranchPrMerged(ctx, card, err.pullRequest, err.pullRequest.mergedAt ?? Date.now())
+      else recordBranchPrState(ctx, card, err.pullRequest, Date.now())
     }
     throw err
   }
   const mergedAt = Date.now()
   recordBranchPrMerged(ctx, card, pr, mergedAt)
-  return { number: pr.number, url: pr.url, mergedAt }
+  return { number: pr.number, url: pr.url, base: pr.base, mergedAt, closedAt: null }
 }
 
 /** La date de fusion, et sa note, une seule fois : la première à la voir l'écrit. */
 function recordBranchPrMerged(ctx: AppContext, card: CardRow, pr: PullRequest, at: number): void {
   const { changes } = ctx.db
     .update(cards)
-    .set({ branchPrMergedAt: at })
+    .set({ branchPrMergedAt: at, branchPrClosedAt: null, branchPrBase: pr.base })
     .where(and(eq(cards.id, card.id), isNull(cards.branchPrMergedAt)))
     .run()
   if (changes === 0) return
   note(ctx, card.id, `PR #${pr.number} de \`${pr.head}\` fusionnée dans \`${pr.base}\` : le travail de #${card.number} est livré.`)
+}
+
+/**
+ * Ce que la forge dit d'une PR pas fusionnée (#198) : sa base, et si elle est fermée.
+ * La fermeture se note une fois, à la première lecture qui la voit ; rouverte, elle se
+ * lève sans note, et le jalon propose de nouveau la fusion.
+ */
+function recordBranchPrState(ctx: AppContext, card: CardRow, pr: PullRequest, at: number): void {
+  const closed = pr.state === 'CLOSED'
+  const { changes } = ctx.db
+    .update(cards)
+    .set({ branchPrClosedAt: closed ? at : null, branchPrBase: pr.base })
+    .where(and(eq(cards.id, card.id), isNull(cards.branchPrMergedAt), closed ? isNull(cards.branchPrClosedAt) : undefined))
+    .run()
+  if (closed && changes > 0) {
+    note(ctx, card.id, `PR #${pr.number} de \`${pr.head}\` vers \`${pr.base}\` fermée sans fusion : rouvre-la sur la forge pour livrer #${card.number}.`)
+  }
 }
 
 function note(ctx: AppContext, cardId: string, body: string): void {
