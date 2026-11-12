@@ -83,7 +83,7 @@ export function PortfolioTravailPage() {
     () => workEvents(journal?.entries ?? [], { projects: byId, selected: kept.projects, query }),
     [journal, byId, kept.projects, query],
   )
-  const days = useJournalDays(events, 'all')
+  const days = useJournalDays(events)
   const asking = inboxInProjects(inbox, kept.projects)
 
   const meta = [

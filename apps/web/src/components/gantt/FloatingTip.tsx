@@ -34,7 +34,7 @@ export function FloatingTip({ anchor, children }: { anchor: RefObject<HTMLElemen
     <div
       ref={tip}
       role="tooltip"
-      className="pointer-events-none fixed z-50"
+      className="pointer-events-none fixed z-[100]"
       style={position ? { left: position.left, top: position.top } : { left: -9999, top: 0, visibility: 'hidden' }}
     >
       {children}

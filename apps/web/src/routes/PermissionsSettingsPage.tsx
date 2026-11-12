@@ -11,7 +11,7 @@ export function PermissionsSettingsPage() {
   return (
     <div className="flex flex-col gap-4">
       <SectionHeader description={t('settings.permissions.description')} />
-      <PermissionsSettings level={{ kind: 'account' }} />
+      <PermissionsSettings />
     </div>
   )
 }

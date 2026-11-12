@@ -64,7 +64,8 @@ export function MilestoneAxis({
             <NameRow key={entry.card.id} projectId={projectId} entry={entry} hovered={hovered === entry.card.id} onHover={setHovered} />
           ))}
         </div>
-        <div className="relative">
+        {/* `isolate` : la barre survolée monte d'une couche sans passer sur les noms collants. */}
+        <div className="relative isolate">
           <GanttAxis scale={scale} zoom={zoom} now={now} inset={labelWidth} />
           <div className="relative" style={{ height }}>
             <GanttGrid scale={scale} zoom={zoom} height={height} now={now} today={false} />
@@ -91,7 +92,7 @@ export function MilestoneAxis({
                 onHover={setHovered}
               />
             ))}
-            <div className="pointer-events-none absolute inset-0 z-[4]">
+            <div className="pointer-events-none absolute inset-0">
               <TodayLine scale={scale} height={height} now={now} />
             </div>
           </div>

@@ -2,11 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import {
   JOURNAL_DEFAULT_DAYS,
-  JOURNAL_FAMILIES,
-  JOURNAL_FAMILY_OF,
   type JournalDto,
   type JournalEntryDto,
-  type JournalFamily,
   type JournalKind,
 } from '@solera/protocol'
 import { api } from './api'
@@ -36,31 +33,6 @@ export function useJournal(projectId: string | undefined, days = JOURNAL_DEFAULT
   })
 }
 
-/**
- * Le filtre bas, en pilules. *Tout* d'abord, puis les quatre familles.
- *
- * Pas de pilule *Décisions*, que la maquette F5 montrait : `card_notes.body` est un
- * champ libre et la carte #32 a refusé de lui donner un type, le 2026-10-15. Un filtre
- * qui prétendrait trier les décisions trierait en réalité ce que les agents auraient
- * bien voulu étiqueter, et un tri auquel on ne peut pas se fier est pire qu'un tri
- * absent. *Notes* la remplace : même source, nom honnête, et c'est bien là que les
- * sessions écrivent ce qu'elles ont tranché.
- *
- * *Dépôt* est la pilule en plus. Sans elle, les fusions et les audits — les deux seules
- * sources qui ne sont pas en base — seraient joignables par *Tout* et par rien d'autre.
- */
-export type JournalFilter = 'all' | JournalFamily
-
-export const JOURNAL_FILTERS: readonly JournalFilter[] = ['all', ...JOURNAL_FAMILIES]
-
-export const JOURNAL_FILTER_LABELS = {
-  all: 'journal.filter.all',
-  notes: 'journal.filter.notes',
-  cards: 'journal.filter.cards',
-  sessions: 'journal.filter.sessions',
-  repo: 'journal.filter.repo',
-} as const satisfies Record<JournalFilter, string>
-
 /** Le libellé en petites capitales qui ouvre une ligne, un par nature. */
 export const JOURNAL_KIND_LABELS = {
   note: 'journal.kind.note',
@@ -80,23 +52,16 @@ export interface JournalDay {
 }
 
 /**
- * Les lignes retenues, groupées par jour.
+ * Les lignes du journal, groupées par jour.
  *
  * Le découpage se fait **chez le lecteur** et non au serveur : « aujourd'hui » dépend du
  * fuseau de qui regarde, et un journal rendu avec les jours du serveur ferait commencer
  * la veille à 2 h du matin pour qui voyage. Le serveur ne rend que des instants.
  */
-export function useJournalDays(
-  entries: JournalEntryDto[] | undefined,
-  filter: JournalFilter,
-): JournalDay[] {
+export function useJournalDays(entries: JournalEntryDto[] | undefined): JournalDay[] {
   return useMemo(() => {
-    const kept = (entries ?? []).filter(
-      (entry) => filter === 'all' || JOURNAL_FAMILY_OF[entry.kind] === filter,
-    )
-
     const days: JournalDay[] = []
-    for (const entry of kept) {
+    for (const entry of entries ?? []) {
       const at = midnight(entry.at)
       const last = days[days.length - 1]
       // Les lignes arrivent déjà triées du plus récent au plus ancien : comparer au
@@ -105,17 +70,7 @@ export function useJournalDays(
       else days.push({ at, entries: [entry] })
     }
     return days
-  }, [entries, filter])
-}
-
-/** Combien de lignes chaque pilule montrerait : une pilule à zéro s'éteint sans partir. */
-export function countByFilter(entries: JournalEntryDto[] | undefined): Record<JournalFilter, number> {
-  const totals = { all: 0, notes: 0, cards: 0, sessions: 0, repo: 0 }
-  for (const entry of entries ?? []) {
-    totals.all += 1
-    totals[JOURNAL_FAMILY_OF[entry.kind]] += 1
-  }
-  return totals
+  }, [entries])
 }
 
 function midnight(ts: number): number {

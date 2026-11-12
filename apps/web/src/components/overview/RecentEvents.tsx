@@ -6,7 +6,7 @@ import { ProjectAvatar } from '../ProjectAvatar'
 import { elapsed } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
 import { JOURNAL_KIND_LABELS, useJournal } from '../../lib/journal'
-import { JOURNAL_KIND_ICONS, journalDestination, journalIconTone } from '../journal/JournalView'
+import { JOURNAL_KIND_ICONS, journalDestination, journalIconTone } from '../journal/journal-marks'
 import { MoreLink, OverviewSection } from './OverviewSection'
 
 /** Lignes montrées : l'Aperçu donne le pouls, Travail › Par moment tout le fil. */

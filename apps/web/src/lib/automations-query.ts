@@ -184,5 +184,3 @@ export function useAutomationMutations(projectId: string | null) {
       ),
   }
 }
-
-export type AutomationMutations = ReturnType<typeof useAutomationMutations>

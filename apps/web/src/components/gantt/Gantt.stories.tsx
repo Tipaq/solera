@@ -65,11 +65,12 @@ function Assembled({ zoom, cards, hover = null }: { zoom: Zoom; cards: CardDto[]
   return (
     <div ref={scroller} className="h-[26rem] overflow-auto overscroll-contain rounded-lg border border-line">
       <div className="relative" style={{ width: listWidth + scale.width }}>
-        <div className="sticky top-0 z-20 flex">
-          <div className="sticky left-0 z-30 shrink-0 border-r border-b border-line bg-canvas" style={{ width: listWidth, height: AXIS_H }} />
+        <div className="sticky top-0 z-10 flex">
+          <div className="sticky left-0 z-10 shrink-0 border-r border-b border-line bg-canvas" style={{ width: listWidth, height: AXIS_H }} />
           <GanttAxis scale={scale} zoom={zoom} now={NOW} inset={listWidth} />
         </div>
-        <div className="relative" onMouseLeave={() => setHovered(null)}>
+        {/* `isolate` : les noms collants des lignes restent sous l'axe, au seul `z-10` des couches. */}
+        <div className="relative isolate" onMouseLeave={() => setHovered(null)}>
           <div className="absolute top-0" style={{ left: listWidth }}>
             <GanttGrid scale={scale} zoom={zoom} height={height} now={NOW} today={false} />
           </div>
@@ -91,10 +92,10 @@ function Assembled({ zoom, cards, hover = null }: { zoom: Zoom; cards: CardDto[]
               </div>
             )
           })}
-          <div className="pointer-events-none absolute top-0 z-[4]" style={{ left: listWidth, height }}>
+          <div className="pointer-events-none absolute top-0" style={{ left: listWidth, height }}>
             <TodayLine scale={scale} height={height} now={NOW} />
           </div>
-          <div className="pointer-events-none absolute top-0 z-[5]" style={{ left: listWidth }}>
+          <div className="pointer-events-none absolute top-0" style={{ left: listWidth }}>
             <GanttArrows anchors={anchorsOf(cards, centers, scale, NOW)} width={scale.width} height={height} chain={chain} />
           </div>
         </div>

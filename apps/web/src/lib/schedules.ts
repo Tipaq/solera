@@ -5,14 +5,13 @@ import type {
   ScheduleCadence,
   ScheduleOverlapPolicy,
   ScheduleCheckResultDto,
-  ScheduleRunStatus,
   ScheduleScope,
   ScheduleWorktreeMode,
   ScheduledRunDto,
   ScheduledTaskDto,
 } from '@solera/protocol'
 import { api } from './api'
-import { cadenceWords, formatDateTime as dateTimeIn, RUN_VERDICTS, VERDICT_FILL } from './automations'
+import { cadenceWords, formatDateTime as dateTimeIn } from './automations'
 import { locale, translate, type MessageKey } from './i18n'
 import { useInstance } from './instance'
 
@@ -178,23 +177,6 @@ export const SCHEDULE_STATE_LABELS: Record<ScheduleState, MessageKey> = {
  */
 export function lastRun(task: ScheduledTaskDto): ScheduledRunDto | undefined {
   return task.runs.find((run) => run.status !== 'skipped')
-}
-
-/** Le mot, le point et la teinte d'un tir : lus de la table commune des passages. */
-export const RUN_LABELS = mapRuns((status) => RUN_VERDICTS[status].label)
-
-export const RUN_DOTS = mapRuns((status) => {
-  const { tone, live } = RUN_VERDICTS[status]
-  return live ? `${VERDICT_FILL[tone]} animate-pulse` : VERDICT_FILL[tone]
-})
-
-/** La teinte d'une pastille de verdict, quand un tir se résume en un mot. */
-export const RUN_TONES = mapRuns((status) => RUN_VERDICTS[status].tone)
-
-/** Les statuts d'un tir d'agent : ceux de la table commune, sauf `stopped`, propre aux commandes. */
-function mapRuns<T>(pick: (status: ScheduleRunStatus) => T): Record<ScheduleRunStatus, T> {
-  const statuses = Object.keys(RUN_VERDICTS).filter((status): status is ScheduleRunStatus => status !== 'stopped')
-  return Object.fromEntries(statuses.map((status) => [status, pick(status)])) as Record<ScheduleRunStatus, T>
 }
 
 export function scheduleState(task: ScheduledTaskDto): ScheduleState {

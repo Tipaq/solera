@@ -21,27 +21,16 @@ import {
 import { api } from './api'
 import { useUserSettings } from './user-settings'
 
-/**
- * Le niveau que règle un écran (#120) : le compte, ou un projet. La conversation n'a pas
- * d'écran (Q33) : ses changements passent par le menu « + » du composer.
- */
-export type SettingsLevel = { kind: 'account' } | { kind: 'project'; project: ProjectDto }
-
-export interface LevelConfig {
-  /** Ce que ce niveau donne pour ce CLI : les niveaux du dessous, puis le sien. */
+export interface AccountConfig {
+  /** Ce que le compte donne pour ce CLI. */
   config: AgentConfig
-  /** D'où vient chaque champ, pour dire « hérité du compte » ou « modifié ici ». */
-  sources: Record<string, ConfigSource>
   /** Écrit, champ par champ, ce qui distingue `next` de `config`. */
   write: (next: AgentConfig) => void
-  /** Rend des champs à l'héritage. */
-  reset: (fields: string[]) => void
   error: boolean
   ready: boolean
 }
 
 const USER_SETTINGS_KEY = ['user-settings']
-const PROJECTS_KEY = ['projects']
 
 /**
  * Les changements d'une configuration entière, rangés par portée : les champs qui valent
@@ -70,60 +59,40 @@ function unsetPatches(agent: AgentKind, fields: string[]): ConfigLayerPatch[] {
 }
 
 /**
- * La configuration d'un CLI à un niveau, et de quoi la changer.
+ * La configuration d'un CLI au niveau du compte (#120), et de quoi la changer. Le niveau
+ * d'un projet passe par le brouillon de sa page de réglages (`useConfigLayerDraft`).
  *
  * Le niveau écrit est tenu localement le temps de l'aller-retour : sans lui, la valeur
  * choisie reviendrait à l'ancienne sous le curseur jusqu'à la relecture.
  */
-export function useLevelConfig(level: SettingsLevel, agent: AgentKind): LevelConfig {
+export function useAccountConfig(agent: AgentKind): AccountConfig {
   const queryClient = useQueryClient()
   const { data: settings, isPending } = useUserSettings()
-  const [optimistic, setOptimistic] = useState<{ key: string; layer: ConfigLayer } | null>(null)
-
-  const levelKey = level.kind === 'account' ? 'account' : `project:${level.project.id}`
-  const storedOwn = level.kind === 'account' ? (settings?.agentLayer ?? EMPTY_CONFIG_LAYER) : level.project.configLayer
-  const own = optimistic?.key === levelKey ? optimistic.layer : storedOwn
-
-  const layers: NamedLayer[] =
-    level.kind === 'account'
-      ? [{ source: 'account', layer: own }]
-      : [
-          { source: 'account', layer: settings?.agentLayer ?? EMPTY_CONFIG_LAYER },
-          { source: 'project', layer: own },
-        ]
+  const [optimistic, setOptimistic] = useState<ConfigLayer | null>(null)
+  const own = optimistic ?? settings?.agentLayer ?? EMPTY_CONFIG_LAYER
 
   const mutation = useMutation({
     mutationFn: async (patches: ConfigLayerPatch[]) => {
       for (const patch of patches) {
-        if (level.kind === 'account') {
-          const next = await api.patch<UserSettingsDto>('/api/me/settings', { agentLayer: patch })
-          queryClient.setQueryData(USER_SETTINGS_KEY, next)
-        } else {
-          await api.patch(`/api/projects/${level.project.id}`, { configLayer: patch })
-        }
+        const next = await api.patch<UserSettingsDto>('/api/me/settings', { agentLayer: patch })
+        queryClient.setQueryData(USER_SETTINGS_KEY, next)
       }
-      if (level.kind === 'project') await queryClient.invalidateQueries({ queryKey: PROJECTS_KEY })
     },
     onSettled: () => setOptimistic(null),
   })
 
   const apply = (patches: ConfigLayerPatch[]) => {
     if (patches.length === 0) return
-    setOptimistic({ key: levelKey, layer: patches.reduce(patchConfigLayer, own) })
+    setOptimistic(patches.reduce(patchConfigLayer, own))
     mutation.mutate(patches)
   }
 
-  const config = resolveAgentConfig(
-    agent,
-    layers.map((named) => named.layer),
-  )
+  const config = resolveAgentConfig(agent, [own])
   return {
     config,
-    sources: configSources(agent, layers),
     write: (next) => apply(patchesFor(agent, diffAgentConfig(next, config) as Record<string, unknown>)),
-    reset: (fields) => apply(unsetPatches(agent, fields)),
     error: mutation.isError,
-    ready: level.kind === 'project' || !isPending,
+    ready: !isPending,
   }
 }
 

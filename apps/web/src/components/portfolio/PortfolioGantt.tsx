@@ -103,7 +103,8 @@ export function PortfolioGantt({
             ),
           )}
         </div>
-        <div className="relative">
+        {/* `isolate` : la barre survolée monte d'une couche sans passer sur les noms collants. */}
+        <div className="relative isolate">
           <GanttAxis scale={scale} zoom={zoom} now={now} inset={listWidth} />
           <div className="relative" style={{ height }}>
             <GanttGrid scale={scale} zoom={zoom} height={height} now={now} today={false} />
@@ -137,7 +138,7 @@ export function PortfolioGantt({
                 />
               ) : null,
             )}
-            <div className="pointer-events-none absolute inset-0 z-[4]">
+            <div className="pointer-events-none absolute inset-0">
               <TodayLine scale={scale} height={height} now={now} />
             </div>
           </div>

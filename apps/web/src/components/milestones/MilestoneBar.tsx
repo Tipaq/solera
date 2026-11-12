@@ -58,7 +58,7 @@ export function MilestoneBar({
     <div
       ref={anchor}
       data-milestone-bar={entry.card.number}
-      className={cx('absolute transition-opacity duration-150', dimmed && 'opacity-40', hovered && 'z-30', onOpen && 'cursor-pointer')}
+      className={cx('absolute transition-opacity duration-150', dimmed && 'opacity-40', hovered && 'z-10', onOpen && 'cursor-pointer')}
       style={{ top, left, width, height: MILESTONE_BAR_H }}
       onMouseEnter={() => onHover(entry.card.id)}
       onClick={onOpen}

@@ -52,7 +52,7 @@ export function AgentsSettingsPage() {
         tabs={agentKindSchema.options.map((value) => ({ value, label: AGENT_LABELS[value], icon: <AgentIcon agent={value} size={14} /> }))}
       />
       <AgentTab key={agent} agent={agent} />
-      <SharedModelCard level={{ kind: 'account' }} />
+      <SharedModelCard />
     </div>
   )
 }
@@ -103,7 +103,7 @@ function AgentTab({ agent }: { agent: AgentKind }) {
           ) : null}
         </section>
       ) : null}
-      <AgentModelCard level={{ kind: 'account' }} agent={agent} />
+      <AgentModelCard agent={agent} />
     </div>
   )
 }
