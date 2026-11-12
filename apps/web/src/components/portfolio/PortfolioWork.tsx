@@ -9,7 +9,7 @@ import type { WorkCleanOffer, WorkTree } from '../../lib/portfolio-work'
 import { sizeOf } from '../../lib/travail-clean'
 import { AgentIcon } from '../AgentIcon'
 import { PrTag } from '../code/PrTag'
-import { REASON_TONE, VerdictDot, verdictLabel, verdictReason } from '../code/VerdictDot'
+import { REASON_TONE, VerdictDot, verdictReason } from '../code/VerdictDot'
 import { JOURNAL_KIND_ICONS, journalDestination, journalIconTone } from '../journal/JournalView'
 import { ProjectAvatar } from '../ProjectAvatar'
 import { ProjectPip } from '../places/ProjectPip'
@@ -72,7 +72,6 @@ function WorkTreeLine({ tree, withProject }: { tree: Tree; withProject: boolean 
   const lang = useLocale()
   const name = tree.branch ?? tree.name
   const facts = [
-    verdictReason(t, tree.reason),
     tree.card ? `#${tree.card.number} ${tree.card.title}` : null,
     tree.card?.milestone ? t('code.milestone', { number: tree.card.milestone.number }) : null,
   ].filter(Boolean)
@@ -90,18 +89,19 @@ function WorkTreeLine({ tree, withProject }: { tree: Tree; withProject: boolean 
         <span className="flex min-w-0 flex-col">
           <span className="flex min-w-0 items-center gap-2">
             <VerdictDot verdict={tree.verdict} className="md:hidden" />
-            <span className={cx('truncate font-mono text-xs text-ink', tree.root && 'font-semibold')}>
+            <span className="truncate font-mono text-xs text-ink">
               {tree.root ? t('portfolio.work.root', { branch: name }) : name}
             </span>
           </span>
           <span className="truncate text-xs text-ink-faint">
-            <span className={REASON_TONE[tree.verdict]}>{verdictLabel(t, tree.verdict)}</span>
+            {/* La raison seule, teintée : le mot du verdict la répéterait (« En cours · En cours : … »). */}
+            <span className={REASON_TONE[tree.verdict]}>{verdictReason(t, tree.reason)}</span>
             {facts.map((fact) => ` · ${fact}`).join('')}
           </span>
         </span>
         {/* Au téléphone, les faits passent en une rangée sous le titre. */}
         <span className="flex flex-wrap items-center gap-x-4 gap-y-1 pl-4 text-xs tabular-nums text-ink-faint md:contents">
-          <span className="flex items-center gap-1">
+          <span className={cx('items-center gap-1', tree.sessions.length > 0 ? 'flex' : 'hidden md:flex')}>
             {tree.sessions.map((session) => (
               <AgentIcon key={session.id} agent={session.agent} size={13} />
             ))}
@@ -164,13 +164,8 @@ export function WorkFolded({ trees, offers }: { trees: Tree[]; offers: WorkClean
   )
 }
 
-/** Le jour d'un groupe : nommé quand il a un nom, sinon écrit en entier, dans la langue de l'app. */
-function dayTitle(at: number, t: ReturnType<typeof useTranslate>): string {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const gap = Math.round((today.getTime() - at) / 86_400_000)
-  if (gap === 0) return t('journal.today')
-  if (gap === 1) return t('journal.yesterday')
+/** Le jour d'un groupe, écrit en entier dans la langue de l'app : « lundi 10 novembre ». */
+function dayTitle(at: number): string {
   return new Intl.DateTimeFormat(locale(), { weekday: 'long', day: 'numeric', month: 'long' }).format(at)
 }
 
@@ -188,7 +183,7 @@ export function WorkMoments({ days, projects }: { days: JournalDay[]; projects: 
       {days.map((day) => (
         <section key={day.at} data-work-day className="flex flex-col gap-1">
           <SectionTitle count={day.entries.length}>
-            <span className="inline-block first-letter:uppercase">{dayTitle(day.at, t)}</span>
+            <span className="inline-block first-letter:uppercase">{dayTitle(day.at)}</span>
           </SectionTitle>
           <ul className="flex flex-col border-l border-line pl-3">
             {day.entries.map((entry) => (

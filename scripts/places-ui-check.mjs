@@ -865,7 +865,7 @@ try {
   await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-vide.png') })
 
   assert.deepEqual(errors, [])
-  console.log('OK : coque v2 (rangée, Réglages au bout, comptes, gouttière, anciennes adresses), bandeau sans inventaire, coque et Aperçu du portefeuille (anciennes vues, état vide), board global, les deux chronologies, le journal, table des planifiées, mobile ; captures dans ' + shots)
+  console.log('OK : coque v2 (rangée, Réglages au bout, comptes, gouttière, anciennes adresses), bandeau sans inventaire, coque, Aperçu et Travail du portefeuille (anciennes vues, filtres, Tableau, Nettoyer, état vide), board global, les deux chronologies, le journal, table des planifiées, mobile ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {
