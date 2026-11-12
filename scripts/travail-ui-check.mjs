@@ -402,7 +402,7 @@ try {
   // Une carte mène à sa session.
   assert.equal(await workingCard.getAttribute('href'), `/p/${nimbus.id}/c/${running.id}`)
   await toolbar.locator('[data-filter-chip]').first().waitFor({ state: 'detached' })
-  await page.screenshot({ animations: 'disabled', path: join(shots, 't6-travail-par-etat.png') })
+  await page.screenshot({ animations: 'disabled', path: join(shots, 't11-travail-par-etat.png') })
 
   // ─── Frise (#179) : un arbre par rangée sur la semaine ──────────────────────
   await page.goto(`${base}/p/${nimbus.id}/travail?vue=frise`)
@@ -422,7 +422,7 @@ try {
   for (const legend of ['session qui tourne', 't’attend', 'terminée', 'carte fermée', 'branche, PR, fusion', 'commit']) {
     await page.getByText(legend, { exact: true }).last().waitFor()
   }
-  await page.screenshot({ animations: 'disabled', path: join(shots, 't7-travail-frise.png') })
+  await page.screenshot({ animations: 'disabled', path: join(shots, 't12-travail-frise.png') })
   // Un clic sur l'étiquette choisit l'arbre : sa rangée seule, surlignée ; un second le relâche.
   await treeLabel.click()
   await page.waitForURL((url) => url.searchParams.get('arbre') === tree.path)
@@ -443,6 +443,82 @@ try {
   await page.screenshot({ animations: 'disabled', path: join(shots, 't4-travail-par-moment-sombre.png') })
   await page.evaluate(() => { delete document.documentElement.dataset.theme })
 
+  // ─── Par arbre (#176) : un couloir par arbre, l'index qui fait défiler ─────
+  await page.goto(`${base}/p/${nimbus.id}/travail?vue=couloirs`)
+  const lane = page.getByRole('region', { name: branch, exact: true })
+  await lane.waitFor()
+  // Un couloir par worktree, et celui de la racine.
+  for (const entry of trees.worktrees) {
+    await page.getByRole('region', { name: entry.branch ?? entry.name, exact: true }).first().waitFor()
+  }
+  await page.getByRole('region', { name: 'main', exact: true }).waitFor()
+  // Son corps : la session qui tourne, son fil.
+  await lane.locator('[data-session-row]').filter({ hasText: running.title }).waitFor()
+  // L'index défile au lieu de filtrer : l'adresse ne bouge pas, le couloir s'entoure d'accent.
+  await index.getByRole('button', { name: /^Tous/ }).waitFor()
+  await index.getByText('en haut', { exact: true }).waitFor()
+  await index.getByRole('button', { name: new RegExp(`^${escaped(short)}`) }).click()
+  await page.waitForFunction((name) => document.querySelector(`section[aria-label="${name}"]`)?.hasAttribute('data-highlight'), branch)
+  assert.equal(new URL(page.url()).searchParams.has('arbre'), false, 'En Par arbre, l’index ne filtre pas')
+  // Le couloir est à l'écran (il monte en haut quand la page est assez longue).
+  await page.waitForFunction((name) => {
+    const box = document.querySelector(`section[aria-label="${name}"]`)?.getBoundingClientRect()
+    return box && box.top >= 0 && box.top < window.innerHeight - 40
+  }, branch)
+  await page.screenshot({ animations: 'disabled', path: join(shots, 't6-travail-par-arbre.png') })
+
+  // ─── Le tiroir d'un arbre : l'en-tête du couloir l'ouvre ──────────────────
+  await lane.getByRole('button', { name: branch, exact: true }).click()
+  const drawer = page.getByRole('dialog', { name: `Arbre ${branch}`, exact: true })
+  await drawer.waitFor()
+  await drawer.getByText(tree.path, { exact: true }).waitFor()
+  for (const label of ['PR', 'Sur la base', 'Non commités', 'Taille sur disque', 'Dernier usage', 'Chemin']) {
+    await drawer.getByText(label, { exact: true }).first().waitFor()
+  }
+  await drawer.getByRole('button', { name: 'Session', exact: true }).waitFor()
+  await drawer.getByRole('region', { name: 'Sessions', exact: true }).getByRole('link', { name: new RegExp(escaped(running.title)) }).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 't7-tiroir-d-un-arbre.png') })
+  await page.keyboard.press('Escape')
+  await drawer.waitFor({ state: 'detached' })
+  // Le menu ⋯ d'un couloir : ses gestes ; le fermer laisse la page en place.
+  await lane.getByRole('button', { name: `Gestes sur ${branch}`, exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Session', exact: true }).waitFor()
+  await page.keyboard.press('Escape')
+  assert.equal(await page.getByRole('dialog', { name: `Arbre ${branch}` }).count(), 0, 'Le menu n’ouvre pas le tiroir')
+
+  // ─── Affichage ▾ : regrouper par jalon, cacher le couloir Projet ──────────
+  await toolbar.getByRole('button', { name: 'Affichage : Par arbre', exact: true }).click()
+  await page.getByRole('radio', { name: 'Par jalon', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await page.getByRole('region', { name: /^(Jalon #\d+ · |Sans jalon$)/ }).first().waitFor()
+  await page.reload()
+  await page.getByRole('region', { name: /^(Jalon #\d+ · |Sans jalon$)/ }).first().waitFor()
+  await toolbar.getByRole('button', { name: 'Affichage : Par arbre', exact: true }).click()
+  await page.getByRole('radio', { name: 'Aucun', exact: true }).click()
+  await page.keyboard.press('Escape')
+  assert.equal(await page.getByRole('region', { name: 'Sans jalon', exact: true }).count(), 0)
+
+  // ─── Un filtre « À nettoyer » déplie la section, et l'index la suit ───────
+  await filterButton.click()
+  await filterPanel.getByRole('checkbox', { name: 'À nettoyer', exact: true }).click()
+  await page.keyboard.press('Escape')
+  const cleanable = trees.worktrees.filter((entry) => entry.state === 'merged' && entry.modified + entry.untracked === 0)
+  const mergedBranches = trees.branches.filter((entry) => entry.merged)
+  if (cleanable.length > 0) {
+    const cleanup = page.getByRole('region', { name: /arbres? fusionnés?$/ })
+    assert.equal(await cleanup.getByRole('button', { expanded: true }).count(), 1, 'À nettoyer, déplié d’office')
+  }
+  if (mergedBranches.length > 0) {
+    const merged = page.getByRole('region', { name: /branches? fusionnées?$/ })
+    await merged.getByRole('button', { expanded: true }).waitFor()
+    for (const entry of mergedBranches) await merged.getByText(entry.name, { exact: true }).waitFor()
+  }
+  if (cleanable.length + mergedBranches.length === 0) await page.getByText('Rien ne correspond à ces filtres.', { exact: true }).waitFor()
+  else assert.equal(await lane.count(), 0, 'Un arbre au travail ne répond pas à « À nettoyer »')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 't10-par-arbre-a-nettoyer.png') })
+  await chips.filter({ hasText: 'À nettoyer' }).getByRole('button', { name: 'Retirer ce filtre' }).click()
+  await chips.first().waitFor({ state: 'detached' })
+
   // ─── Au téléphone : une ligne, rien ne déborde, l'index se replie ───────────
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`${base}/p/${nimbus.id}/travail?vue=fil`)
@@ -452,18 +528,28 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Rien ne déborde à 390 px')
   await page.waitForTimeout(300)
   await page.screenshot({ animations: 'disabled', path: join(shots, 't5-travail-au-telephone.png') })
+  // Par arbre au téléphone : les couloirs tiennent dans la largeur, le tiroir prend l'écran.
+  await page.goto(`${base}/p/${nimbus.id}/travail?vue=couloirs`)
+  await lane.waitFor()
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Par arbre ne déborde pas à 390 px')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 't8-par-arbre-au-telephone.png') })
+  await lane.getByRole('button', { name: branch, exact: true }).click()
+  await page.getByRole('dialog', { name: `Arbre ${branch}`, exact: true }).waitFor()
+  await page.waitForTimeout(300)
+  await page.screenshot({ animations: 'disabled', path: join(shots, 't9-tiroir-au-telephone.png') })
+  await page.keyboard.press('Escape')
   // Par état : les colonnes défilent de côté, dans leur bande ; la page ne déborde pas.
   await page.goto(`${base}/p/${nimbus.id}/travail?vue=etat`)
   await page.getByRole('region', { name: 'Travaille', exact: true }).waitFor()
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Par état ne déborde pas à 390 px')
-  await page.screenshot({ animations: 'disabled', path: join(shots, 't8-par-etat-au-telephone.png') })
+  await page.screenshot({ animations: 'disabled', path: join(shots, 't13-par-etat-au-telephone.png') })
   // La Frise : trois dates au plus sur l'axe.
   await page.goto(`${base}/p/${nimbus.id}/travail?vue=frise`)
   const phoneAxis = page.locator('.sticky', { hasText: 'maintenant' })
   await phoneAxis.waitFor()
   assert.ok((await phoneAxis.locator('span.tabular-nums:visible').count()) <= 3, 'Trois dates au plus au téléphone')
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'La Frise ne déborde pas à 390 px')
-  await page.screenshot({ animations: 'disabled', path: join(shots, 't9-frise-au-telephone.png') })
+  await page.screenshot({ animations: 'disabled', path: join(shots, 't14-frise-au-telephone.png') })
 
   // ─── Jalons, au portefeuille aussi ─────────────────────────────────────────
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -555,7 +641,7 @@ try {
   await page.waitForURL(`**/p/${nimbus.id}/timeline/${parent.number}`)
 
   assert.deepEqual(errors, [])
-  console.log('OK : rangée, compteur de demandes, ce qui t’attend, Travail (redirections, barre, Par moment, Par état, Frise, ?vue=, filtres et puces retenus, rien ne correspond, index, puce d’arbre, recherche, téléphone), jalon lancé ; captures dans ' + shots)
+  console.log('OK : rangée, compteur de demandes, ce qui t’attend, Travail (redirections, barre, Par moment, Par état, Frise, ?vue=, filtres et puces retenus, rien ne correspond, index, puce d’arbre, recherche, téléphone), Par arbre (couloirs, index qui défile, tiroir, regroupement, à nettoyer, téléphone), jalon lancé ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

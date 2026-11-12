@@ -1,7 +1,7 @@
 import { Activity, ChartGantt, Columns3, FolderGit2, GitBranch, Plus, Rows3 } from 'lucide-react'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import type { JournalEntryDto, ProjectDto } from '@solera/protocol'
+import type { JournalEntryDto, ProjectDto, WorktreeStatusDto } from '@solera/protocol'
 import { Button, EmptyState, Menu, MenuItem, MenuLabel, MenuSeparator, cx } from '@solera/ui'
 import { AgentIcon, AGENT_LABELS } from '../components/AgentIcon'
 import { ActivityRail, type RailModel } from '../components/activity/ActivityRail'
@@ -10,21 +10,29 @@ import { TreeChip } from '../components/code/TreeChip'
 import { VerdictDot } from '../components/code/VerdictDot'
 import { AskInbox } from '../components/inbox/AskInbox'
 import { journalDestination } from '../components/journal/JournalView'
-import { WorktreeGroups } from '../components/project/WorktreeGroups'
+import { CardSheetHost } from '../components/cards/CardSheetHost'
+import { WorktreeCleanupDialog } from '../components/WorktreeCleanupDialog'
 import { FilterChip, OneLineToolbar, ToolbarSearch } from '../components/toolbar/OneLineToolbar'
 import { DisplayMenu, FilterMenu, MenuCheck, MenuHeading, MenuSegment, type ViewOption } from '../components/toolbar/ToolbarMenus'
+import { CleanMergedDialog } from '../components/travail/CleanMergedDialog'
+import { CouloirsView, PROJECT_KEY } from '../components/travail/CouloirsView'
 import { ActivityTimeline, type TimelineTree } from '../components/travail/ActivityTimeline'
 import { StateBoard } from '../components/travail/StateBoard'
 import { TravailIndex } from '../components/travail/TravailIndex'
+import { TravailNoticeHost } from '../components/travail/TravailNotice'
+import { TreeDrawer } from '../components/travail/TreeDrawer'
 import { isActiveFilter, matchesActivity, parseActivityFilter } from '../lib/activity-groups'
 import { sessionBars, timelineWindow, type TimelineWindow } from '../lib/activity-timeline'
 import type { ActivityRow } from '../lib/activity-rows'
 import { formatBytes, isCleanable, pluralOf, shortBranch, type TreeRow } from '../lib/code-model'
 import { locale, useTranslate, type MessageKey } from '../lib/i18n'
 import type { InboxItem } from '../lib/inbox'
+import { useAutomations } from '../lib/automations-query'
 import { useJournalDays } from '../lib/journal'
 import { useProjects } from '../lib/projects'
+import { servedByTree } from '../lib/served'
 import { stateColumns } from '../lib/state-board'
+import { laneAnchor, laneLayout, lanesOf, spiedKey } from '../lib/travail-lanes'
 import {
   NO_FILTERS,
   PERIODS,
@@ -46,7 +54,9 @@ import {
   targetOf,
   treePasses,
   treeSummary,
+  type Grouping,
   type Period,
+  type Sorting,
   type TravailFilters,
   type TravailView,
 } from '../lib/travail-model'
@@ -61,9 +71,6 @@ const TARGET_PARAM = 'arbre'
 /**
  * Les vues livrées, dans l'ordre de leurs tuiles. Tableau et Graphe arrivent avec leurs
  * cartes (#177, #178).
- *
- * « Par arbre » montre, en attendant ses couloirs (#176), le regroupement par worktree
- * de l'ancienne Activité, qui porte le nettoyage des arbres.
  */
 const VIEW_ICONS: Partial<Record<TravailView, ReactNode>> = {
   couloirs: <Rows3 size={16} />,
@@ -73,8 +80,18 @@ const VIEW_ICONS: Partial<Record<TravailView, ReactNode>> = {
 }
 /** Sans git, ni arbre ni branche : il reste le fil et les sessions par état. */
 const WITHOUT_GIT: TravailView[] = ['fil', 'etat']
-/** Les vues où l'index des arbres a un sens. Les couloirs le prendront avec #176. */
-const WITH_INDEX: TravailView[] = ['fil']
+/** Les vues où l'index des arbres a un sens : il fait défiler les couloirs, il filtre le fil. */
+const WITH_INDEX: TravailView[] = ['couloirs', 'fil']
+/** Les vues qu'on regroupe et qu'on trie, et où « À nettoyer » et les fusionnées se montrent. */
+const WITH_GROUPS: TravailView[] = ['couloirs']
+
+/** La ligne de lecture du scroll-spy, sous le haut de la zone qui défile. */
+const SPY_LINE = 96
+/** Le temps de l'anneau d'accent autour du couloir où l'index vient de mener. */
+const FLASH_MS = 1_600
+
+const GROUPS: Grouping[] = ['none', 'milestone', 'state']
+const SORTS: Sorting[] = ['waiting', 'recent', 'size']
 
 const WHAT_LABEL: Record<(typeof WHAT_KEYS)[number], MessageKey> = {
   trees: 'travail.what.trees',
@@ -176,10 +193,22 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
 
   const active = filterCount(filters, target !== null)
   const narrowed = active > 0 || isActiveFilter(search)
-  // « Par arbre » montre toutes les sessions, terminées comprises ; « Par moment », le
-  // vivant et l'historique.
-  const treeRows = view === 'couloirs' ? travail.rows.filter(keepsRow) : []
+  // Un filtre d'état réclame ce qui est à nettoyer ou fusionné : on le montre, déplié.
   const forceCleanup = filters.states.includes('cleanup') || filters.states.includes('merged')
+
+  // « Par arbre » : un couloir par arbre et par branche que les filtres gardent, qui
+  // porte le vivant et l'historique de l'arbre.
+  const layout =
+    view === 'couloirs'
+      ? laneLayout({
+          lanes: lanesOf({ trees: code.trees.filter((tree) => treePasses(tree, filters, target)), live, entries, scopes: travail.scopes, now }),
+          branches: branches.filter((branch) => branchPasses(branch, filters, target, now)),
+          display,
+          forced: forceCleanup,
+          targeted: target !== null,
+          now,
+        })
+      : null
 
   // « Par état » et la Frise : toutes les sessions non archivées, terminées comprises.
   const sessionRows = view === 'etat' || view === 'frise' ? travail.rows.filter((row) => row.entry.conversation.archivedAt === null && keepsRow(row)) : []
@@ -188,14 +217,13 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
   const timeline = view === 'frise' ? timelineOf(travail, sessionRows, entries, frame, now, (tree) => treePasses(tree, filters, target), forceCleanup) : null
   const timelineBranches = view === 'frise' ? branches.filter((branch) => (forceCleanup || branch.kind !== 'merged') && branchPasses(branch, filters, target, now)) : []
 
-  const shown =
-    view === 'couloirs'
-      ? treeRows.length
-      : columns
-        ? columns.working.length + columns.review.length + columns.done.length
-        : timeline
-          ? timeline.length + timelineBranches.length
-          : live.length + entries.length
+  const shown = layout
+    ? layout.trees.length + layout.branches.length + Number(layout.project !== null) + Number(layout.cleanup !== null) + Number(layout.merged !== null)
+    : columns
+      ? columns.working.length + columns.review.length + columns.done.length
+      : timeline
+        ? timeline.length + timelineBranches.length
+        : live.length + entries.length
   const nothing = active > 0 && shown === 0 && inbox.length === 0
 
   /* ---------------------------------------------------------------- la barre */
@@ -304,8 +332,37 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
     <DisplayMenu views={views} value={view} onChange={setView}>
       {WITH_INDEX.includes(view) && hasGit ? (
         <MenuCheck checked={display.index} onChange={(next) => setDisplay({ ...display, index: next })}>
-          {t('travail.display.index')} <span className="text-xs text-ink-faint">{t('travail.display.indexFilter')}</span>
+          {t('travail.display.index')}{' '}
+          <span className="text-xs text-ink-faint">{t(view === 'fil' ? 'travail.display.indexFilter' : 'travail.display.indexScroll')}</span>
         </MenuCheck>
+      ) : null}
+      {WITH_GROUPS.includes(view) && hasGit ? (
+        <>
+          <MenuHeading>{t('travail.display.group')}</MenuHeading>
+          <MenuSegment<Grouping>
+            label={t('travail.display.group')}
+            segments={GROUPS.map((value) => ({ value, label: t(`travail.display.group.${value}`) }))}
+            value={display.group}
+            onChange={(next) => setDisplay({ ...display, group: next })}
+          />
+          <MenuHeading>{t('travail.display.sort')}</MenuHeading>
+          <MenuSegment<Sorting>
+            label={t('travail.display.sort')}
+            segments={SORTS.map((value) => ({ value, label: t(`travail.display.sort.${value}`) }))}
+            value={display.sort}
+            onChange={(next) => setDisplay({ ...display, sort: next })}
+          />
+          <MenuHeading>{t('travail.display.show')}</MenuHeading>
+          <MenuCheck checked={display.showCleanup} onChange={(next) => setDisplay({ ...display, showCleanup: next })}>
+            {t('travail.display.showCleanup')}
+          </MenuCheck>
+          <MenuCheck checked={display.showMerged} onChange={(next) => setDisplay({ ...display, showMerged: next })}>
+            {t('travail.display.showMerged')}
+          </MenuCheck>
+          <MenuCheck checked={display.showProject} onChange={(next) => setDisplay({ ...display, showProject: next })}>
+            {t('travail.display.showProject')}
+          </MenuCheck>
+        </>
       ) : null}
     </DisplayMenu>
   )
@@ -349,7 +406,32 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
   }
   const chipOf = (tree: TreeRow | null) => (tree ? <TreeChip tree={tree} active={tree.key === targetKey} onSelect={toggleTarget} /> : null)
 
+  /* ---------------------------------------------------------------- « Par arbre » */
+
+  const { data: statuses } = useWorktreeStatuses(hasGit ? projectId : undefined)
+  const { items: automations } = useAutomations({ projectId })
+  const served = useMemo(() => servedByTree(automations, code.trees), [automations, code.trees])
+  const scroller = useRef<HTMLDivElement>(null)
+  const scroll = useLaneScroll(scroller, layout ? [...layout.index.trees.map((tree) => tree.key), ...layout.index.branches.map((branch) => branch.key), ...(layout.index.project ? [PROJECT_KEY] : [])] : null)
+  const [openTreeKey, setOpenTreeKey] = useState<string | null>(null)
+  const openTree = code.trees.find((tree) => tree.key === openTreeKey) ?? null
+  // Le nettoyage d'un arbre, et celui de tous les fusionnés : les dialogues lisent le
+  // statut tel que le serveur l'a rendu.
+  const [cleaning, setCleaning] = useState<{ one: WorktreeStatusDto } | { all: WorktreeStatusDto[] } | null>(null)
+  const statusOf = (tree: TreeRow) => statuses?.worktrees.find((entry) => entry.path === tree.path) ?? null
+  const cleanTree = (tree: TreeRow) => {
+    const status = statusOf(tree)
+    if (status) setCleaning({ one: status })
+  }
+  const cleanTrees = (trees: TreeRow[]) => {
+    const all = trees.flatMap((tree) => statusOf(tree) ?? [])
+    if (all.length > 0) setCleaning({ all })
+  }
+  const laneRail = { isMilestone: rail.isMilestone, agentOf: rail.agentOf, entryHref: rail.entryHref }
+  const drawerScope = openTree ? travail.scopes.get(openTree.key) : undefined
+
   return (
+    <TravailNoticeHost>
     <div className="flex h-full min-h-0 flex-col">
       <OneLineToolbar
         search={<ToolbarSearch value={query} onChange={setQuery} placeholder={t('travail.search.placeholder')} />}
@@ -362,10 +444,14 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
       <div className={cx('min-h-0 flex-1', index && 'lg:grid lg:grid-cols-[17rem_minmax(0,1fr)]')}>
         {index ? (
           <aside className="hidden min-h-0 overflow-y-auto border-r border-line lg:block">
-            <TravailIndex trees={indexed} branches={indexedBranches} current={targetKey} onChoose={setTarget} mode="filter" />
+            {layout ? (
+              <TravailIndex trees={layout.index.trees} branches={layout.index.branches} project={layout.index.project} current={scroll.current} onChoose={scroll.go} mode="scroll" />
+            ) : (
+              <TravailIndex trees={indexed} branches={indexedBranches} current={targetKey} onChoose={setTarget} mode="filter" />
+            )}
           </aside>
         ) : null}
-        <div className="h-full min-h-0 overflow-y-auto">
+        <div ref={scroller} onScroll={scroll.onScroll} className="h-full min-h-0 overflow-y-auto">
           {nothing ? (
             <div className="flex flex-col gap-5 px-4 pt-4 pb-28 md:px-6">
               {base}
@@ -378,6 +464,21 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
               entryAside={(entry) => chipOf(travail.treeOfEntry(entry))}
               rowAside={(row) => chipOf(travail.treeOfRow(row))}
             />
+          ) : layout ? (
+            <div className="flex flex-col gap-5 px-4 pt-4 pb-28 md:px-6">
+              {base}
+              {inbox.length > 0 ? <AskInbox items={inbox} /> : null}
+              <CouloirsView
+                projectId={projectId}
+                layout={layout}
+                rail={laneRail}
+                served={served}
+                flash={scroll.flash}
+                onOpen={setOpenTreeKey}
+                onCleanTree={cleanTree}
+                onCleanTrees={cleanTrees}
+              />
+            </div>
           ) : columns ? (
             <div className="flex flex-col gap-5 px-4 pt-4 pb-28 md:px-6">
               {base}
@@ -399,13 +500,81 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
               {inbox.length > 0 ? <AskInbox items={inbox} /> : null}
               <ActivityTimeline projectId={projectId} frame={frame} trees={timeline} branches={timelineBranches} targetKey={targetKey} onSelect={setTarget} />
             </div>
-          ) : (
-            <TreesInterim travail={travail} projectId={projectId} project={project} base={base} inbox={inbox} rows={treeRows} search={search} />
-          )}
+          ) : null}
         </div>
       </div>
+      <TreeDrawer
+        projectId={projectId}
+        tree={openTree}
+        sessions={drawerScope ? travail.conversations.filter((entry) => drawerScope.sessionIds.has(entry.id)) : []}
+        entries={openTree ? travail.history.filter((entry) => travail.treeOfEntry(entry)?.key === openTree.key) : []}
+        journalDays={travail.journal.days}
+        rail={laneRail}
+        served={openTree ? served.get(openTree.key) : undefined}
+        onClose={() => setOpenTreeKey(null)}
+        onClean={cleanTree}
+      />
+      {cleaning && 'one' in cleaning ? <WorktreeCleanupDialog projectId={projectId} tree={cleaning.one} base={code.base} onClose={() => setCleaning(null)} /> : null}
+      {cleaning && 'all' in cleaning ? <CleanMergedDialog projectId={projectId} trees={cleaning.all} onClose={() => setCleaning(null)} /> : null}
+      <CardSheetHost projectId={projectId} />
     </div>
+    </TravailNoticeHost>
   )
+}
+
+/**
+ * L'index qui fait défiler (`projet.md` T-3.5) : un clic mène au couloir et l'entoure
+ * d'accent un instant ; « Tous » remonte. En défilant, la ligne du couloir qu'on lit
+ * s'éclaire (scroll-spy).
+ */
+function useLaneScroll(scroller: RefObject<HTMLDivElement | null>, keys: string[] | null) {
+  const [spied, setSpied] = useState<string | null>(null)
+  const [flash, setFlash] = useState<string | null>(null)
+  const frame = useRef(0)
+  const timer = useRef<number | undefined>(undefined)
+  const keyList = keys?.join('\n') ?? null
+
+  const spy = useCallback(() => {
+    const box = scroller.current
+    if (!box || keyList === null) return
+    const top = box.getBoundingClientRect().top
+    const tops = keyList
+      .split('\n')
+      .flatMap((key) => {
+        const element = document.getElementById(laneAnchor(key))
+        return element ? [{ key, top: element.getBoundingClientRect().top - top }] : []
+      })
+      .sort((a, b) => a.top - b.top)
+    // Tout en haut, rien n'est encore lu : « Tous ».
+    setSpied(box.scrollTop < 8 ? null : spiedKey(tops, SPY_LINE))
+  }, [scroller, keyList])
+
+  useEffect(() => {
+    spy()
+  }, [spy])
+  useEffect(() => () => {
+    cancelAnimationFrame(frame.current)
+    window.clearTimeout(timer.current)
+  }, [])
+
+  return {
+    current: flash ?? spied,
+    flash,
+    onScroll: () => {
+      cancelAnimationFrame(frame.current)
+      frame.current = requestAnimationFrame(spy)
+    },
+    go: (key: string | null) => {
+      if (key === null) {
+        scroller.current?.scrollTo({ top: 0, behavior: 'smooth' })
+        return
+      }
+      document.getElementById(laneAnchor(key))?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      setFlash(key)
+      window.clearTimeout(timer.current)
+      timer.current = window.setTimeout(() => setFlash(null), FLASH_MS)
+    },
+  }
 }
 
 /**
@@ -473,60 +642,6 @@ function NoMatch({ onClear }: { onClear: () => void }) {
       <Button variant="ghost" size="sm" onClick={onClear}>
         {t('travail.empty.clear')}
       </Button>
-    </div>
-  )
-}
-
-/**
- * « Par arbre », en attendant ses couloirs (#176) : les sessions rangées sous leur arbre,
- * avec le nettoyage des arbres fusionnés, comme l'Activité groupée par worktree.
- */
-function TreesInterim({
-  travail,
-  projectId,
-  project,
-  base,
-  inbox,
-  rows,
-  search,
-}: {
-  travail: Travail
-  projectId: string
-  project: ProjectDto
-  base: ReactNode
-  inbox: InboxItem[]
-  /** Les sessions que la recherche et les filtres gardent, terminées comprises. */
-  rows: ActivityRow[]
-  search: ReturnType<typeof parseActivityFilter>
-}) {
-  const { data: status } = useWorktreeStatuses(project.git ? projectId : undefined)
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
-  return (
-    <div className="flex flex-col gap-5 pt-4 pb-28">
-      {base ? <div className="px-4 md:px-6">{base}</div> : null}
-      {inbox.length > 0 ? (
-        <div className="px-4 md:px-6">
-          <AskInbox items={inbox} />
-        </div>
-      ) : null}
-      <WorktreeGroups
-        projectId={projectId}
-        rows={rows}
-        status={status}
-        rootGit={project.git}
-        conversations={travail.conversations}
-        filtering={isActiveFilter(search)}
-        words={search.words}
-        expanded={expanded}
-        onToggle={(id) =>
-          setExpanded((current) => {
-            const next = new Set(current)
-            if (next.has(id)) next.delete(id)
-            else next.add(id)
-            return next
-          })
-        }
-      />
     </div>
   )
 }
