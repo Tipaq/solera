@@ -52,7 +52,7 @@ Rien n'est absent. Les 17 écarts mineurs ont tous une carte :
 | #261 | l'aperçu du mois gèle sur un cron « chaque minute » (PLA-11) | #200 |
 | #269 | `/sessions` au téléphone : deux bandes (COQ-12, SES-1) | #230 |
 | #270 | « 0 lignes » au lieu de « 0 ligne » (R-6.6) | #230 |
-| #271 | échéances relatives arrondies en heures, pas en jours (JAL-3, HOR-11, FCH-3) | #157 |
+| #271 | échéances relatives arrondies en heures, pas en jours (JAL-3, HOR-11, FCH-3) — **corrigé dans la PR de #246**, il faisait échouer `places-ui-check` chaque après-midi | #157 |
 | #272 | axe des jalons au téléphone : mois chevauchés sous « auj. » (HOR-3, GNT-3) | #182 |
 | #273 | Gantt au téléphone : titre à gauche d'une barre sous la colonne collée (GNT-10) | #182 |
 | #274 | processus des sessions : « 36min », « 21.5 Mo » (PRC-3) | #200 |
