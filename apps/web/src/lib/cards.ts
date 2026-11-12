@@ -154,13 +154,29 @@ export function useTriageCard(projectId: string) {
  * Le **rang** n'y est pas, et ce n'est pas un oubli : dans une colonne qui mêle cinq
  * projets, le rang n'a plus de sens — la position d'une carte s'entend dans son propre
  * board, et c'est là qu'on la règle.
+ *
+ * La carte change de colonne **dans le cache** avant la réponse : lâchée dans une
+ * colonne, une tuile qui revenait à la sienne le temps d'un aller-retour faisait croire
+ * que le dépôt n'avait pas pris. Un refus la remet où elle était.
  */
 export function useMoveCard() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ id, column }: { id: string; projectId: string; column: CardColumn }) =>
       api.patch<CardDto>(`/api/cards/${id}`, { column }),
-    onSuccess: (_card, { projectId }) =>
+    onMutate: async ({ id, projectId, column }) => {
+      const key = cardsKey(projectId)
+      await queryClient.cancelQueries({ queryKey: key })
+      const before = queryClient.getQueryData<CardDto[]>(key)
+      queryClient.setQueryData<CardDto[]>(key, (cards) =>
+        cards?.map((card) => (card.id === id ? { ...card, column, columnSince: Date.now() } : card)),
+      )
+      return { before }
+    },
+    onError: (_error, { projectId }, context) => {
+      if (context?.before) queryClient.setQueryData(cardsKey(projectId), context.before)
+    },
+    onSettled: (_card, _error, { projectId }) =>
       queryClient.invalidateQueries({ queryKey: cardsKey(projectId) }),
   })
 }
@@ -255,52 +271,6 @@ export function useDeleteCard(projectId: string) {
       void queryClient.invalidateQueries({ queryKey: ['conversations'] })
       void queryClient.invalidateQueries({ queryKey: ['conversation'] })
     },
-  })
-}
-
-/** Une colonne du board dans son ordre, telle qu'elle sera écrite. */
-export interface CardColumnOrder {
-  column: CardColumn
-  ids: string[]
-}
-
-export function useReorderCards(projectId: string) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (columns: CardColumnOrder[]) =>
-      api.post<{ ok: true }>(`/api/projects/${projectId}/cards/order`, { columns }),
-
-    onMutate: async (columns) => {
-      await queryClient.cancelQueries({ queryKey: cardsKey(projectId) })
-      const previous = queryClient.getQueryData<CardDto[]>(cardsKey(projectId))
-      if (!previous) return { previous }
-
-      // Le déplacement doit se voir immédiatement : attendre la réponse ferait revenir
-      // la carte à sa place le temps d'un aller-retour, ce qui se lit comme un refus.
-      const moved = new Map<string, { column: CardColumn; position: number }>()
-      for (const group of columns) {
-        group.ids.forEach((id, index) => moved.set(id, { column: group.column, position: index }))
-      }
-      const now = Date.now()
-      queryClient.setQueryData(
-        cardsKey(projectId),
-        previous.map((card) => {
-          const move = moved.get(card.id)
-          if (!move) return card
-          // L'arrivée dans la colonne aussi, pour l'ordre par arrivée : sans elle, la
-          // carte se poserait à son ancienne date avant de sauter au retour du serveur.
-          return { ...card, ...move, columnSince: move.column === card.column ? card.columnSince : now }
-        }),
-      )
-      return { previous }
-    },
-
-    onError: (_error, _columns, context) => {
-      // Le serveur a refusé : l'ordre affiché doit redevenir celui qu'il connaît.
-      if (context?.previous) queryClient.setQueryData(cardsKey(projectId), context.previous)
-    },
-
-    onSettled: () => queryClient.invalidateQueries({ queryKey: cardsKey(projectId) }),
   })
 }
 

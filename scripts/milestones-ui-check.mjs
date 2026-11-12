@@ -14,6 +14,11 @@ import { viteDependency } from './checks/vite-deps.mjs'
 // les étapes expliquées (fiche par étape, téléphone), la mise en page, les vagues (colonnes,
 // arêtes, cycle, chaîne au survol, empilement au téléphone, repère ambre).
 //
+// Étape « affinage » (#195, AFF-1..6) : la session d'affinage résumée sur la page — ses
+// quatre états, son mode, son outil en cours, ses questions répondues sur place (gardées,
+// envoyées ensemble à la dernière), son brouillon corrigé (renommer, monter, lier,
+// retirer, ajouter) puis validé, et le geste qui ouvre un affinage pré-rempli.
+//
 // Étape « lancer » (#197, LCH-1..12) : le panneau Lancer avant le lancement — à la main
 // (environnements filtrés, cartes, lancer une carte), en autonome (confiné d'office,
 // concurrence remontée aux vagues, quota, vérifications, lancer), livré, rien à lancer.
@@ -352,7 +357,11 @@ async function pageStep(width) {
   assert.equal(await page.locator('#lancer').getByText('Rien à lancer tant que le jalon n’est pas découpé en cartes.').isVisible(), true, 'Rien à lancer sans cartes')
   await band.getByRole('button', { name: 'Affiner', exact: true }).click()
   await page.waitForFunction(() => window.where.includes('/c/new'))
-  assert.equal(await where(), `/p/${PROJECT}/c/new?split=card-320`)
+  const affiner = new URL(await where(), origin)
+  assert.equal(affiner.pathname, `/p/${PROJECT}/c/new`)
+  assert.equal(affiner.searchParams.get('split'), 'card-320')
+  assert.equal(affiner.searchParams.get('mode'), null, 'Questions d’abord : le mode par défaut')
+  assert.equal(affiner.searchParams.get('prompt'), '/affiner-un-jalon #320\n\nMode hors ligne')
 
   console.log(width, 'cycle : « Défaire le cycle », l’arête qui remonte en rouge')
   await mount(page, `/p/${PROJECT}/timeline/350`, 'page')
@@ -386,6 +395,213 @@ async function pageStep(width) {
   console.log(width, 'une carte ordinaire n’est pas un jalon')
   await mount(page, `/p/${PROJECT}/timeline/301`, 'page')
   await page.getByText('#301 n’est pas un jalon').waitFor()
+
+  assert.deepEqual(errors, [])
+  await context.close()
+}
+
+/* ------------------------------------------------------------------ étape « affinage » */
+
+const SPLIT = 'split-370'
+const refineSession = (extra = {}) => ({
+  conversationId: SPLIT, title: 'Affiner : Hors ligne', status: 'awaiting_input', mode: 'questions', createdAt: now - DAY,
+  draft: { requestId: 'd1', count: 3 }, change: null, ...extra,
+})
+const DRAFT_370 = {
+  parent: { kind: 'existing', card: { cardId: 'card-370', number: 370, title: 'Hors ligne' } },
+  cards: [
+    { key: 'a', title: 'Cache des cartes', description: '', subtasks: ['Lire', 'Écrire'], after: [], blockedBy: [], related: [] },
+    { key: 'b', title: 'File des envois', description: '', subtasks: [], after: ['a'], blockedBy: [], related: [] },
+    { key: 'c', title: 'Bandeau hors ligne', description: '', subtasks: [], after: [], blockedBy: [], related: [] },
+  ],
+}
+const askOf = (requestId, blocking, ...questions) => ({
+  kind: 'question', requestId, requestedAt: now - 60_000,
+  event: {
+    type: 'question.requested', requestId, blocking,
+    questions: questions.map(([id, question]) => ({ id, header: id, question, options: [], multiSelect: false, allowOther: true, secret: false })),
+  },
+})
+
+/** Les jalons de l'étape : un par état que la session d'affinage peut prendre. */
+function refineBoard() {
+  return [
+    // Questions et brouillon : elle t'attend.
+    card(370, 'Hors ligne', 'todo', { milestone: true, refinement: refineSession() }),
+    // Elle travaille : son outil en cours.
+    card(380, 'Recherche plein texte', 'todo', { milestone: true, refinement: refineSession({ conversationId: 'split-380', status: 'running', mode: 'direct', draft: null }) }),
+    // Une question asynchrone de Codex : la session tourne, mais elle t'attend.
+    card(385, 'Notifications', 'todo', { milestone: true, refinement: refineSession({ conversationId: 'split-385', status: 'running', draft: null }) }),
+    // Au repos sans rien proposer, sans cartes : la suite se dit dans la session.
+    card(390, 'Thèmes', 'todo', { milestone: true, refinement: refineSession({ conversationId: 'split-390', status: 'idle', draft: null }) }),
+    // Une idée : rien n'est lancé.
+    card(395, 'Partage d’écran', 'todo', { milestone: true, description: 'Montrer une session à un collègue.' }),
+  ]
+}
+
+async function refineStep(width) {
+  const phone = width < 700
+  const context = await browser.newContext({ viewport: { width, height: 860 }, hasTouch: phone, isMobile: phone, locale: 'fr-FR', serviceWorkers: 'block' })
+  const page = await context.newPage()
+  page.setDefaultTimeout(10000)
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  let cards = refineBoard()
+  // Le serveur de l'essai : la demande de questions de #370 se lève à la réponse, son
+  // brouillon à la validation, qui range les cartes sous le jalon.
+  let prompt370 = askOf('q1', true, ['cible', 'À quoi verra-t-on que c’est fini ?'], ['sync', 'On synchronise au retour du réseau ?'])
+  let draft370 = DRAFT_370
+  const answers = []
+  const decisions = []
+  const detailOf = (number) => {
+    const milestone = cards.find((entry) => entry.number === number)
+    const session = milestone.refinement
+    if (!session) return { session: null, activity: null, prompt: null, draft: null, change: null }
+    const base = { session, activity: null, prompt: null, draft: null, change: null }
+    if (number === 370) return { ...base, prompt: prompt370, draft: draft370 && { requestId: 'd1', conversationId: SPLIT, draft: draft370 } }
+    if (number === 380) return { ...base, activity: { toolCallId: 't1', toolName: 'Read', startedAt: now - 3000, nested: false, input: { file_path: 'docs/specs/recherche.md' } } }
+    if (number === 385) return { ...base, prompt: askOf('q9', false, ['canal', 'Par courriel ou par le navigateur ?']) }
+    return base
+  }
+  await page.route('**/__milestones_check', (route) => route.fulfill({ contentType: 'text/html', body: '<html lang="fr"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="check"></div></body></html>' }))
+  await page.route('**/api/**', async (route) => {
+    const request = route.request()
+    const path = new URL(request.url()).pathname
+    if (path === `/api/projects/${PROJECT}/cards`) return route.fulfill({ json: cards })
+    if (path === `/api/projects/${PROJECT}/milestones/active`) return route.fulfill({ json: [] })
+    const detail = /^\/api\/cards\/card-(\d+)\/refinement$/.exec(path)
+    if (detail) return route.fulfill({ json: detailOf(Number(detail[1])) })
+    if (/^\/api\/cards\/[^/]+\/milestone$/.test(path)) return route.fulfill({ json: null })
+    if (path === '/api/conversations') {
+      return route.fulfill({ json: [SPLIT, 'split-380', 'split-385', 'split-390'].map((id) => conversation({ id, title: id, status: 'idle', archivedAt: null, createdAt: now - DAY }, { card: null })) })
+    }
+    if (path === `/api/projects/${PROJECT}/prompts`) return route.fulfill({ json: { prompts: prompt370 ? [{ conversationId: SPLIT, ...prompt370 }] : [] } })
+    if (path === '/api/awaiting') return route.fulfill({ json: { requests: [] } })
+    if (/^\/api\/cards\/[^/]+\/notes$/.test(path)) return route.fulfill({ json: [] })
+    if (path === `/api/conversations/${SPLIT}/questions/q1` && request.method() === 'POST') {
+      answers.push(request.postDataJSON())
+      prompt370 = null
+      cards = cards.map((entry) => (entry.number === 370 ? { ...entry, refinement: { ...entry.refinement, status: 'idle' } } : entry))
+      return route.fulfill({ json: {} })
+    }
+    if (path === `/api/conversations/${SPLIT}/card-drafts/d1` && request.method() === 'POST') {
+      const body = request.postDataJSON()
+      decisions.push(body)
+      draft370 = null
+      const milestone = cards.find((entry) => entry.number === 370)
+      const kids = body.draft.cards.map((entry, index) => card(371 + index, entry.title, 'todo', { parent: link(milestone) }))
+      cards = [...cards.map((entry) => (entry.number === 370 ? { ...entry, children: kids.map(link), refinement: { ...entry.refinement, draft: null } } : entry)), ...kids]
+      return route.fulfill({ json: {} })
+    }
+    return route.fulfill({ status: 404, json: {} })
+  })
+  const where = () => page.evaluate(() => window.where)
+  const panel = page.getByRole('region', { name: 'Session d’affinage' })
+  const state = (word) => panel.getByText(word, { exact: true })
+
+  console.log(width, 'questions et brouillon : elle t’attend, « Ouvrir la session » en geste principal')
+  await mount(page, `/p/${PROJECT}/timeline/370`, 'page')
+  await panel.getByText('À quoi verra-t-on que c’est fini ?').waitFor()
+  assert.equal(await state('t’attend').isVisible(), true)
+  assert.equal(await panel.getByText('· questions d’abord').isVisible(), true)
+  assert.equal(await panel.getByRole('link', { name: 'Ouvrir la session' }).getAttribute('href'), `/p/${PROJECT}/c/${SPLIT}`)
+  assert.ok((await page.locator('#affinage').boundingBox()).y < (await page.getByRole('region', { name: 'Vagues' }).boundingBox()).y, 'Elle attend : en tête')
+  const validate = panel.getByRole('button', { name: 'Valider le découpage' })
+  assert.equal(await validate.isDisabled(), true, 'Une question ouverte retient la validation')
+  assert.equal(await panel.getByText('Réponds d’abord à la question ouverte.').isVisible(), true)
+  await page.locator('#affinage').screenshot({ path: `/tmp/milestones-affinage-${width}.png` })
+
+  console.log(width, 'les réponses se gardent, et partent ensemble à la dernière')
+  await panel.getByRole('button', { name: 'Répondre ici' }).first().click()
+  const first = panel.getByRole('textbox', { name: 'À quoi verra-t-on que c’est fini ?' })
+  assert.equal(await first.evaluate((element) => element === document.activeElement), true, 'Le champ prend le focus')
+  assert.equal(await panel.getByRole('button', { name: 'Envoyer' }).isDisabled(), true, '↵ grisé tant que c’est vide')
+  await first.fill('Les cartes se lisent sans réseau')
+  await first.press('Enter')
+  await panel.getByText('Gardée, elle part avec les autres réponses : Les cartes se lisent sans réseau').waitFor()
+  assert.equal(answers.length, 0, 'Rien ne part avant la dernière')
+  await panel.getByRole('button', { name: 'Répondre ici' }).click()
+  await panel.getByRole('textbox', { name: 'On synchronise au retour du réseau ?' }).fill('Oui, en tâche de fond')
+  await panel.getByRole('textbox', { name: 'On synchronise au retour du réseau ?' }).press('Enter')
+  await page.waitForFunction(() => !document.body.innerText.includes('Réponds d’abord à la question ouverte.'))
+  assert.deepEqual(answers, [{ status: 'answered', answers: { cible: ['Les cartes se lisent sans réseau'], sync: ['Oui, en tâche de fond'] } }])
+  await panel.getByText('Un découpage attend ta validation, ci-dessous ou dans la session.').waitFor()
+
+  console.log(width, 'le brouillon se corrige : renommer, monter, lier, retirer, ajouter')
+  assert.equal(await panel.getByText('3 cartes · corrige, puis valide').isVisible(), true)
+  assert.equal(await panel.getByRole('list', { name: 'Sous-tâches proposées' }).getByText('Lire').isVisible(), true)
+  assert.equal(await panel.getByRole('button', { name: 'Monter' }).first().isDisabled(), true, 'La première ne monte pas')
+  assert.equal(await panel.getByRole('button', { name: 'Descendre' }).last().isDisabled(), true, 'La dernière ne descend pas')
+  const titleB = panel.getByRole('textbox', { name: 'Titre de la carte B' })
+  await titleB.fill('File des envois hors ligne')
+  await titleB.press('Enter')
+  // C monte au-dessus de B, puis attend A.
+  await panel.getByRole('button', { name: 'Monter' }).nth(2).click()
+  assert.equal(await panel.getByRole('textbox', { name: 'Titre de la carte B' }).inputValue(), 'Bandeau hors ligne')
+  const afterA = panel.getByRole('button', { name: 'Après A : Cache des cartes' }).first()
+  assert.equal(await afterA.getAttribute('aria-pressed'), 'false')
+  await afterA.click()
+  assert.equal(await afterA.getAttribute('aria-pressed'), 'true')
+  // Une carte ajoutée vient à la fin, après la dernière.
+  const add = panel.getByRole('textbox', { name: 'Ajouter une carte au brouillon' })
+  await add.fill('Conflits de synchronisation')
+  await add.press('Enter')
+  assert.equal(await panel.getByRole('textbox', { name: 'Titre de la carte D' }).inputValue(), 'Conflits de synchronisation')
+  assert.equal(await panel.getByText('4 cartes · corrige, puis valide').isVisible(), true)
+  // Retirer A défait les liens qui la citaient.
+  await panel.getByRole('button', { name: 'Retirer' }).first().click()
+  assert.equal(await panel.getByRole('textbox', { name: 'Titre de la carte A' }).inputValue(), 'Bandeau hors ligne')
+  assert.equal(await panel.getByText('part tout de suite', { exact: true }).isVisible(), true)
+  await page.locator('#affinage').screenshot({ path: `/tmp/milestones-affinage-brouillon-${width}.png` })
+
+  console.log(width, 'valider crée les cartes du brouillon corrigé, enfants du jalon')
+  await validate.click()
+  await state('terminée').waitFor()
+  assert.equal(decisions.length, 1)
+  assert.equal(decisions[0].decision, 'created')
+  assert.deepEqual(decisions[0].draft.parent, DRAFT_370.parent)
+  assert.deepEqual(
+    decisions[0].draft.cards.map(({ key, title, after }) => ({ key, title, after })),
+    [
+      { key: 'c', title: 'Bandeau hors ligne', after: [] },
+      { key: 'b', title: 'File des envois hors ligne', after: [] },
+      { key: 'k1', title: 'Conflits de synchronisation', after: ['b'] },
+    ],
+  )
+  await panel.getByText('Le jalon est découpé. « Ajouter au jalon » relance l’agent sur ce que tu ajoutes.').waitFor()
+  await page.getByRole('region', { name: 'Vagues' }).getByRole('link', { name: /^#373 / }).waitFor()
+
+  console.log(width, 'elle travaille : son outil en cours, résumé comme dans le fil')
+  await mount(page, `/p/${PROJECT}/timeline/380`, 'page')
+  await panel.getByText('docs/specs/recherche.md').waitFor()
+  assert.equal(await state('travaille').isVisible(), true)
+  assert.equal(await panel.getByText('· découpage direct').isVisible(), true)
+  await page.locator('#affinage').screenshot({ path: `/tmp/milestones-affinage-travaille-${width}.png` })
+
+  console.log(width, 'une question asynchrone de Codex : la session tourne, mais elle t’attend')
+  await mount(page, `/p/${PROJECT}/timeline/385`, 'page')
+  await panel.getByText('Par courriel ou par le navigateur ?').waitFor()
+  assert.equal(await state('t’attend').isVisible(), true)
+
+  console.log(width, 'au repos, sans rien proposer ni cartes : la suite se dit dans la session')
+  await mount(page, `/p/${PROJECT}/timeline/390`, 'page')
+  await panel.getByText('Elle attend ta réponse dans la session.').waitFor()
+  assert.equal(await state('t’attend').isVisible(), true)
+
+  console.log(width, 'pas encore lancée : « Découper directement » et « Affiner avec un agent »')
+  await mount(page, `/p/${PROJECT}/timeline/395`, 'page')
+  await state('pas encore lancée').waitFor()
+  assert.equal(await panel.getByText('/affiner-un-jalon').isVisible(), true)
+  await page.locator('#affinage').screenshot({ path: `/tmp/milestones-affinage-idee-${width}.png` })
+  const direct = new URL(await panel.getByRole('link', { name: 'Découper directement' }).getAttribute('href'), origin)
+  assert.equal(direct.searchParams.get('split'), 'card-395')
+  assert.equal(direct.searchParams.get('mode'), 'direct')
+  assert.equal(direct.searchParams.get('prompt'), '/affiner-un-jalon #395 --decouper\n\nPartage d’écran\n\nMontrer une session à un collègue.')
+  await panel.getByRole('button', { name: 'Affiner avec un agent' }).click()
+  await page.waitForFunction(() => window.where.includes('/c/new'))
+  const refine = new URL(await where(), origin)
+  assert.equal(refine.searchParams.get('mode'), null)
+  assert.equal(refine.searchParams.get('prompt'), '/affiner-un-jalon #395\n\nPartage d’écran\n\nMontrer une session à un collègue.')
 
   assert.deepEqual(errors, [])
   await context.close()
@@ -559,6 +775,7 @@ try {
   }
   browser = await launchBrowser()
   for (const width of [1280, 390]) await pageStep(width)
+  for (const width of [1280, 390]) await refineStep(width)
   for (const width of [1280, 390]) await launchStep(width)
   for (const width of [1280, 390]) {
     const phone = width < 700
@@ -720,6 +937,7 @@ try {
     await context.close()
   }
   console.log('OK : page — en-tête, prochaine action et son geste (défiler, affiner, fusionner, fiche), étapes expliquées, affinage en tête quand il attend, vagues (colonnes, arêtes, cycle, chaîne, empilées au téléphone, ambre, ajoutées) ; ordinateur et téléphone.')
+  console.log('OK : affinage — quatre états et le mode, outil en cours, question asynchrone de Codex, réponses gardées puis envoyées ensemble, brouillon corrigé (renommer, monter, lier, ajouter, retirer) puis validé, affinage pré-rempli (questions d’abord, découpage direct) ; ordinateur et téléphone.')
   console.log('OK : lancer — à la main (environnements du projet, cartes, lancer une carte, refus lu), autonome (confiné d’office, avertissement, concurrence jusqu’aux vagues, quota, branche, CLI, vérifications échecs d’abord, lancer), livré, rien à lancer ; ordinateur et téléphone.')
   console.log('OK : fiche — ℹ sans la session, ?fiche= partageable, en-tête, réponse sur place, sessions, sous-tâches, description, notes, pied, liens qui changent de fiche, case « C’est un jalon » (d’office, grisée, cochable) ; ordinateur et téléphone.')
 } finally {

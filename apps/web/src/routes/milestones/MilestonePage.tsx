@@ -9,6 +9,7 @@ import { CardSheetHost } from '../../components/cards/CardSheetHost'
 import { LaunchPanel } from '../../components/milestones/LaunchPanel'
 import { MaturityPill } from '../../components/milestones/MaturityPill'
 import { ExplainedSteps } from '../../components/milestones/MaturitySteps'
+import { RefinementPanel } from '../../components/milestones/RefinementPanel'
 import { WaveGraph } from '../../components/milestones/WaveGraph'
 import { withSheet } from '../../lib/card-sheet'
 import type { StatusOf } from '../../lib/card-state'
@@ -26,6 +27,7 @@ import {
 import { launchStage } from '../../lib/milestone-launch'
 import { useMilestones } from '../../lib/milestones'
 import { useMergeBranchPullRequest } from '../../lib/pull-requests'
+import { refineHref } from '../../lib/refinement'
 
 /**
  * **La page d'un jalon** (spec jalons JAL-1..8), sous l'onglet Jalons : où il en est et
@@ -33,9 +35,10 @@ import { useMergeBranchPullRequest } from '../../lib/pull-requests'
  * c'est d'ici qu'on l'affine.
  *
  * Deux emplacements, `#affinage` et `#lancer`, que la prochaine action fait défiler.
- * `#lancer` porte le panneau Lancer (#197) ; en attendant le résumé d'affinage (#195) et
- * le suivi d'un jalon lancé (#198), ils portent ce que `main` savait déjà faire : les
- * raisons et la session d'affinage, le suivi du pilotage (`CardMilestone`).
+ * `#affinage` porte la session d'affinage résumée (#195), `#lancer` le panneau Lancer
+ * (#197). En attendant « À régler avant de partir » (#196) et le suivi d'un jalon lancé
+ * (#198), ils portent aussi ce que `main` savait déjà faire : les raisons à régler, le
+ * suivi du pilotage (`CardMilestone`).
  */
 export function MilestonePage() {
   const { projectId, number } = useParams()
@@ -81,10 +84,8 @@ function MilestoneView({ projectId, entry, statusOf }: { projectId: string; entr
     ? () => {
         switch (gesture.kind) {
           case 'refine':
-            // La session d'affinage déjà ouverte, sinon un découpage neuf de cette carte.
-            return navigate(
-              card.refinement ? `/p/${projectId}/c/${card.refinement.conversationId}` : `/p/${projectId}/c/new?split=${card.id}`,
-            )
+            // La session d'affinage déjà ouverte, sinon un découpage neuf de cette carte (AFF-2).
+            return navigate(refineHref(projectId, card, 'questions'))
           case 'scroll':
             return document.getElementById(gesture.target)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
           case 'merge':
@@ -96,8 +97,9 @@ function MilestoneView({ projectId, entry, statusOf }: { projectId: string; entr
     : null
   const pending = refinePending(entry)
   const refine = (
-    <div id="affinage" className="min-w-0 scroll-mt-4 xl:col-start-1">
-      <RefineSlot projectId={projectId} entry={entry} pending={pending} />
+    <div id="affinage" className="flex min-w-0 scroll-mt-4 flex-col gap-5 xl:col-start-1">
+      <RefinementPanel projectId={projectId} entry={entry} />
+      <SettleSlot entry={entry} />
     </div>
   )
 
@@ -213,30 +215,22 @@ function Waves({
 }
 
 /**
- * L'emplacement de l'affinage, en attendant son résumé (#195) et « À régler avant de
- * partir » (#196) : pourquoi le jalon attend, et sa session d'affinage.
+ * L'emplacement de « À régler avant de partir », en attendant son bloc (#196) : ce qui
+ * retient un jalon découpé — cartes à préciser, pas acceptées, cycle —, en raisons. Les
+ * questions et le brouillon sont dans la session d'affinage, au-dessus.
  */
-function RefineSlot({ projectId, entry, pending }: { projectId: string; entry: MilestoneEntry; pending: boolean }) {
+function SettleSlot({ entry }: { entry: MilestoneEntry }) {
   const t = useTranslate()
-  const session = entry.card.refinement
-  if (!pending && !session) return null
+  const reasons = entry.maturity === 'split' ? maturityReasons(entry) : []
+  if (reasons.length === 0) return null
   return (
-    <section aria-label={t('milestone.page.refine')} className="flex flex-col gap-2 rounded-xl border border-line p-3.5">
-      <div className="flex items-center gap-2">
-        <h3 className="text-sm font-semibold text-ink">{t('milestone.page.refine')}</h3>
-        {session ? (
-          <Link to={`/p/${projectId}/c/${session.conversationId}`} className="ml-auto text-xs text-accent hover:underline">
-            {t('milestone.page.refineOpen')}
-          </Link>
-        ) : null}
-      </div>
-      {pending ? (
-        <ul className="flex flex-col gap-1 text-sm text-ink-soft">
-          {maturityReasons(entry).map((reason) => (
-            <li key={reason.kind}>{reasonText(reason, t)}</li>
-          ))}
-        </ul>
-      ) : null}
+    <section aria-label={t('milestone.settle.title')} className="flex flex-col gap-2 rounded-xl border border-line p-3.5">
+      <h3 className="text-sm font-semibold text-ink">{t('milestone.settle.title')}</h3>
+      <ul className="flex flex-col gap-1 text-sm text-ink-soft">
+        {reasons.map((reason) => (
+          <li key={reason.kind}>{reasonText(reason, t)}</li>
+        ))}
+      </ul>
     </section>
   )
 }
