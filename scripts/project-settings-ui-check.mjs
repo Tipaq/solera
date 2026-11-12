@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -18,7 +18,8 @@ import { launchBrowser } from './checks/browser.mjs'
  * les envoie en **un seul** `PATCH` qui ne porte qu'elles ; que la recherche s'ouvre
  * par `/`, choisit au clavier et amène le réglage à l'écran ; que le menu suit la
  * lecture et qu'un clic y fixe l'élément choisi ; que la Zone de danger retire
- * vraiment le projet ; qu'un projet partagé se lit sans se régler ; et qu'au téléphone
+ * vraiment le projet ; que les consignes changent de mode, écrivent `AGENTS.md` dans le
+ * dépôt et disent ce que chaque CLI en lit ; qu'un projet partagé se lit sans se régler ; et qu'au téléphone
  * un sélecteur remplace le menu. Les captures vont par bloc, en 1280 et 390 px.
  */
 
@@ -305,6 +306,98 @@ try {
   page.off('request', onPatch)
   await page.getByText('1 réglage enregistré.', { exact: true }).waitFor({ state: 'detached', timeout: 6000 })
 
+  // ─── Consignes : le mode, les fichiers du dépôt, ce que lit chaque CLI ─────
+  await page.goto(`${base}/p/${nimbus.id}/settings`)
+  const instructions = row('instructions')
+  const readers = instructions.getByRole('region', { name: 'Ce que lit chaque CLI' })
+  const readerOf = (cli) => readers.getByRole('row', { name: new RegExp(`^${cli}`) })
+  // Une image par partie du bloc : il est plus haut que l'écran.
+  const instructionParts = {
+    mode: () => instructions.getByRole('region', { name: 'Où vivent les consignes du projet' }),
+    fichiers: () => instructions.getByRole('region', { name: 'Fichiers à la racine du dépôt' }),
+    lecteurs: () => readers,
+    texte: () => instructions.locator('section').filter({ has: page.getByRole('button', { name: 'Modifier', exact: true }) }),
+  }
+  const shotInstructions = async (prefix, parts) => {
+    await page.evaluate(() => document.fonts.ready)
+    for (const part of parts) {
+      await instructionParts[part]().scrollIntoViewIfNeeded()
+      await shot(instructionParts[part](), `${prefix}-${part}`)
+    }
+  }
+  const instructionCalls = []
+  const onInstructions = (request) => {
+    const path = new URL(request.url()).pathname
+    if (path.startsWith(`/api/projects/${nimbus.id}/instructions`) && request.method() !== 'GET') {
+      instructionCalls.push({ method: request.method(), path: path.slice(`/api/projects/${nimbus.id}`.length), body: request.postDataJSON() })
+    }
+  }
+  page.on('request', onInstructions)
+  // Un dossier sans fichier de consignes : le mode a été déduit, et rien n'est lu.
+  await instructions.getByText('déduit du dossier, jamais choisi', { exact: true }).waitFor()
+  assert.equal(await instructions.getByRole('radio', { name: /^Dans Solera/ }).getAttribute('aria-checked'), 'true')
+  for (const cli of ['Claude', 'Codex', 'Grok', 'OpenCode']) {
+    await readerOf(cli).getByText('le texte de Solera est vide', { exact: true }).waitFor()
+  }
+  await instructions.getByText('Claude Code, Codex, Grok Build et OpenCode n’auront pas les consignes du projet.', { exact: true }).waitFor()
+  await instructions.getByRole('listitem').filter({ hasText: 'AGENTS.md' }).getByText('absent', { exact: true }).waitFor()
+  await instructions.getByText('Vide.', { exact: true }).waitFor()
+  // Changer de mode : tout de suite, hors du brouillon de la page.
+  await instructions.getByRole('radio', { name: /^Dans le dépôt/ }).click()
+  await until(() => instructions.getByRole('radio', { name: /^Dans le dépôt/ }).getAttribute('aria-checked'), (value) => value === 'true', 'mode dépôt choisi')
+  await instructions.getByText('déduit du dossier, jamais choisi', { exact: true }).waitFor({ state: 'detached' })
+  await readerOf('Codex').getByText('aucun fichier de consignes', { exact: true }).waitFor()
+  assert.equal(await bar.count(), 0, 'Le mode ne passe pas par la barre')
+  assert.equal((await (await context.request.get(`${base}/api/projects/${nimbus.id}/instructions`)).json()).mode, 'repo')
+  // Écrire AGENTS.md, qui n'existe pas encore, depuis la page.
+  await instructions.getByText('AGENTS.md (à créer)', { exact: true }).waitFor()
+  await instructions.getByRole('button', { name: 'Modifier', exact: true }).click()
+  const agentsText = '# Consignes\n\n- Les tests se lancent avec `pnpm test`.\n- Ne jamais pousser directement sur main.\n'
+  await instructions.getByRole('textbox').fill(agentsText)
+  await instructions.getByRole('button', { name: 'Enregistrer', exact: true }).click()
+  await instructions.getByRole('textbox').waitFor({ state: 'detached' })
+  assert.equal(await readFile(join(nimbus.workspacePath, 'AGENTS.md'), 'utf8'), agentsText, 'AGENTS.md écrit dans le dépôt')
+  await readerOf('Codex').getByText('AGENTS.md', { exact: true }).waitFor()
+  await readerOf('Claude').getByText('AGENTS.md', { exact: true }).waitFor()
+  await instructions.getByRole('listitem').filter({ hasText: 'AGENTS.md' }).getByText('3 lignes', { exact: true }).waitFor()
+  assert.equal(await instructions.getByRole('status').count(), 0, 'Plus d’alerte : tous les CLI lisent AGENTS.md')
+  await shotInstructions('1280-consignes-depot', ['mode', 'fichiers', 'lecteurs', 'texte'])
+  // Un CLAUDE.md qui a son propre contenu : les CLI ne liraient pas la même chose.
+  await writeFile(join(nimbus.workspacePath, 'CLAUDE.md'), '# Claude\n\n- Toujours lancer le lint.\n- Préférer pnpm à npm.\n- Écrire les tests d’abord.\n- Pas de console.log.\n')
+  await page.reload()
+  await instructions.getByText(/^AGENTS\.md et CLAUDE\.md ont chacun leur contenu/).waitFor()
+  await readerOf('Claude').getByText('AGENTS.md + CLAUDE.md', { exact: true }).waitFor()
+  await readerOf('Codex').getByText('AGENTS.md', { exact: true }).waitFor()
+  // OpenCode s'arrête au premier fichier trouvé.
+  await readerOf('OpenCode').getByText('AGENTS.md', { exact: true }).waitFor()
+  await instructions.getByRole('button', { name: /^CLAUDE\.md/ }).click()
+  await instructions.getByText('- Préférer pnpm à npm.', { exact: false }).first().waitFor()
+  await shotInstructions('1280-consignes-divergents', ['fichiers', 'lecteurs'])
+  // Le même fichier réduit à un renvoi : plus de divergence.
+  await writeFile(join(nimbus.workspacePath, 'CLAUDE.md'), 'Voir [AGENTS.md](AGENTS.md).\n')
+  await page.reload()
+  await instructions.getByText('renvoie à AGENTS.md', { exact: true }).waitFor()
+  assert.equal(await instructions.getByRole('status').count(), 0, 'Un renvoi n’est pas une divergence')
+  // Passer dans Solera avec un texte vide : on propose d'importer AGENTS.md, pas le renvoi.
+  instructionCalls.length = 0
+  await instructions.getByRole('radio', { name: /^Dans Solera/ }).click()
+  const importDialog = page.getByRole('dialog', { name: 'Passer les consignes dans Solera' })
+  await importDialog.getByText(/^Le contenu de AGENTS\.md est copié/).waitFor()
+  await importDialog.getByRole('button', { name: 'Passer dans Solera sans importer', exact: true }).waitFor()
+  await shot(importDialog, '1280-consignes-import')
+  await importDialog.getByRole('button', { name: 'Importer et basculer' }).click()
+  await importDialog.waitFor({ state: 'detached' })
+  await readerOf('Codex').getByText('texte de Solera', { exact: true }).waitFor()
+  assert.deepEqual(instructionCalls, [{ method: 'PATCH', path: '/instructions', body: { mode: 'solera', content: agentsText.trim() } }])
+  await instructions.getByText('Texte tenu par Solera', { exact: true }).waitFor()
+  await instructions.getByRole('listitem').filter({ hasText: 'AGENTS.md' }).getByText('3 lignes · masqué aux CLI', { exact: true }).waitFor()
+  await shotInstructions('1280-consignes-solera', ['mode', 'fichiers', 'lecteurs', 'texte'])
+  // Le lien vers la partie globale ouvre les réglages du compte, section Consignes.
+  await instructions.getByRole('button', { name: 'La modifier', exact: true }).click()
+  await page.getByRole('dialog').getByText(/^Des consignes injectées dans le prompt de chaque session/).waitFor()
+  await page.keyboard.press('Escape')
+  page.off('request', onInstructions)
+
   // ─── Zone de danger : retirer un projet, pour de vrai ─────────────────────
   await page.goto(`${base}/p/${docs.id}/settings`)
   await row('remove').getByRole('button', { name: 'Retirer le projet' }).click()
@@ -333,6 +426,11 @@ try {
   assert.ok(await guestPage.locator('#reglage-name').getByRole('textbox').isDisabled(), 'Le nom se lit sans se changer')
   assert.equal(await guestPage.locator('[id^="reglage-agent-"]').count(), 0, 'Les réglages d’agent ne sont pas montrés à un membre')
   await guestMenu.getByRole('button', { name: 'Ce que les agents savent', exact: true }).waitFor()
+  // Les consignes se lisent, sans changer de mode ni modifier.
+  const guestInstructions = guestPage.locator('#reglage-instructions')
+  await guestInstructions.getByText('Texte tenu par Solera', { exact: true }).waitFor()
+  assert.ok(await guestInstructions.getByRole('radio', { name: /^Dans le dépôt/ }).isDisabled())
+  assert.ok(await guestInstructions.getByRole('button', { name: 'Modifier', exact: true }).isDisabled())
   assert.ok(await guestPage.locator('#reglage-color').getByRole('radio').first().isDisabled())
   await shot(guestPage.locator('[data-place-content]'), '1280-partage')
   await guest.close()
@@ -354,6 +452,7 @@ try {
   for (const [anchor, name] of [['reglages-agents-1', 'agents-demandes'], ['reglages-agents-2', 'agents-prete'], ['reglages-agents-3', 'agents-permissions'], ['reglages-agents-4', 'agents-modele']]) {
     await shot(page.locator(`#${anchor}`), `390-${name}`)
   }
+  await shotInstructions('390-consignes-solera', ['mode', 'fichiers', 'lecteurs', 'texte'])
   await goTo.selectOption({ label: 'Général › Exécution' })
   await until(() => page.locator('#reglages-general-2').evaluate((element) => element.getBoundingClientRect().top), (top) => top < 300, 'le sélecteur amène au groupe')
   await page.getByRole('button', { name: 'Rechercher un réglage', exact: true }).last().click()
@@ -367,7 +466,7 @@ try {
   await shot(page, '390-brouillon')
 
   assert.deepEqual(errors, [])
-  console.log('OK : réglages du projet — menu, brouillon et PATCH unique, agents à plat, recherche, lecture suivie, Zone de danger, partage, téléphone.')
+  console.log('OK : réglages du projet — menu, brouillon et PATCH unique, agents à plat, consignes, recherche, lecture suivie, Zone de danger, partage, téléphone.')
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

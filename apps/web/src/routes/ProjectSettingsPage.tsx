@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom'
 import { PROJECT_CAP_MAX, type ConfinedServices, type ProjectDto, type ProjectVisibility } from '@solera/protocol'
 import { Banner, Button, EmptyState, SaveBar, SegmentedControl, Select, Switch } from '@solera/ui'
 import { AutonomousConfinementSelect, EnvironmentSelect } from '../components/Environment'
-import { ProjectInstructions } from '../components/instructions/Instructions'
+import { InstructionsPanel } from '../components/instructions/InstructionsPanel'
 import { MemoryPanel } from '../components/instructions/MemoryPanel'
 import { PathField } from '../components/PathField'
 import {
@@ -264,9 +264,9 @@ function ProjectSettings({ project }: { project: ProjectDto }) {
   const agents: SettingItem[] = [
     {
       id: 'instructions', category: 'agents', group: knowledge, kind: 'block',
-      label: t('instructions.project.title'), help: t('instructions.project.description'),
+      label: t('instructions.project.title'), help: t('projectSettings.item.instructions.help'),
       keywords: keywords('projectSettings.item.instructions.keywords'),
-      render: () => <ProjectInstructions projectId={project.id} />,
+      render: () => <InstructionsPanel projectId={project.id} />,
     },
     {
       id: 'memory', category: 'agents', group: knowledge, kind: 'block',
