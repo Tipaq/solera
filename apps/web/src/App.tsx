@@ -102,7 +102,7 @@ const SchedulesPage = lazy(() => import('./routes/SchedulesPage').then((m) => ({
 const SessionsPage = lazy(() => import('./routes/SessionsPage').then((m) => ({ default: m.SessionsPage })))
 const ServicesPage = lazy(() => import('./routes/ServicesPage').then((m) => ({ default: m.ServicesPage })))
 const BoardPage = lazy(() => import('./routes/BoardPage').then((m) => ({ default: m.BoardPage })))
-const SchedulePage = lazy(() => import('./routes/SchedulePage').then((m) => ({ default: m.SchedulePage })))
+const ProjectActionsPage = lazy(() => import('./routes/ProjectActionsPage').then((m) => ({ default: m.ProjectActionsPage })))
 const MilestonesPage = lazy(() =>
   import('./routes/milestones/MilestonesPage').then((m) => ({ default: m.MilestonesPage })),
 )
@@ -286,8 +286,7 @@ export function App() {
             <Route index element={<ProjectOverviewPage />} />
             <Route path="travail" element={<Suspense fallback={null}><ProjectTravailPage /></Suspense>} />
             <Route path="board" element={<Deferred><BoardPage /></Deferred>} />
-            {/* Alias provisoire : les Planifiées du projet, jusqu'à la vue Actions (jalon 4). */}
-            <Route path="actions" element={<Deferred><SchedulePage /></Deferred>} />
+            <Route path="actions" element={<Deferred><ProjectActionsPage /></Deferred>} />
             <Route path="timeline" element={<Deferred><MilestonesPage /></Deferred>} />
             <Route path="timeline/:number" element={<Suspense fallback={null}><MilestonePage /></Suspense>} />
             <Route path="settings" element={<Deferred><ProjectSettingsPage /></Deferred>} />

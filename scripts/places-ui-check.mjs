@@ -224,10 +224,11 @@ try {
   await row.getByRole('link', { name: /^Travail/ }).and(page.locator('[aria-current="page"]')).waitFor()
   await page.goto(`${base}/p/${nimbus.id}/schedules`)
   await page.waitForURL(`**/p/${nimbus.id}/actions`)
-  // Tant que la vue Actions n'est pas livrée, l'onglet rend les Planifiées du projet,
-  // et leur « + Tâche » est en tête de la page.
-  await page.getByRole('button', { name: 'Tâche', exact: true }).click()
-  await page.getByRole('dialog').waitFor()
+  // L'onglet Actions : l'onglet courant de la rangée, et « + Action ▾ » au bout de sa barre.
+  await row.getByRole('link', { name: /^Actions/ }).and(page.locator('[aria-current="page"]')).waitFor()
+  await page.getByRole('button', { name: 'Nouvelle action', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Nouvelle action' }).getByRole('button', { name: /^Nouvelle commande/ }).click()
+  await page.getByRole('dialog', { name: 'Nouvelle action', exact: true }).getByRole('textbox', { name: 'Libellé', exact: true }).waitFor()
   await page.keyboard.press('Escape')
   await page.goto(`${base}/p/${nimbus.id}/journal`)
   await page.waitForURL(`**/p/${nimbus.id}/travail?vue=fil`)
