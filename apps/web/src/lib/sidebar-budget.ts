@@ -80,6 +80,107 @@ export function fitStep({ budget, overflow, rowHeight, lists, cutLists }: FitMea
   return budget
 }
 
+/** Un budget essayé, et le débord qu'il a donné. */
+export interface FitProbe {
+  budget: number
+  overflow: number
+}
+
+/** Ce que la colonne retient d'une mesure à l'autre, sans rendre pour autant. */
+export interface FitMemory {
+  /** Le plus grand budget essayé qui tient, et le plus petit qui déborde. */
+  fits: FitProbe | null
+  overflows: FitProbe | null
+  /** La hauteur de l'Activité dépliée, mesurée la dernière fois qu'elle l'était. */
+  fullActivity: number
+  /** La hauteur de colonne où l'Activité vient de se redéplier. */
+  reopenedAt: number | null
+  /**
+   * La hauteur de colonne où, redépliée, elle a dû se replier aussitôt. Oubliée dès que
+   * la colonne mesure autrement : une autre hauteur, d'autres sessions.
+   */
+  stuckAt: number | null
+}
+
+export const FIT_MEMORY: FitMemory = { fits: null, overflows: null, fullActivity: 0, reopenedAt: null, stuckAt: null }
+
+/** Une mesure de la colonne, avec l'état de l'Activité qui l'a produite. */
+export interface FitReading extends FitMeasure {
+  collapsed: boolean
+  /** La hauteur de la colonne : elle change, et ce qu'on en savait ne vaut plus. */
+  column: number
+  /** La hauteur de l'Activité telle que rendue, `null` si la colonne n'en a pas. */
+  activity: number | null
+}
+
+/**
+ * Le budget suivant, borné par ce qu'on a déjà essayé : jamais au-dessus d'un budget
+ * qui a débordé, jamais en dessous d'un budget qui a tenu.
+ *
+ * `fitStep` suppose qu'un cran coûte une ligne. Il en coûte souvent plus : une session
+ * peut ouvrir une tranche de jour, avec son en-tête (#262). Sans bornes, la mesure
+ * oscille alors entre un budget qui déborde et un autre qui laisse une ligne libre ;
+ * avec elles, l'intervalle se resserre à chaque passe et la recherche s'arrête.
+ *
+ * Les bornes valent pour une colonne donnée. Un budget déjà essayé qui ne donne plus le
+ * même débord, ou un budget hors des bornes, dit qu'elle a changé (redimensionnée, des
+ * sessions en plus) : la recherche repart de cette mesure seule, et `changed` le dit.
+ */
+function fitSearch(
+  memory: FitMemory,
+  measure: FitMeasure,
+): Pick<FitMemory, 'fits' | 'overflows'> & { budget: number; changed: boolean } {
+  const { budget, overflow } = measure
+  if (measure.lists === 0 || measure.rowHeight <= 0) return { budget, fits: null, overflows: null, changed: false }
+  const { fits, overflows } = memory
+  const known = [fits, overflows].find((probe) => probe?.budget === budget)
+  const inside = (!fits || budget >= fits.budget) && (!overflows || budget <= overflows.budget)
+  const changed = !inside || (!!known && known.overflow !== overflow)
+  const kept = changed ? { fits: null, overflows: null } : { fits, overflows }
+  const probe = { budget, overflow }
+  const bounds = overflow > 0 ? { ...kept, overflows: probe } : { ...kept, fits: probe }
+  const low = bounds.fits?.budget ?? 0
+  const high = bounds.overflows ? bounds.overflows.budget - 1 : Infinity
+  return { ...bounds, changed, budget: Math.max(0, Math.min(Math.max(fitStep(measure), low), high)) }
+}
+
+/**
+ * « Ajuster à la hauteur », une passe : le budget et le repli de l'Activité à rendre
+ * après cette mesure, et ce qu'il faut en retenir. Rendus tels quels, la colonne est
+ * stable.
+ *
+ * L'Activité ne se décide qu'une fois le budget stable. Replier ou déplier change la
+ * colonne : la recherche du budget repart de zéro. Et si, redépliée, elle doit se
+ * replier aussitôt — `activityFold` estime en crans ce que coûte la place rendue, et des
+ * sessions qui attendent n'en libèrent aucune —, elle reste repliée tant que la colonne
+ * mesure pareil.
+ */
+export function fitNext(memory: FitMemory, reading: FitReading): { budget: number; collapsed: boolean; memory: FitMemory } {
+  const { budget, fits, overflows, changed } = fitSearch(memory, reading)
+  const searched = { ...memory, fits, overflows, stuckAt: changed ? null : memory.stuckAt }
+  if (budget !== reading.budget || reading.activity === null) {
+    return { budget, collapsed: reading.collapsed, memory: searched }
+  }
+
+  const fullActivity = reading.collapsed ? memory.fullActivity : reading.activity
+  const gain = reading.collapsed ? fullActivity - reading.activity : 0
+  let collapsed = activityFold({ ...reading, gain })
+  let { reopenedAt, stuckAt } = searched
+  if (reading.collapsed && !collapsed) {
+    if (stuckAt === reading.column) collapsed = true
+    else reopenedAt = reading.column
+  } else if (!reading.collapsed) {
+    if (collapsed && reopenedAt === reading.column) stuckAt = reading.column
+    reopenedAt = null
+  }
+  const moved = collapsed !== reading.collapsed
+  return {
+    budget,
+    collapsed,
+    memory: { fits: moved ? null : fits, overflows: moved ? null : overflows, fullActivity, reopenedAt, stuckAt },
+  }
+}
+
 /**
  * Le repli de l'Activité, une fois le budget stable. Dépliée, elle garde son quart de
  * colonne tant qu'au moins `MIN_SESSIONS` sessions tiennent sous elle ; sinon elle se
