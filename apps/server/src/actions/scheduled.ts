@@ -6,10 +6,11 @@ import { actionRuns, projectActions, projects, type Db, type ProjectActionRow } 
 import { actionRunStatusOf, nextScheduleRun } from '@solera/protocol'
 import type { Config } from '../config.js'
 import type { Environments } from '../environments/environments.js'
+import { describeHttpError } from '../http/errors.js'
 import type { Notifications } from '../notifications/dispatcher.js'
 import { processOrigins } from '../services/origins.js'
 import { runDetached, type CommandExecutor, type DetachedResult } from '../scheduler/detached.js'
-import { readActionCadence } from './actions.js'
+import { readActionCadence, type ActionRunner } from './actions.js'
 import { finishDetachedRun, startRun } from './runs.js'
 
 /**
@@ -23,7 +24,17 @@ import { finishDetachedRun, startRun } from './runs.js'
  * le plafond du projet. Un processus comme le script de vérification d'une tâche, hors
  * du cgroup du daemon quand systemd le permet, coupé à sa durée maximale ; sa sortie
  * finit dans le passage.
+ *
+ * Un service planifié (AC-06) démarre son unité à sa cadence, comme un clic à la racine,
+ * et le balayage l'arrête à sa cadence d'arrêt. Le même balayage arrête les instances
+ * par worktree dont l'arbre est parti.
  */
+
+/** Ce que le planificateur demande aux services : les démarrer, les arrêter, ranger les instances. */
+export type ScheduledServices = Pick<ActionRunner, 'startOnSchedule' | 'forget' | 'retireStrayInstances'>
+
+/** Lire systemd à chaque balayage de cinq secondes serait trop : une instance perdue peut attendre. */
+const STRAY_SWEEP_MS = 60_000
 
 /** Ce que le planificateur attend de l'aiguillage des notifications, et rien de plus. */
 export type FailureNotifier = Pick<Notifications, 'dispatch'>
@@ -33,6 +44,8 @@ export class CommandScheduler {
   private readonly running = new Set<string>()
   private readonly inFlight = new Set<Promise<void>>()
   private readonly execute: CommandExecutor
+  private readonly services: ScheduledServices | null
+  private lastStraySweep = 0
   private notifications: FailureNotifier | null
   private logger: FastifyBaseLogger | null = null
 
@@ -40,9 +53,10 @@ export class CommandScheduler {
     private readonly db: Db,
     private readonly config: Config,
     private readonly environments: Environments,
-    options: { execute?: CommandExecutor; notifications?: FailureNotifier } = {},
+    options: { execute?: CommandExecutor; notifications?: FailureNotifier; services?: ScheduledServices } = {},
   ) {
     this.execute = options.execute ?? runDetached
+    this.services = options.services ?? null
     this.notifications = options.notifications ?? null
   }
 
@@ -60,6 +74,13 @@ export class CommandScheduler {
    * minutes, et le balayage porte aussi les tâches d'agent.
    */
   async tick(now = Date.now()): Promise<void> {
+    await this.stopServices(now)
+    if (this.services && now - this.lastStraySweep >= STRAY_SWEEP_MS) {
+      this.lastStraySweep = now
+      await this.services
+        .retireStrayInstances()
+        .catch((err: unknown) => this.logger?.warn({ err }, 'instances par worktree non rangées'))
+    }
     const due = this.db
       .select({ action: projectActions, workspacePath: projects.workspacePath, ownerId: projects.ownerId })
       .from(projectActions)
@@ -100,6 +121,36 @@ export class CommandScheduler {
     }
   }
 
+  /**
+   * Les services dont l'heure d'arrêt est venue. Même proposés par un agent : arrêter ne
+   * lance rien. En pause, rien n'est armé.
+   */
+  private async stopServices(now: number): Promise<void> {
+    const due = this.db
+      .select()
+      .from(projectActions)
+      .where(
+        and(
+          eq(projectActions.kind, 'service'),
+          isNotNull(projectActions.stopCadence),
+          eq(projectActions.scheduleEnabled, true),
+          lte(projectActions.nextStopAt, now),
+        ),
+      )
+      .all()
+    for (const action of due) {
+      const cadence = readActionCadence(action.stopCadence)!
+      this.db
+        .update(projectActions)
+        .set({ nextStopAt: cadence.kind === 'once' ? null : nextScheduleRun(cadence, now, now) })
+        .where(eq(projectActions.id, action.id))
+        .run()
+      await this.services
+        ?.forget(action)
+        .catch((err: unknown) => this.logger?.warn({ err, action: action.id }, 'service planifié non arrêté'))
+    }
+  }
+
   /** Attend la fin des tirs en cours, ceux que les tirs suivants ont pu lancer compris. */
   async idle(): Promise<void> {
     while (this.inFlight.size > 0) await Promise.all([...this.inFlight])
@@ -121,6 +172,7 @@ export class CommandScheduler {
   }
 
   private async launch(action: ProjectActionRow, workspacePath: string, ownerId: string, now: number): Promise<void> {
+    if (action.kind === 'service') return this.startService(action, workspacePath, ownerId, now)
     const cwd = action.subdir ? join(workspacePath, action.subdir) : workspacePath
     const runId = startRun(this.db, {
       actionId: action.id,
@@ -138,19 +190,57 @@ export class CommandScheduler {
     if (failed && this.firstFailure(action.id, runId)) await this.notifyFailure(action, ownerId, end)
   }
 
-  /** La fin du tir, ou la raison pour laquelle il n'est pas parti. */
-  private async play(action: ProjectActionRow, cwd: string): Promise<DetachedResult> {
-    // Une commande planifiée tourne seule, comme une session autonome (#146) : dans
-    // l'environnement que le projet donne à celles-ci. Confiné ou dans un conteneur, la
-    // jouer sur l'hôte sortirait de ce qu'il a choisi : refusé et dit, plutôt que fait ailleurs.
-    const environment = this.environments.forAutonomous(action.projectId, null)
-    if (environment.where !== 'host' || environment.confined) {
-      return {
-        exitCode: null,
-        timedOut: false,
-        output: "Commande planifiée non lancée : ce projet fait tourner ses exécutions autonomes confinées ou dans un dev container, où une commande planifiée ne sait pas encore aller.",
+  /**
+   * Démarre un service à sa cadence. Le passage dit qu'il a démarré, et où ; déjà en
+   * marche, il n'en écrit pas : rien n'a été fait.
+   */
+  private async startService(action: ProjectActionRow, workspacePath: string, ownerId: string, now: number): Promise<void> {
+    const refused = this.offHost(action)
+    let cwd: string | null = null
+    let end: DetachedResult
+    if (refused) {
+      end = refused
+    } else {
+      try {
+        cwd = await this.services!.startOnSchedule(action, workspacePath)
+        if (cwd === null) return
+        end = { exitCode: 0, timedOut: false, output: `Service démarré dans ${cwd}.` }
+      } catch (err) {
+        end = { exitCode: null, timedOut: false, output: `Service planifié non démarré : ${describeHttpError(err)}` }
       }
     }
+    const runId = startRun(this.db, {
+      actionId: action.id,
+      projectId: action.projectId,
+      trigger: 'schedule',
+      conversationId: null,
+      terminalId: null,
+      cwd: cwd ?? workspacePath,
+      startedAt: now,
+    })
+    finishDetachedRun(this.db, runId, { ...end, finishedAt: Date.now() })
+    if (end.exitCode !== 0 && this.firstFailure(action.id, runId)) await this.notifyFailure(action, ownerId, end)
+  }
+
+  /**
+   * Une commande planifiée tourne seule, comme une session autonome (#146) : dans
+   * l'environnement que le projet donne à celles-ci. Confiné ou dans un conteneur, la
+   * jouer sur l'hôte sortirait de ce qu'il a choisi : refusé et dit, plutôt que fait ailleurs.
+   */
+  private offHost(action: ProjectActionRow): DetachedResult | null {
+    const environment = this.environments.forAutonomous(action.projectId, null)
+    if (environment.where === 'host' && !environment.confined) return null
+    return {
+      exitCode: null,
+      timedOut: false,
+      output: "Commande planifiée non lancée : ce projet fait tourner ses exécutions autonomes confinées ou dans un dev container, où une commande planifiée ne sait pas encore aller.",
+    }
+  }
+
+  /** La fin du tir, ou la raison pour laquelle il n'est pas parti. */
+  private async play(action: ProjectActionRow, cwd: string): Promise<DetachedResult> {
+    const refused = this.offHost(action)
+    if (refused) return refused
     const isDir = await stat(cwd).then((s) => s.isDirectory(), () => false)
     if (!isDir) {
       return { exitCode: null, timedOut: false, output: `Commande planifiée non lancée : le dossier ${cwd} n'existe pas.` }

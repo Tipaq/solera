@@ -85,7 +85,8 @@ export function resolveActionUrl(template: string | null, ports: readonly number
  * - `root` : toujours à la racine du projet, d'où qu'on le lance ;
  * - `branch` : toujours sur `pinnedBranch`, à la racine quand elle y est ; sinon refusé
  *   tant que Solera ne tient pas un worktree dédié à la branche ;
- * - `per-worktree` : une instance par arbre. Pas encore là (AC-06) : refusée (400).
+ * - `per-worktree` : une instance par arbre (AC-06), chacune sur un port libre que sa
+ *   commande reçoit dans `PORT` ; son lien doit alors contenir `{port}`.
  *
  * Une tâche tourne toujours là où on la lance, chaque arbre a ses tests : elle est
  * enregistrée en `follow`, quoi qu'on demande.
@@ -107,9 +108,16 @@ const actionScheduleShape = {
   cadence: scheduleCadenceSchema,
   enabled: z.boolean(),
   maxDurationMinutes: z.number().int().min(MIN_SCHEDULE_DURATION_MINUTES).max(MAX_SCHEDULE_DURATION_MINUTES),
+  /**
+   * Un service planifié (AC-06) : `cadence` le démarre, celle-ci l'arrête. Null ou absente,
+   * il tourne jusqu'à ce qu'on l'arrête. Une tâche finit seule : refusée pour elle.
+   */
+  stopCadence: scheduleCadenceSchema.nullable(),
 }
 
-export const actionScheduleSchema = z.object(actionScheduleShape).partial({ enabled: true, maxDurationMinutes: true })
+export const actionScheduleSchema = z
+  .object(actionScheduleShape)
+  .partial({ enabled: true, maxDurationMinutes: true, stopCadence: true })
 export type ActionScheduleInput = z.infer<typeof actionScheduleSchema>
 
 /** Une modification : la pause n'envoie que `enabled`. Null retire la planification. */
@@ -132,8 +140,7 @@ const projectActionShape = {
  * Une commande se lance à la demande (un clic, un agent), à sa cadence, ou les deux ;
  * jamais ni l'un ni l'autre, elle ne partirait plus. `onDemand` absent vaut vrai.
  *
- * Seule une `task` se planifie : un service planifié (démarrer, arrêter à heure fixe)
- * demande une fenêtre que ce schéma n'a pas encore.
+ * Un service planifié démarre à sa cadence, et s'arrête à `stopCadence` quand il en a une.
  */
 export const createProjectActionBodySchema = z
   .object({
@@ -145,15 +152,15 @@ export const createProjectActionBodySchema = z
     message: 'On demand, scheduled, or both.',
     path: ['onDemand'],
   })
-  .refine((body) => body.kind === 'task' || !body.schedule, {
-    message: 'Only a task can be scheduled.',
-    path: ['schedule'],
+  .refine((body) => body.kind === 'service' || !body.schedule?.stopCadence, {
+    message: 'Only a service has a stop cadence.',
+    path: ['schedule', 'stopCadence'],
   })
 export type CreateProjectActionBody = z.infer<typeof createProjectActionBodySchema>
 
 /**
- * Tout est facultatif. La cohérence (à la demande ou planifiée, seule une tâche se
- * planifie) se juge sur l'action une fois modifiée : c'est le serveur qui la tient.
+ * Tout est facultatif. La cohérence (à la demande ou planifiée, seul un service s'arrête
+ * à heure fixe) se juge sur l'action une fois modifiée : c'est le serveur qui la tient.
  */
 export const updateProjectActionBodySchema = z
   .object({
@@ -213,6 +220,10 @@ export interface ProjectActionSchedule {
   /** Le dernier tir de la cadence ; null avant le premier. */
   lastRunAt: number | null
   maxDurationMinutes: number
+  /** Un service planifié : l'arrêt de son unité (AC-06). Null pour une tâche, ou sans arrêt. */
+  stopCadence: ScheduleCadence | null
+  /** Le prochain arrêt ; null sans cadence d'arrêt, ou en pause. */
+  nextStopAt: number | null
 }
 
 /** État d'une action `service` portée par systemd. */
@@ -221,6 +232,7 @@ export interface ProjectActionServiceState {
   /** `ActiveState` de systemd ; `inactive` quand l'unité n'existe pas. */
   state: string
   cwd: string | null
+  /** Ceux qu'il écoute ; celui qu'on lui a donné (`PORT`) en tête, pour le lien. */
   ports: number[]
   startedAt: number | null
   /** Ce qu'il sert, lu dans son `cwd` ; null quand il ne tourne pas. */
@@ -284,8 +296,16 @@ export interface ProjectActionDto {
   onDemand: boolean
   /** Null : elle ne part jamais seule. */
   schedule: ProjectActionSchedule | null
-  /** Null pour une `task`, ou quand systemd n'est pas disponible. */
+  /**
+   * Null pour une `task`, ou quand systemd n'est pas disponible. Une instance par
+   * worktree : la plus récente en marche, ou à défaut la première listée.
+   */
   service: ProjectActionServiceState | null
+  /**
+   * Une instance par worktree : chacune de celles que systemd connaît, en marche ou en
+   * échec, la plus récente d'abord. Vide pour les autres placements.
+   */
+  instances: ProjectActionServiceState[]
   /** Dernière exécution dans un terminal, tant que son onglet est ouvert. */
   lastRun: ProjectActionLastRun | null
   /** Les derniers passages, le plus récent d'abord, sans leur extrait (`ACTION_RUNS_SHOWN` au plus). */

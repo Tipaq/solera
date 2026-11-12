@@ -1417,9 +1417,18 @@ export const projectActions = sqliteTable(
     /** NULL quand rien n'est prévu : sans cadence, en pause, ou ponctuelle déjà tirée. */
     nextRunAt: timestamp('next_run_at'),
     /**
+     * Un service planifié s'arrête à cette cadence (`ScheduleCadence` en JSON) : le
+     * balayage arrête son unité. NULL pour une tâche, qui finit seule, et pour un service
+     * qu'on arrête à la main. Hors relecture : arrêter ne lance rien.
+     */
+    stopCadence: text('stop_cadence'),
+    /** Le prochain arrêt ; NULL sans cadence d'arrêt, ou en pause. */
+    nextStopAt: timestamp('next_stop_at'),
+    /**
      * Où tourne un service : `follow` là où on le lance, `root` à la racine, `branch`
-     * à la racine quand elle est sur `pinned_branch`. Hors relecture : il ne change pas ce
-     * qui s'exécute, seulement lequel des arbres du projet le porte.
+     * à la racine quand elle est sur `pinned_branch`, `per-worktree` une unité par arbre.
+     * Hors relecture : il ne change pas ce qui s'exécute, seulement lequel des arbres du
+     * projet le porte.
      */
     placement: text('placement').$type<ActionPlacement>().notNull().default('follow'),
     pinnedBranch: text('pinned_branch'),

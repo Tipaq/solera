@@ -19,6 +19,7 @@ import {
   listActionRows,
   loadAction,
   rejectAction,
+  unitsOrphanedBy,
   updateAction,
   type ActionRunner,
 } from '../../actions/actions.js'
@@ -125,9 +126,11 @@ export function registerActionRoutes(
     const { id } = request.params as { id: string }
     const { action } = guardAction(id, user.id)
     const patch = updateProjectActionBodySchema.parse(request.body)
-    // Un service qui devient une tâche laisserait son unité tourner sans bouton.
-    if (action.kind === 'service' && patch.kind === 'task') await runner.forget(action)
-    return runner.toDto(updateAction(ctx.db, action, patch, null))
+    const next = updateAction(ctx.db, action, patch, null)
+    // Un service qui devient une tâche, ou change de nombre d'instances, laisserait ses
+    // unités tourner sans bouton.
+    if (unitsOrphanedBy(action, next)) await runner.forget(action)
+    return runner.toDto(next)
   })
 
   app.post('/api/actions/:id/approve', async (request): Promise<ProjectActionDto> => {
