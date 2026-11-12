@@ -3,7 +3,6 @@ import type { ProjectDto } from '@solera/protocol'
 import { toggled } from '../../lib/filters'
 import { useTranslate } from '../../lib/i18n'
 import { ProjectAvatar } from '../ProjectAvatar'
-import { ProjectPip } from '../places/ProjectPip'
 import { FilterChip, OneLineToolbar, ToolbarSearch } from '../toolbar/OneLineToolbar'
 import { DisplayMenu, FilterMenu, MenuCheck, MenuHeading, type ViewOption } from '../toolbar/ToolbarMenus'
 
@@ -83,7 +82,10 @@ export function PortfolioToolbar<K extends string>({
               onChange={() => onSelected(toggled(selected, project.id))}
               aside={counts?.get(project.id)}
             >
-              <ProjectPip project={project} plain />
+              <span className="inline-flex min-w-0 items-center gap-1.5">
+                <ProjectAvatar project={project} className="size-3.5 shrink-0" />
+                <span className="truncate">{project.name}</span>
+              </span>
             </MenuCheck>
           ))}
           {filterExtra}
