@@ -22,7 +22,7 @@ export const ActionsPane = memo(function ActionsPane({ projectId, conversationId
   const { handlers, create, createFrom, dialogs, failure } = useActionDialogs(projectId, conversationId)
   const actions = (data ?? []).filter((action) => action.projectId === projectId)
   const runs = useCommandRuns(projectId, conversationId)
-  const { works } = useSessionWorks(projectId, { conversationId })
+  const works = useSessionWorks(projectId, { conversationId })
   const [openRun, setOpenRun] = useState<string | null>(null)
   const [runError, setRunError] = useState<string | null>(null)
   const pane = useRef<HTMLDivElement>(null)

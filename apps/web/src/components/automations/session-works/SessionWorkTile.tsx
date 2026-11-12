@@ -1,6 +1,6 @@
 import { ArrowUpRight, MoreHorizontal, Square } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Menu, MenuItem, MenuLabel, MenuSeparator, cx } from '@solera/ui'
+import { IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, cx } from '@solera/ui'
 import { useTranslate } from '../../../lib/i18n'
 import { seedFromWork, type SessionWork } from '../../../lib/session-works'
 import { quietGestureClass } from '../ActionGestures'
@@ -37,13 +37,9 @@ export function SessionWorkTile({ projectId, work, gestures }: { projectId: stri
         </span>
         <Menu
           trigger={
-            <button
-              type="button"
-              aria-label={t('sessionWorks.gesture.more', { name })}
-              className="-mt-0.5 -mr-1 grid size-7 shrink-0 place-items-center rounded-md text-ink-faint transition-colors hover:bg-surface-high hover:text-ink"
-            >
-              <MoreHorizontal size={15} aria-hidden />
-            </button>
+            <IconButton size="sm" label={t('sessionWorks.gesture.more', { name })} className="-mt-0.5 -mr-1">
+              <MoreHorizontal size={15} />
+            </IconButton>
           }
         >
           <MenuItem onSelect={() => gestures.onMakeAction(seedFromWork(work, t))}>{t('sessionWorks.gesture.makeAction')}</MenuItem>

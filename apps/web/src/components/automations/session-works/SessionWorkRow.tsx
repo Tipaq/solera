@@ -1,12 +1,11 @@
 import { Square, Wand2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { cx } from '@solera/ui'
+import { Button, IconButton } from '@solera/ui'
 import { useTranslate } from '../../../lib/i18n'
 import { familyWord, seedFromWork, type SessionWork } from '../../../lib/session-works'
 import { AgentIcon } from '../../AgentIcon'
+import { quietGestureClass } from '../ActionGestures'
 import { FamilyIcon, PortLink, useWorkText, type WorkGestures } from './parts'
-
-const GESTURE = 'inline-flex h-11 items-center gap-1 rounded-md px-2 text-xs md:h-9 pointer-coarse:h-11 focus-visible:outline-2 focus-visible:outline-accent'
 
 /**
  * La ligne d'un processus dans la Liste (PRC-4) : point vert, icône de famille, libellé
@@ -36,27 +35,27 @@ export function SessionWorkRow({ projectId, work, gestures }: { projectId: strin
       </span>
       <span className="ml-auto flex shrink-0 items-center gap-1">
         {work.port ? (
-          <PortLink port={work.port} label={t('launcher.gesture.open')} className={cx(GESTURE, 'text-ink-soft hover:bg-surface-high hover:text-ink')} />
+          <PortLink port={work.port} label={t('launcher.gesture.open')} className={quietGestureClass()} />
         ) : null}
-        <button
-          type="button"
+        <Button
+          size="sm"
+          variant="secondary"
+          icon={<Wand2 size={12} aria-hidden />}
           onClick={() => gestures.onMakeAction(seedFromWork(work, t))}
           title={t('sessionWorks.gesture.makeActionHint')}
-          className={cx(GESTURE, 'border border-line text-ink hover:bg-surface-high')}
         >
-          <Wand2 size={12} aria-hidden /> {t('sessionWorks.gesture.makeAction')}
-        </button>
+          {t('sessionWorks.gesture.makeAction')}
+        </Button>
         {work.stop ? (
-          <button
-            type="button"
-            onClick={() => gestures.onStop(work)}
-            disabled={gestures.stopping === work.id}
+          <IconButton
+            label={t('sessionWorks.gesture.stopNamed', { name })}
             title={t('sessionWorks.gesture.stop')}
-            aria-label={t('sessionWorks.gesture.stopNamed', { name })}
-            className="grid size-11 place-items-center rounded-md text-ink-faint hover:bg-surface-high hover:text-critical disabled:pointer-events-none disabled:opacity-45 md:size-9 pointer-coarse:size-11 focus-visible:outline-2 focus-visible:outline-accent"
+            disabled={gestures.stopping === work.id}
+            onClick={() => gestures.onStop(work)}
+            className="hover:text-critical"
           >
-            <Square size={11} fill="currentColor" aria-hidden />
-          </button>
+            <Square size={11} fill="currentColor" />
+          </IconButton>
         ) : null}
       </span>
     </li>

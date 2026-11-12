@@ -15,10 +15,14 @@ export function useServices() {
 }
 
 /** Arrête un processus de la liste et tout ce qui en descend. */
+export function stopService(id: string): Promise<unknown> {
+  return api.post(`/api/services/${encodeURIComponent(id)}/stop`)
+}
+
 export function useStopService() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => api.post(`/api/services/${encodeURIComponent(id)}/stop`),
+    mutationFn: stopService,
     onSuccess: () => { void client.invalidateQueries({ queryKey: SERVICES_KEY }) },
   })
 }

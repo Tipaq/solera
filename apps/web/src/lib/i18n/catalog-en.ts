@@ -4640,6 +4640,7 @@ export const en = {
   'sessionWorks.human.test': "Tests",
   'sessionWorks.human.lint': "Lint",
   'sessionWorks.human.build': "Build",
+  'sessionWorks.human.scoped': "{name} ({scope})",
   'sessionWorks.human.watching': "{name} (watching)",
   'sessionWorks.load.cpu': "{percent}%",
   'sessionWorks.seed.description': "Taken from “{title}”, where a session had left it running in the background.",

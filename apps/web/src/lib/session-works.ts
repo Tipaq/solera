@@ -138,7 +138,7 @@ export function humanLabel(work: Pick<SessionWork, 'command' | 'description' | '
   const exe = (runner ? script : words[0])?.split('/').pop() ?? ''
   const known = KNOWN[exe]
   let name = known ? t(known) : exe ? capitalize(exe) : fallback
-  if (filter) name = `${name} (${filter.replace(/^@[^/]+\//, '')})`
+  if (filter) name = t('sessionWorks.human.scoped', { name, scope: filter.replace(/^@[^/]+\//, '') })
   return /(?:^|\s)(?:--watch|-w|watch)(?:\s|$)/.test(bare) ? t('sessionWorks.human.watching', { name }) : name
 }
 
