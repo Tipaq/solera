@@ -63,7 +63,8 @@ import type { CommandKind, What } from '../../lib/automations'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
 import { setPanelExpanded } from '../../lib/panel'
 import { useProjectEnvironments, useProjects } from '../../lib/projects'
-import { plainOutput, useTerminalOutput } from '../../lib/terminal-output'
+import { screenText } from '../../lib/command-output'
+import { useTerminalOutput } from '../../lib/terminal-output'
 import { useTreeLevel } from '../../lib/tree'
 import { inheritedConfigFor, useUserSettings } from '../../lib/user-settings'
 import { projectScope } from '../../lib/workspace-scope'
@@ -861,7 +862,7 @@ function TryCommand({
   const t = useTranslate()
   const attempt = useTryAction(projectId)
   const [tried, setTried] = useState<{ terminalId: string; command: string; subdir: string } | null>(null)
-  const output = useTerminalOutput(projectId, tried?.terminalId ?? null)
+  const output = useTerminalOutput(projectId, tried?.terminalId ?? null, true)
   const stale = tried !== null && (tried.command !== state.command || tried.subdir !== state.subdir)
   const command = state.command.trim()
   return (
@@ -892,7 +893,7 @@ function TryCommand({
             label={t('actionEditor.try.output')}
             follow
             className="max-h-48"
-            text={output.text === null || output.text === '' ? t('actionEditor.try.running') : plainOutput(output.text)}
+            text={output.text === null || output.text === '' ? t('actionEditor.try.running') : screenText(output.text)}
           />
         )
       ) : null}

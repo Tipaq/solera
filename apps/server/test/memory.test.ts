@@ -101,6 +101,13 @@ test('interface : lire, écrire, supprimer une note avec sa ligne d’index', as
   const after = await memory()
   assert.deepEqual(after.files.map((file) => file.file), ['MEMORY.md'])
   assert.equal(after.files[0]!.content, '- [Autre](autre.md)\n')
+
+  // « Retirer aussi sa ligne de MEMORY.md » décoché : la note part, sa ligne reste.
+  assert.equal((await put('autre.md', NOTE)).statusCode, 204)
+  assert.equal((await app.inject({ method: 'DELETE', url: '/api/projects/project/memory/autre.md?index=keep' })).statusCode, 204)
+  const kept = await memory()
+  assert.deepEqual(kept.files.map((file) => file.file), ['MEMORY.md'])
+  assert.equal(kept.files[0]!.content, '- [Autre](autre.md)\n')
 })
 
 test('outils MCP : Codex lit, écrit et retire des notes, l’index suit', async (t) => {

@@ -1,72 +1,88 @@
-import { useEffect, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { TerminalServerMessage } from '@solera/protocol'
+import { useTerminalsReload } from './terminals'
 
-/** Au-delà, on garde la fin : c'est elle qu'on lit sous un essai. */
-const MAX_CHARS = 64_000
+/** Ce que le lecteur utilise d'une socket : de quoi recevoir, et fermer. */
+export type TerminalSocket = Pick<WebSocket, 'onmessage' | 'onerror' | 'close'>
+
+/** L'adresse de la socket d'un terminal, pour le lecteur comme pour l'onglet Terminaux. */
+export function terminalSocketUrl(projectId: string, terminalId: string): string {
+  return (
+    `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}` +
+    `/api/projects/${projectId}/terminal?terminalId=${encodeURIComponent(terminalId)}`
+  )
+}
+
+function openSocket(projectId: string, terminalId: string): TerminalSocket {
+  return new WebSocket(terminalSocketUrl(projectId, terminalId))
+}
+
+/** D'où viennent les sockets : le serveur, ou une sortie rejouée dans les stories. */
+const TerminalSockets = createContext<(projectId: string, terminalId: string) => TerminalSocket>(openSocket)
+export const TerminalSocketsProvider = TerminalSockets.Provider
+
+/** Ce qu'on garde de la sortie : le tampon de restitution du serveur en fait autant. */
+const KEEP_CHARS = 128 * 1024
+/** Une sortie rapide arrive par centaines de messages : on la peint par paquets. */
+const FLUSH_MS = 150
 
 /**
- * La sortie d'un terminal du projet, lue par sa socket en lecture seule : la relecture
- * qu'il garde, puis ce qui arrive. Brute, ANSI compris : c'est l'appelant qui la nettoie,
- * il sait ce qu'il en montre. `unreadable` quand la socket refuse ou tombe.
+ * La sortie d'un terminal, **lue sans y écrire** : le tampon à l'attachement, puis le
+ * flux. Rien n'est envoyé par la socket, pas même la taille, qui redimensionnerait
+ * l'écran de qui le regarde dans l'onglet Terminaux. Le texte est brut (ANSI, `\r\n`) :
+ * à l'appelant de le nettoyer (`command-output.ts`). `null` tant qu'on n'a rien reçu ;
+ * `unreadable` quand la socket est refusée.
  *
- * Rien n'est jamais écrit dans le terminal, et la taille n'est pas imposée : on n'est
- * qu'un lecteur de plus à côté de l'onglet Terminaux. À sa fin, la liste des terminaux
- * est relue : c'est l'`exit` de la socket, et non la réponse d'un arrêt, qui dit qu'il
- * est fini (#201).
+ * L'`exit` recharge la liste des terminaux : c'est lui, et non la réponse d'« Arrêter »,
+ * qui dit que la commande est finie.
  */
-export function useTerminalOutput(projectId: string, terminalId: string | null): { text: string | null; exited: boolean; unreadable: boolean } {
-  const [state, setState] = useState<{ id: string | null; text: string | null; exited: boolean; unreadable: boolean }>({
-    id: null,
-    text: null,
-    exited: false,
-    unreadable: false,
-  })
-
-  const queryClient = useQueryClient()
+export function useTerminalOutput(
+  projectId: string,
+  terminalId: string | null,
+  /** La liste la croit en cours : une fin survenue avant l'attachement la recharge aussi. */
+  running = false,
+): { text: string | null; unreadable: boolean } {
+  const [text, setText] = useState<string | null>(null)
+  const [unreadable, setUnreadable] = useState(false)
+  const reload = useTerminalsReload(projectId)
+  const open = useContext(TerminalSockets)
+  const runningRef = useRef(running)
+  runningRef.current = running
   useEffect(() => {
+    setText(null)
+    setUnreadable(false)
     if (!terminalId) return
-    setState({ id: terminalId, text: '', exited: false, unreadable: false })
-    const socket = new WebSocket(
-      `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}` +
-        `/api/projects/${projectId}/terminal?terminalId=${encodeURIComponent(terminalId)}`,
-    )
-    const append = (chunk: string) =>
-      setState((current) => ({ ...current, text: ((current.text ?? '') + chunk).slice(-MAX_CHARS) }))
+    let buffer: string | null = null
+    let timer: number | null = null
+    const flush = () => {
+      timer = null
+      setText(buffer)
+    }
+    const socket = open(projectId, terminalId)
     socket.onmessage = (event) => {
       const payload = JSON.parse(String(event.data)) as TerminalServerMessage
       if (payload.t === 'ready') {
-        setState((current) => ({ ...current, text: payload.replay.slice(-MAX_CHARS), exited: payload.exited }))
-      } else if (payload.t === 'output') append(payload.data)
-      else if (payload.t === 'exit') {
-        setState((current) => ({ ...current, exited: true }))
-        void queryClient.invalidateQueries({ queryKey: ['terminals', projectId] })
-      }
-      else setState((current) => ({ ...current, unreadable: true }))
+        buffer = payload.replay
+        flush()
+        if (payload.exited && runningRef.current) reload()
+      } else if (payload.t === 'output') {
+        buffer = ((buffer ?? '') + payload.data).slice(-KEEP_CHARS)
+        timer ??= window.setTimeout(flush, FLUSH_MS)
+      } else if (payload.t === 'exit') {
+        if (timer !== null) window.clearTimeout(timer)
+        flush()
+        reload()
+      } else setUnreadable(true)
     }
-    socket.onerror = () => setState((current) => ({ ...current, unreadable: true }))
-    return () => socket.close()
-  }, [projectId, terminalId, queryClient])
-
-  // Un autre terminal que celui lu : rien encore.
-  if (!terminalId || state.id !== terminalId) return { text: null, exited: false, unreadable: false }
-  return { text: state.text, exited: state.exited, unreadable: state.unreadable }
-}
-
-const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b[()][0-9A-Za-z]|\x1b./g
-
-/**
- * Le texte lisible d'une sortie : l'ANSI retiré, chaque ligne réduite à ce qu'un retour
- * chariot y a laissé en dernier (une barre de progression ne garde que son état final).
- */
-export function plainOutput(raw: string): string {
-  return raw
-    .replace(ANSI, '')
-    .split('\n')
-    .map((line) => {
-      const parts = line.replace(/\r$/, '').split('\r')
-      return parts[parts.length - 1]!.trimEnd()
-    })
-    .join('\n')
-    .replace(/\n+$/, '')
+    socket.onerror = () => setUnreadable(true)
+    return () => {
+      if (timer !== null) window.clearTimeout(timer)
+      // Fermée avant d'être ouverte (un double montage), elle signale une erreur après
+      // coup : elle ne parle plus pour le terminal qu'on regarde.
+      socket.onmessage = null
+      socket.onerror = null
+      socket.close()
+    }
+  }, [projectId, terminalId, reload, open])
+  return { text, unreadable }
 }

@@ -207,8 +207,12 @@ export interface CardLinkDto {
 export interface CardBranchPrDto {
   number: number
   url: string
+  /** La branche qu'elle vise ; `null` tant que Solera ne l'a pas relevée sur la forge. */
+  base: string | null
   /** Fusionnée depuis Solera ou vue fusionnée sur la forge ; `null` tant qu'elle ne l'est pas. */
   mergedAt: number | null
+  /** Vue fermée sans fusion sur la forge (#198) ; `null` ouverte, ou rouverte depuis. */
+  closedAt: number | null
 }
 
 /**
@@ -590,6 +594,24 @@ export function appendToSection(text: string, heading: string, block: string): s
  */
 export function appendCardPrecision(text: string, entry: { day: string; author: string; body: string }): string {
   return appendToSection(text, CARD_PRECISIONS_HEADING, `**${entry.day} · ${entry.author}**\n\n${entry.body.trim()}`)
+}
+
+/**
+ * Une ligne de `request_card_change` change-t-elle autre chose que les sous-tâches
+ * (#185) ? Au dépôt, une ligne sans aucun changement est refusée ; au clic, une ligne dont
+ * les sous-tâches sont toutes déjà là n'a plus rien à faire si elle ne portait que ça ; et
+ * la page d'un jalon ne montre en ajout proposé (#196) que les lignes qui n'ajoutent que
+ * des sous-tâches. Un futur champ de ligne doit y entrer.
+ */
+export function changesBesidesSubtasks(line: {
+  toColumn?: unknown
+  close?: unknown
+  parent?: unknown
+  dueAt?: unknown
+  blocks?: unknown
+  unblocks?: unknown
+}): boolean {
+  return Boolean(line.toColumn || line.close || line.parent || line.dueAt || line.blocks || line.unblocks)
 }
 
 /**

@@ -330,11 +330,3 @@ test('linkIsLocalOnly : localhost ne mène nulle part quand Solera est ouvert d�
   assert.equal(linkIsLocalOnly('', 'solera.tail1234.ts.net'), false)
 })
 
-/* ------------------------------------------------------------------ EDI-10 : la sortie d'un essai */
-
-test('plainOutput : l’ANSI retiré, une ligne réécrite garde son dernier état', async () => {
-  const { plainOutput } = await import('../../web/src/lib/terminal-output.js')
-  assert.equal(plainOutput('\x1b[32m✓\x1b[0m tests\r\n'), '✓ tests')
-  assert.equal(plainOutput('10%\r50%\r100%\ndone\n\n'), '100%\ndone')
-  assert.equal(plainOutput('\x1b]0;titre\x07$ echo ok\r\nok\r\n'), '$ echo ok\nok')
-})

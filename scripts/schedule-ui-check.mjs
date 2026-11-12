@@ -87,7 +87,11 @@ try {
   browser = await launchBrowser()
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', serviceWorkers: 'block' })
   await context.addInitScript((origin) => {
-    if (window === window.top && location.origin === origin) localStorage.setItem('solera.locale', 'fr')
+    if (window !== window.top || location.origin !== origin) return
+    localStorage.setItem('solera.locale', 'fr')
+    // Toutes les sessions d'un projet dans la colonne : « Ajuster à la hauteur » en
+    // couperait, et l'absence d'un tir n'y prouverait plus rien.
+    localStorage.setItem('solera.display.sessionLimit', '50')
   }, new URL(base).origin)
   const login = await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'solera-demo' } })
   assert.ok(login.ok())

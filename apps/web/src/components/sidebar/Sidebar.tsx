@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import type { ConversationDto } from '@solera/protocol'
 import { useAllConversations } from '../../lib/conversations'
 import { useRefreshLists, useStatusFeed } from '../../lib/conversation-status'
-import { useDisplaySettings, useProjectFocus } from '../../lib/display-settings'
+import { useDisplaySettings, useProjectFocus, useSessionLimit } from '../../lib/display-settings'
 import { useTranslate } from '../../lib/i18n'
 import { useProjects, useReorderProjects } from '../../lib/projects'
 import { unreadNow } from '../../lib/reads'
@@ -17,6 +17,7 @@ import { Logo } from '../Logo'
 import { PullToRefresh } from '../PullToRefresh'
 import { SidebarActivity } from '../SidebarActivity'
 import { AccountMenu } from './AccountMenu'
+import { SidebarFitBudget, useFitBudget } from './fit-budget'
 import { PlaceKnowledge } from './PlaceKnowledge'
 import { PlacePlanned } from './PlacePlanned'
 import { PlaceProjects, useFocusFollowsConversation } from './PlaceProjects'
@@ -33,12 +34,12 @@ const SEARCH_HINT = navigator.userAgent.includes('Mac') ? '⌘ K' : 'Ctrl K'
  * La colonne de gauche.
  *
  * De haut en bas, et **toujours visible** : logo et repli · *Rechercher* ·
- * *Nouvelle conversation* · la liste verticale des lieux · l'Activité, ce qui t'attend
- * en tête (#121) · puis la **zone basse, seule partie variable et seule partie qui
- * défile** · le compte en une ligne.
+ * *Nouvelle conversation* · puis un seul bloc qui défile : la liste verticale des lieux,
+ * l'Activité, ce qui t'attend en tête (#121), et la zone basse du lieu · le compte en
+ * une ligne.
  *
- * Le haut est fixe par construction : c'est ce qui garde les lieux et leurs compteurs
- * sous les yeux quoi qu'il arrive en dessous.
+ * Combien de sessions chaque liste montre suit le réglage « Sessions dans la sidebar » :
+ * en « Ajuster à la hauteur », la colonne le mesure pour ne pas défiler.
  */
 export function Sidebar({
   onNavigate,
@@ -72,6 +73,10 @@ export function Sidebar({
   const { data: vaultState } = useVaultState(display.knowledge)
   const reorderProjects = useReorderProjects()
   const scroller = useRef<HTMLDivElement>(null)
+  const content = useRef<HTMLDivElement>(null)
+  // « Ajuster à la hauteur » ne se mesure qu'au large : au téléphone, il vaut 10.
+  const fit = useSessionLimit() === 'fit' && wide
+  const { budget: fitBudget, activityCollapsed } = useFitBudget(scroller, content, fit)
   useStatusFeed()
   useFocusFollowsConversation(conversations ?? EMPTY)
   const { refreshing, refresh } = useRefreshLists()
@@ -93,7 +98,7 @@ export function Sidebar({
       id: 'threads',
       label: PLACE_LABELS.threads,
       icon: PLACE_ICONS.threads,
-      page: null,
+      page: '/sessions',
       count: threads.length,
     },
     {
@@ -208,37 +213,39 @@ export function Sidebar({
         className="relative min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
       >
         <PullToRefresh target={scroller} refreshing={refreshing} onRefresh={refresh} />
-        <SidebarPlaces places={places} current={place} onNavigate={stableNavigate} />
+        <SidebarFitBudget.Provider value={fit ? fitBudget : null}>
+          {/* Ce que la mesure compare à la hauteur du bloc : tout son contenu. */}
+          <div ref={content}>
+            <SidebarPlaces places={places} current={place} onNavigate={stableNavigate} />
 
-        {/* Toujours là, même l'Activité éteinte : ce qui t'attend ne se retire pas. */}
-        <SidebarActivity
-          conversations={attended}
-          projects={projects}
-          onNavigate={stableNavigate}
-          coarse={!wide}
-          // En mode projet (#51), ses demandes passent devant dans chaque rang (Q15).
-          focus={place === 'projects' ? focus : undefined}
-        />
+            {/* Toujours là, même l'Activité éteinte : ce qui t'attend ne se retire pas.
+                En « Ajuster à la hauteur », elle se réduit à son en-tête — le rendu du
+                téléphone — quand moins de 5 sessions tiendraient sous elle. */}
+            <SidebarActivity
+              conversations={attended}
+              projects={projects}
+              onNavigate={stableNavigate}
+              coarse={!wide || activityCollapsed}
+              // En mode projet (#51), ses demandes passent devant dans chaque rang (Q15).
+              focus={place === 'projects' ? focus : undefined}
+            />
 
-        {place === 'projects' ? (
-          <PlaceProjects
-            projects={projects ?? []}
-            conversations={conversations ?? []}
-            onNavigate={stableNavigate}
-            onReorder={(ids) => reorderProjects.mutate(ids)}
-          />
-        ) : place === 'knowledge' ? (
-          <PlaceKnowledge state={vaultState} onNavigate={stableNavigate} />
-        ) : place === 'planned' ? (
-          <PlacePlanned tasks={schedules ?? []} projects={projects ?? []} onNavigate={stableNavigate} />
-        ) : (
-          <PlaceThreads
-            conversations={threads}
-            projects={projects ?? []}
-            onNavigate={stableNavigate}
-            onSearch={onSearch}
-          />
-        )}
+            {place === 'projects' ? (
+              <PlaceProjects
+                projects={projects ?? []}
+                conversations={conversations ?? []}
+                onNavigate={stableNavigate}
+                onReorder={(ids) => reorderProjects.mutate(ids)}
+              />
+            ) : place === 'knowledge' ? (
+              <PlaceKnowledge state={vaultState} onNavigate={stableNavigate} />
+            ) : place === 'planned' ? (
+              <PlacePlanned tasks={schedules ?? []} projects={projects ?? []} onNavigate={stableNavigate} />
+            ) : (
+              <PlaceThreads conversations={threads} projects={projects ?? []} onNavigate={stableNavigate} />
+            )}
+          </div>
+        </SidebarFitBudget.Provider>
       </div>
 
       <AccountMenu onNavigate={stableNavigate} />

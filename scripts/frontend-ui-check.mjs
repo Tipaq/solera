@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
-import { closePanelButton } from './checks/panel.mjs'
+import { closePanelButton, openProjectPanel } from './checks/panel.mjs'
 import { checkEditor } from './checks/editor.mjs'
 import { checkSearch } from './checks/search.mjs'
 import { checkImage } from './checks/image.mjs'
@@ -116,11 +116,19 @@ try {
     if (await description.count() === 0) await editCard()
   }
 
+  /* Rouvrir l'éditeur sans recharger la page : la tuile ouvre la fiche (#180), dont le
+     lien « Voir dans le tableau » mène à l'éditeur par la navigation de l'application. */
+  const reopenFromTile = async (number) => {
+    await page.locator(`[data-card-tile="${number}"]`).click()
+    await page.getByRole('dialog', { name: `Carte #${number}`, exact: true }).getByRole('link', { name: 'Voir dans le tableau', exact: true }).click()
+    await page.getByRole('complementary', { name: `Carte #${number}`, exact: true }).waitFor()
+  }
+
   await openCard(2)
   const draft = `${card.description}\nBrouillon de vérification`
   await description.fill(draft)
   await close.click()
-  await page.getByRole('button', { name: /#2 Offline caching for forecasts/ }).click()
+  await reopenFromTile(2)
   assert.equal(await description.inputValue(), draft, 'Closing a card must preserve its draft')
   await page.reload()
   await description.waitFor()
@@ -155,7 +163,7 @@ try {
   const newerDraft = `${draft}\nAjout pendant la sauvegarde`
   await description.fill(newerDraft)
   await close.click()
-  await page.getByRole('button', { name: /#2 Offline caching for forecasts/ }).click()
+  await reopenFromTile(2)
   assert.equal(await page.getByRole('button', { name: 'Enregistrement…', exact: true }).isDisabled(), true)
   const response = page.waitForResponse((entry) => entry.url().endsWith(`/api/cards/${card.id}`) && entry.request().method() === 'PATCH')
   release()
@@ -189,7 +197,7 @@ try {
   const noteB = 'Une deuxième note écrite pendant la publication.'
   await noteField.fill(noteA)
   await close.click()
-  await page.getByRole('button', { name: /#2 Offline caching for forecasts/ }).click()
+  await reopenFromTile(2)
   assert.equal(await noteField.inputValue(), noteA)
   await page.reload()
   await noteField.waitFor()
@@ -213,36 +221,34 @@ try {
   await noteIntercepted
   await noteField.fill(noteB)
   await close.click()
-  await page.getByRole('button', { name: /#2 Offline caching for forecasts/ }).click()
+  await reopenFromTile(2)
   assert.equal(await page.getByRole('button', { name: 'Enregistrement…', exact: true }).isDisabled(), true)
   releaseNote()
-  await page.getByText(noteA, { exact: true }).waitFor()
+  await page.getByRole('region', { name: 'Fil', exact: true }).getByText(noteA, { exact: true }).waitFor()
   assert.equal(await noteField.inputValue(), noteB, 'Publishing an earlier note must preserve newer input')
   await page.unroute(noteEndpoint)
   await addNote.click()
-  await page.getByText(noteB, { exact: true }).waitFor()
+  await page.getByRole('region', { name: 'Fil', exact: true }).getByText(noteB, { exact: true }).waitFor()
   await page.waitForFunction(() => document.querySelector('textarea[aria-label="Ajouter une note"]')?.value === '')
   // Le fil se lit dans l'ordre : sessions et notes par date, la plus récente en bas.
   const thread = await page.getByRole('region', { name: 'Fil', exact: true }).innerText()
   assert.ok(thread.indexOf(noteA) < thread.indexOf(noteB), 'Notes read in chronological order')
   assert.equal(await page.evaluate(() => Object.keys(sessionStorage).filter((key) => key.startsWith('solera.cardNoteDraft:')).length), 0)
   await page.reload()
-  await page.getByText(noteB, { exact: true }).waitFor()
+  await page.getByRole('region', { name: 'Fil', exact: true }).getByText(noteB, { exact: true }).waitFor()
   console.log('OK : lecture de carte, brouillons de notes, échec de publication et fil chronologique.')
 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(board)
   const column = page.getByRole('region', { name: 'À faire', exact: true })
   await column.waitFor()
-  /* La largeur disponible et non une constante : la colonne remplit son conteneur, à la
-     gouttière près (16 px au téléphone depuis la coque commune, #160). */
-  const fill = await column.evaluate((element) => {
-    const lane = element.parentElement
-    const style = getComputedStyle(lane)
-    const available = lane.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
-    return { width: element.getBoundingClientRect().width, available }
-  })
-  assert.ok(fill.available >= 350 && Math.abs(fill.width - fill.available) <= 1, `The mobile board must use its available width: ${fill.width} / ${fill.available}`)
+  /* Au téléphone, les colonnes gardent leur largeur et le Kanban défile de côté dans sa
+     zone (B-8) ; la page, elle, ne déborde jamais. La première commence à la gouttière
+     (16 px au téléphone depuis la coque commune, #160). */
+  const columnBox = await column.boundingBox()
+  assert.equal(Math.round(columnBox.width), 288, `Une colonne garde sa largeur : ${columnBox.width}`)
+  assert.ok(await page.locator('[data-kanban]').evaluate((node) => node.scrollWidth > node.clientWidth), 'Le Kanban défile de côté')
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
   await page.evaluate(() => { document.body.tabIndex = -1; document.body.focus() })
   await page.keyboard.press('Tab')
   assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), 'Ouvrir la navigation')
@@ -254,23 +260,30 @@ try {
   await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Ouvrir la navigation')
   console.log('OK : largeur du board, navigation invisible inerte, focus contenu et restitué.')
 
-  const firstCard = cards.find((entry) => entry.number === 1)
-  const opener = page.locator(`[data-card-open="${firstCard.id}"]`)
+  // Une tuile ouvre la fiche de sa carte sur place (B-7) : au téléphone, le focus y
+  // reste enfermé, et revient à la tuile quand on la ferme.
+  const opener = page.locator('[data-card-tile="1"]')
   await opener.click()
-  const mobileCard = page.getByRole('dialog', { name: 'Carte #1', exact: true })
-  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Fermer')
+  const sheet = page.getByRole('dialog', { name: 'Carte #1', exact: true })
+  await sheet.waitFor()
+  await page.waitForFunction(() => document.activeElement?.closest('[role="dialog"]')?.getAttribute('aria-label') === 'Carte #1')
+  // Maj+Tab d'abord : le tiroir prend le focus sur lui-même, et ce conteneur doit
+  // boucler sur son dernier élément plutôt que laisser sortir le focus (#254).
+  assert.equal(await sheet.evaluate((element) => element === document.activeElement), true, 'La fiche prend le focus sur son conteneur')
   for (let i = 0; i < 12; i++) {
     await page.keyboard.press(i === 0 ? 'Shift+Tab' : 'Tab')
     assert.equal(await page.evaluate(() => document.activeElement?.closest('[role="dialog"]')?.getAttribute('aria-label')), 'Carte #1')
   }
-  // Le parcours s'arrête sur un bouton-icône de la fiche : au clavier, son aide
-  // s'ouvre, et le premier Échap la ferme avant la fiche.
-  await page.getByRole('tooltip').waitFor()
+  // Arrêté sur un bouton-icône, le parcours ouvre son aide : le premier Échap la ferme.
+  if (await page.getByRole('tooltip').isVisible()) {
+    await page.keyboard.press('Escape')
+    await page.getByRole('tooltip').waitFor({ state: 'hidden' })
+  }
   await page.keyboard.press('Escape')
-  await page.getByRole('tooltip').waitFor({ state: 'hidden' })
-  await page.keyboard.press('Escape')
-  await page.waitForFunction((id) => document.activeElement?.getAttribute('data-card-open') === id, firstCard.id)
-  await opener.click()
+  await page.waitForFunction(() => document.activeElement?.getAttribute('data-card-tile') === '1')
+  // L'éditeur complet, celui des liens (`?carte=`) : son menu de colonne superposé.
+  await page.goto(`${board}?carte=1`)
+  const mobileCard = page.getByRole('dialog', { name: 'Carte #1', exact: true })
   await mobileCard.getByRole('button', { name: /^Changer la colonne/ }).click()
   await page.getByRole('menu').waitFor()
   await page.keyboard.press('Escape')
@@ -280,8 +293,9 @@ try {
   await page.getByRole('menuitem', { name: 'À vérifier', exact: true }).click()
   await mobileCard.getByRole('button', { name: 'Changer la colonne : À vérifier', exact: true }).waitFor()
   await mobileCard.getByRole('button', { name: 'Fermer', exact: true }).click()
-  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Ouvrir la navigation')
-  await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
+  await mobileCard.waitFor({ state: 'hidden' })
+  // Le panneau du Tableau n'a plus de bouton : la palette l'appelle (#180).
+  await openProjectPanel(page, base, project, { inPlace: true })
   const workspace = page.getByRole('dialog', { name: 'Panneau du workspace', exact: true })
   await workspace.waitFor()
   // La recherche est une vue du panneau depuis le 2026-10-11 : le champ de filtre de
@@ -311,7 +325,7 @@ try {
   await page.keyboard.press('Escape')
   await page.getByRole('tooltip').waitFor({ state: 'hidden' })
   await page.keyboard.press('Escape')
-  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Ouvrir le panneau')
+  await page.locator('[data-panel="workspace"]').waitFor({ state: 'hidden' })
   console.log('OK : focus des panneaux, menu superposé, raccourcis de l’éditeur et redimensionnement sans remontage.')
 
   await checkEditor({ page, context, base, project })
@@ -571,7 +585,7 @@ try {
   // La palette élargie : au repos elle propose ce qu'on rouvre et les gestes, à la
   // frappe elle groupe par famille, et un préfixe va droit à l'une d'elles.
   await page.goto(`${base}/p/${project.id}/board`)
-  await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).waitFor()
+  await page.getByRole('searchbox', { name: 'Rechercher une carte, un numéro…', exact: true }).waitFor()
   await page.keyboard.press('Control+k')
   const palette = page.getByRole('dialog', { name: 'Rechercher', exact: true })
   await palette.getByText('Reprendre', { exact: true }).waitFor()

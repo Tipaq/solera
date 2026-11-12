@@ -5,7 +5,7 @@ import { test } from 'node:test'
 // ce jour-là dure 25 h. Node relit `TZ` à chaque calcul de date.
 process.env.TZ = 'Europe/Paris'
 
-const { anchorsOf, arrowPoints, barOf, chainOf, daysOf, isoWeek, labelPlacement, monthsOf, scaleOf } =
+const { anchorsOf, arrowPoints, barOf, chainOf, daysOf, isoWeek, labelPlacement, monthsOf, scaleOf, weekLabelStep } =
   await import('../../web/src/components/gantt/scale.js')
 
 const DAY = 86_400_000
@@ -188,4 +188,13 @@ test('gantt : le titre se loge dans la barre s’il y tient en entier, sinon à 
   // À droite, il sortirait de l'axe : il passe à gauche.
   assert.equal(labelPlacement({ ...base, left: 800, width: 60 }), 'right')
   assert.equal(labelPlacement({ ...base, left: 800, width: 60, overdue: 20 }), 'left')
+})
+
+test('gantt : en zoom mois, une étiquette de semaine sur n quand une semaine est trop étroite pour la sienne', () => {
+  // « S45 23 » demande 44 px.
+  assert.equal(weekLabelStep(8), 1, '56 px par semaine : toutes')
+  assert.equal(weekLabelStep(44 / 7), 1)
+  assert.equal(weekLabelStep(6), 2, '42 px : une sur deux')
+  assert.equal(weekLabelStep(4), 2)
+  assert.equal(weekLabelStep(3), 3, '21 px, le plancher du zoom mois : une sur trois')
 })
