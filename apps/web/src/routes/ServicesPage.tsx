@@ -9,13 +9,13 @@ import type {
   ServiceEnvironmentAction,
   ServiceEnvironmentDto,
   ServiceEnvironmentLogDto,
-  ServicesDto,
   ForwardedPortDto,
 } from '@solera/protocol'
 import { HeaderBand } from '../components/HeaderBand'
 import { Badge, Banner, Button, ConfirmDialog, EmptyState, IconButton, cx } from '@solera/ui'
 import { api } from '../lib/api'
 import { formatBytes } from '../lib/attachments'
+import { useServices, useStopService } from '../lib/services'
 import { conversationPath } from '../lib/conversation-route'
 import { SystemLoad, type LoadConsumer } from '../components/services/SystemLoad'
 import { useTranslate, type MessageKey } from '../lib/i18n'
@@ -26,15 +26,8 @@ export function ServicesPage() {
   const t = useTranslate()
   const client = useQueryClient()
   const [chosen, setChosen] = useState('all')
-  const query = useQuery({
-    queryKey: ['services'],
-    queryFn: () => api.get<ServicesDto>('/api/services'),
-    refetchInterval: 5000,
-  })
-  const stop = useMutation({
-    mutationFn: (id: string) => api.post(`/api/services/${encodeURIComponent(id)}/stop`),
-    onSuccess: () => { void client.invalidateQueries({ queryKey: ['services'] }) },
-  })
+  const query = useServices()
+  const stop = useStopService()
   const control = useMutation({
     mutationFn: ({ id, action }: { id: string; action: ServiceAppAction }) =>
       api.post(`/api/services/apps/${encodeURIComponent(id)}/${action}`),

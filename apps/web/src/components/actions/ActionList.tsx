@@ -141,12 +141,14 @@ export function useActionDialogs(projectId: string, conversationId?: string) {
   const [reviewing, setReviewing] = useState<ProjectActionDto | null>(null)
   const [deleting, setDeleting] = useState<ProjectActionDto | null>(null)
   const [editing, setEditing] = useState<ProjectActionDto | 'new' | null>(null)
+  // « En faire une action » : ce qu'une session a lancé, pré-rempli.
+  const [prefilled, setPrefilled] = useState<EditorSeed | null>(null)
   const switching = useServiceSwitch()
   const here = useLaunchHere(useServedIndex(projectId).trees, conversationId)
   const failure = approve.error ?? remove.error ?? unlessElsewhere(run.error)
   const seed = useMemo<EditorSeed | null>(
-    () => (editing === null ? null : editing === 'new' ? NEW_ACTION : { from: fromAction(editing) }),
-    [editing],
+    () => prefilled ?? (editing === null ? null : editing === 'new' ? NEW_ACTION : { from: fromAction(editing) }),
+    [editing, prefilled],
   )
 
   const handlers: ActionHandlers = {
@@ -160,7 +162,7 @@ export function useActionDialogs(projectId: string, conversationId?: string) {
   const dialogs = (
     <>
       {switching.dialog}
-      <ActionEditorDrawer projectId={projectId} seed={seed} conversationId={conversationId} onClose={() => setEditing(null)} />
+      <ActionEditorDrawer projectId={projectId} seed={seed} conversationId={conversationId} onClose={() => { setEditing(null); setPrefilled(null) }} />
 
       <ConfirmDialog
         open={reviewing !== null}
@@ -209,7 +211,7 @@ export function useActionDialogs(projectId: string, conversationId?: string) {
     </>
   )
 
-  return { handlers, create: () => setEditing('new'), dialogs, failure }
+  return { handlers, create: () => setEditing('new'), createFrom: setPrefilled, dialogs, failure }
 }
 
 type RunOp = 'run' | 'stop' | 'restart' | 'logs'

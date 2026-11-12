@@ -154,8 +154,14 @@ try {
   await row.locator('code').filter({ hasText: 'service-fixture.cjs' }).waitFor()
   await workerRow.locator('code').filter({ hasText: 'worker-fixture.cjs' }).waitFor()
   await appCard.getByText(/^node -e /).waitFor()
-  // Un seul projet : pas de pastilles de filtre, il n'y aurait rien à choisir.
-  assert.equal(await page.getByRole('radiogroup', { name: 'Filtrer par projet' }).count(), 0)
+  // Un seul projet : pas de pastilles de filtre, il n'y aurait rien à choisir. Sur une
+  // machine où d'autres sessions tournent, leurs processus ajoutent « Origine inconnue » :
+  // les pastilles paraissent alors, mais aucun autre projet.
+  const filters = page.getByRole('radiogroup', { name: 'Filtrer par projet' })
+  if (await filters.count()) {
+    const pills = (await filters.getByRole('radio').allInnerTexts()).map((text) => text.split('\n')[0])
+    assert.deepEqual(pills.filter((name) => !['Tous les projets', 'Nimbus', 'Origine inconnue'].includes(name)), [])
+  }
   assert.equal(await oldRow.count(), 0)
   await appCard.getByText(`:${appPort}`, { exact: true }).waitFor()
   await page.screenshot({ path: '/tmp/solera-services-desktop.png', fullPage: true })
@@ -170,10 +176,47 @@ try {
   await row.getByRole('button', { name: 'Arrêter', exact: true }).waitFor()
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
   await page.screenshot({ path: '/tmp/solera-services-mobile.png', fullPage: true })
+  // « Processus des sessions » dans l'onglet Actions du panneau de la conversation qui les
+  // a lancés (AC-17) : le même scan, une ligne de 36 px par processus, sans la pastille de
+  // cette session ; un clic déplie la commande, « En faire une action » pré-remplit
+  // l'éditeur, « Arrêter » arrête vraiment.
+  const panelPage = await context.newPage()
+  panelPage.on('pageerror', (error) => errors.push(error.message))
+  await panelPage.goto(`${base}/p/${project.id}/c/${conversation.id}`)
+  await panelPage.getByRole('button', { name: 'Ouvrir le panneau' }).first().click()
+  await panelPage.locator('button[aria-pressed][aria-label^="Actions"]').click()
+  const works = panelPage.locator('[data-session-works]')
+  await works.getByText('Processus des sessions', { exact: true }).waitFor({ timeout: 15000 })
+  const serviceLine = works.locator('li').filter({ has: panelPage.getByRole('link', { name: new RegExp(`:${servicePort}`) }) })
+  await serviceLine.getByText('Script node', { exact: true }).waitFor()
+  // Le second, lancé du terminal sans session, n'est pas un processus de session.
+  assert.equal(await works.locator('li').count(), 1, 'Un processus de terminal sans session reste hors du panneau')
+  const lineHeight = await serviceLine.locator('> div').first().evaluate((node) => node.getBoundingClientRect().height)
+  assert.equal(Math.round(lineHeight), 36, 'Une ligne de processus fait 36 px')
+  assert.equal(await serviceLine.getByText(conversation.title, { exact: true }).count(), 0, 'Pas de pastille pour cette session')
+  await serviceLine.getByRole('button', { name: 'Script node', exact: true }).click()
+  await serviceLine.getByText('Lancé par cette session', { exact: true }).waitFor()
+  await serviceLine.locator('code').filter({ hasText: 'service-fixture.cjs' }).waitFor()
+  await serviceLine.getByText(/La sortie ne remonte pas jusqu’ici/).waitFor()
+  await serviceLine.screenshot({ path: '/tmp/solera-services-session-line.png' })
+  await serviceLine.hover()
+  await serviceLine.getByRole('button', { name: 'Plus pour « Script node »' }).click()
+  await panelPage.getByRole('menuitem', { name: 'En faire une action', exact: true }).click()
+  // L'éditeur s'ouvre en pile dans le panneau, à la place de la liste ; Échap y remonte.
+  const editor = panelPage.locator('[data-action-stack]')
+  assert.match(await editor.getByLabel('Commande', { exact: true }).inputValue(), /service-fixture\.cjs/)
+  assert.equal(await editor.getByLabel('Lien du service', { exact: true }).inputValue(), 'http://localhost:{port}')
+  await panelPage.keyboard.press('Escape')
+  await editor.waitFor({ state: 'detached' })
+  await serviceLine.hover()
+  await serviceLine.getByRole('button', { name: 'Arrêter « Script node »' }).click()
+  await works.waitFor({ state: 'detached', timeout: 12000 })
+  assert.equal(await fetch(`http://127.0.0.1:${servicePort}`).then(() => true, () => false), false, 'Le processus arrêté depuis le panneau ne répond plus')
+  await panelPage.close()
   await appCard.getByRole('button', { name: 'Arrêter', exact: true }).click()
   await appCard.waitFor({ state: 'detached', timeout: 12000 })
   assert.equal(await fetch(`http://127.0.0.1:${appPort}`).then(() => true, () => false), false, 'L’app arrêtée ne répond plus')
-  await row.getByRole('button', { name: 'Arrêter', exact: true }).click()
+  // Arrêté depuis le panneau, il a quitté la page de lui-même.
   await row.waitFor({ state: 'detached', timeout: 12000 })
   await workerRow.getByRole('button', { name: 'Arrêter', exact: true }).click()
   await workerRow.waitFor({ state: 'detached', timeout: 12000 })
@@ -204,7 +247,7 @@ try {
     console.log(`Bac à sable non vérifié : confinement indisponible (${confining.status()} ${await confining.text()})`)
   }
   assert.deepEqual(errors, [])
-  console.log(`OK : commandes rangées sous leur terminal, lignes de commande, processus sans port, exclusion des services indépendants, app permanente, mobile et arrêt ciblé${sandboxChecked ? ', bac à sable d’un terminal confiné et son arrêt confirmé' : ''}.`)
+  console.log(`OK : commandes rangées sous leur terminal, lignes de commande, processus sans port, exclusion des services indépendants, app permanente, mobile, processus des sessions dans le panneau (ligne, détail, en faire une action, arrêt) et arrêt ciblé${sandboxChecked ? ', bac à sable d’un terminal confiné et son arrêt confirmé' : ''}.`)
 } finally {
   await browser?.close()
   for (const unit of units) {

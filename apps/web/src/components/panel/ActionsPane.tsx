@@ -1,6 +1,7 @@
 import { memo, useRef, useState } from 'react'
 import type { ProjectActionDto } from '@solera/protocol'
 import { Loader, Plus, Zap } from 'lucide-react'
+import type { EditorSeed } from '../../lib/action-editor'
 import { useActions } from '../../lib/actions'
 import { detailPanel, newActionPanel, panelItem, type ActionPanel } from '../../lib/action-panel'
 import { actionAutomationId, fromAction } from '../../lib/automations'
@@ -10,6 +11,8 @@ import { useTranslate } from '../../lib/i18n'
 import { ActionList, useActionDialogs, type ActionHandlers } from '../actions/ActionList'
 import { ActionDrawer, panelShows } from '../automations/ActionDrawer'
 import { Banner, Button, EmptyState, PanelNotice } from '@solera/ui'
+import { useSessionWorks } from '../../lib/session-works-query'
+import { SessionWorksSection } from '../automations/session-works/SessionWorksSection'
 import { CommandRunDetail, CommandRunsGroup, useCommandRuns } from './CommandRuns'
 
 /**
@@ -38,7 +41,10 @@ export const ActionsPane = memo(function ActionsPane({ projectId, conversationId
     onEdit: (action) => setPanel({ mode: 'edit', seed: { from: panelItem(detail(action), items) ?? fromAction(action) }, back: null }),
   }
   const create = () => setPanel(newActionPanel('any'))
+  // « En faire une action » : l'éditeur pré-rempli, en pile lui aussi.
+  const createFrom = (seed: EditorSeed) => setPanel({ mode: 'edit', seed, back: null })
   const runs = useCommandRuns(projectId, conversationId)
+  const works = useSessionWorks(projectId, { conversationId })
   const [openRun, setOpenRun] = useState<string | null>(null)
   const [runError, setRunError] = useState<string | null>(null)
   const pane = useRef<HTMLDivElement>(null)
@@ -77,8 +83,19 @@ export const ActionsPane = memo(function ActionsPane({ projectId, conversationId
     )
   }
 
+  // En tête : ce qui tourne — les commandes lancées ici, puis les processus des sessions (PACT-2).
   const runsGroup = (
-    <CommandRunsGroup projectId={projectId} runs={runs} onOpen={(run) => setOpenRun(run.terminalId)} onError={setRunError} />
+    <>
+      <CommandRunsGroup projectId={projectId} runs={runs} onOpen={(run) => setOpenRun(run.terminalId)} onError={setRunError} />
+      <SessionWorksSection
+        projectId={projectId}
+        works={works}
+        variant="compact"
+        currentConversationId={conversationId}
+        onMakeAction={createFrom}
+        onError={setRunError}
+      />
+    </>
   )
 
   return (
