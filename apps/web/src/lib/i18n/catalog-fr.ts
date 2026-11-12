@@ -5408,6 +5408,7 @@ export const fr: Catalog = {
   "inbox.merge.bodyBefore": "Toutes les cartes sont fusionnées dans",
   "inbox.merge.bodyAfter": ". Il reste à la fusionner dans la branche par défaut.",
   "inbox.merge.action": "Fusionner dans {base}",
+  "inbox.merge.failed": "Pas fusionnée : {error}",
   "inbox.light.review": "Relire",
   "inbox.light.openPr": "Ouvrir la PR",
   "inbox.milestone": "Jalon #{number}",

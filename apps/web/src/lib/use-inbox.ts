@@ -3,7 +3,7 @@ import type { ProjectDto } from '@solera/protocol'
 import { useLiveConversations } from './activity'
 import { useAllCards, useCards } from './cards'
 import { useAllConversations } from './conversations'
-import { buildInbox, type HeavyInboxItem, type InboxInput, type InboxItem } from './inbox'
+import { buildInbox, type InboxExtra, type InboxInput, type InboxItem } from './inbox'
 import { useProjects } from './projects'
 import { usePortfolioPullRequests, usePullRequests } from './pull-requests'
 import { useSessionRequests } from './session-requests'
@@ -19,13 +19,13 @@ const NO_PROJECTS: ProjectDto[] = []
 /**
  * « Ce qui t'attend » pour une portée (#163) : les requêtes qu'elle demande, passées au
  * constructeur unique. `extra` reçoit les demandes du domaine Jalons (affinage,
- * découpage, PR de jalon).
+ * découpage, PR de jalon : `useMilestoneInbox`), et les lignes qu'elles remplacent.
  *
  * Toutes les requêtes sont celles que les écrans lisent déjà — liste des conversations,
  * demandes ouvertes, cartes, PR — et React Query les partage : poser la liste ne coûte
  * aucune requête de plus.
  */
-export function useInbox(scope: InboxScope, extra?: HeavyInboxItem[]): InboxItem[] {
+export function useInbox(scope: InboxScope, extra?: InboxExtra): InboxItem[] {
   const projectId = 'projectId' in scope ? scope.projectId : null
   const portfolio = 'portfolio' in scope
 

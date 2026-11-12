@@ -58,16 +58,17 @@ export function useMergePullRequest(projectId: string) {
  * Les mêmes refus que `useMergePullRequest`, plus `branch_pr_missing` ; la carte n'est
  * pas close. Ses cartes sont relues : `branchPr.mergedAt` fait passer le jalon « Livré ».
  */
-export function useMergeBranchPullRequest(projectId: string, cardId: string) {
+export function useMergeBranchPullRequest(projectId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: () => api.post<CardBranchPrDto>(`/api/cards/${cardId}/branch-pr/merge`),
+    // Le jalon en variable : « Ce qui t'attend » en fusionne plusieurs d'une même mutation.
+    mutationFn: (cardId: string) => api.post<CardBranchPrDto>(`/api/cards/${cardId}/branch-pr/merge`),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['pull-requests'] })
       void queryClient.invalidateQueries({ queryKey: ['worktree-status'] })
     },
     // Même refusée : une PR déjà fusionnée sur GitHub vient d'y recevoir sa date et sa note.
-    onSettled: () => {
+    onSettled: (_data, _error, cardId) => {
       void queryClient.invalidateQueries({ queryKey: ['cards', projectId] })
       void queryClient.invalidateQueries({ queryKey: ['card-notes', cardId] })
     },

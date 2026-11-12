@@ -77,7 +77,7 @@ function MilestoneView({
   const t = useTranslate()
   const navigate = useNavigate()
   const [, setParams] = useSearchParams()
-  const merge = useMergeBranchPullRequest(projectId, entry.card.id)
+  const merge = useMergeBranchPullRequest(projectId)
   const [adding, setAdding] = useState(false)
   // Choisie dans Lancer, montrée par les vagues (VAG-1) ; celle du pilotage, une fois lancé.
   const [concurrency, setConcurrency] = useState(DEFAULT_MILESTONE_CONCURRENCY)
@@ -94,7 +94,7 @@ function MilestoneView({
           case 'scroll':
             return document.getElementById(gesture.target)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
           case 'merge':
-            return merge.mutate()
+            return merge.mutate(entry.card.id)
           case 'link':
             return window.open(gesture.url, '_blank', 'noreferrer')
           case 'sheet':

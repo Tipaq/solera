@@ -156,7 +156,7 @@ test('boîte : les lourdes avant les légères, chacune de la plus ancienne à l
     projects,
     reviewCards: [card('late', 2, { columnSince: 5 }), card('early', 1, { columnSince: 1 })],
     pullRequests: [{ projectId: 'p1', pullRequest: pullRequest(7, 'ready', 3) }],
-    extra: [{ kind: 'merge', key: 'm-157', milestone: { number: 157, title: 'Socle', to: '/x' }, branch: 'jalon/157', base: 'main', onMerge: () => {} }],
+    extra: { items: [{ kind: 'merge', key: 'm-157', milestone: { number: 157, title: 'Socle', to: '/x' }, branch: 'jalon/157', base: 'main', error: null, onMerge: () => {} }], replaces: [] },
     prefixProject: false,
   })
   assert.deepEqual(keys(items), ['s-old', 's-recent', 'm-157', 'c-early', 'pr-p1-7', 'c-late'])
@@ -174,7 +174,7 @@ test('boîte : le jalon d’une demande, et ce qui attend dans chaque jalon', ()
     requests: new Map(),
     projects,
     reviewCards: [card('leaf', 12)],
-    extra: [{ kind: 'refine', key: 'q-182', milestone: { number: 182, title: 'Jalons', to: '/y' }, questions: [{ id: '1', text: '?' }], onAnswer: () => {} }],
+    extra: { items: [{ kind: 'refine', key: 'q-182', milestone: { number: 182, title: 'Jalons', to: '/y' }, questions: [{ id: '1', text: '?' }], onAnswer: () => {} }], replaces: [] },
     prefixProject: false,
   })
   assert.deepEqual(items.map(inboxMilestoneNumber), [157, 157, null, 182, null])

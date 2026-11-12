@@ -244,7 +244,7 @@ function describe(
       return {
         icon: <GitMerge size={14} aria-hidden className="shrink-0 text-positive" />,
         title: t('inbox.merge.title'),
-        hint: t('inbox.merge.hint', { branch: item.branch, base: item.base }),
+        hint: item.error ? t('inbox.merge.failed', { error: item.error }) : t('inbox.merge.hint', { branch: item.branch, base: item.base }),
         gesture: t('inbox.gesture.merge'),
         since: null,
       }
@@ -394,6 +394,11 @@ function Reply({ item, onDone }: { item: HeavyInboxItem; onDone: () => void }) {
             {t('inbox.merge.bodyBefore')} <code className="text-code">{item.branch}</code>
             {t('inbox.merge.bodyAfter')}
           </p>
+          {item.error ? (
+            <p role="alert" className="text-sm text-critical">
+              {t('inbox.merge.failed', { error: item.error })}
+            </p>
+          ) : null}
           <div>
             <Button
               size="sm"

@@ -5411,6 +5411,7 @@ export const en = {
   "inbox.merge.bodyBefore": "Every card is merged into",
   "inbox.merge.bodyAfter": ". What's left is to merge it into the default branch.",
   "inbox.merge.action": "Merge into {base}",
+  "inbox.merge.failed": "Not merged: {error}",
   "inbox.light.review": "Review",
   "inbox.light.openPr": "Open the PR",
   "inbox.milestone": "Milestone #{number}",

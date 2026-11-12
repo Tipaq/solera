@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { checkMilestoneAsks } from './checks/milestone-inbox.mjs'
 
 /*
  * Les pages de lieu : l'Aperçu d'un projet, celui du portefeuille, Planifiées, et le Journal.
@@ -444,6 +445,9 @@ try {
   await events.screenshot({ animations: 'disabled', path: join(shots, 'apercu-evenements-mobile.png') })
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.unroute('**/api/actions')
+
+  // ─── Les demandes des jalons dans « Ce qui t'attend » (#255) ───────────────
+  await checkMilestoneAsks({ page, base, project: nimbus, shots })
 
   // ─── Code en cours : le graphe des branches et ses gestes (A-4) ──────────
   /*

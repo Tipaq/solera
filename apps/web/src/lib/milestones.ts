@@ -93,15 +93,31 @@ export function useAllActiveMilestones(projectIds: readonly string[]): Milestone
  * la session travaille ou attend : sa question ou son brouillon peut arriver à tout moment.
  */
 export function useCardRefinement(cardId: string, enabled: boolean) {
-  return useQuery({
+  return useQuery({ ...cardRefinementQuery(cardId), enabled })
+}
+
+/** La requête du détail, partagée avec « Ce qui t'attend », qui lit le brouillon d'un jalon. */
+function cardRefinementQuery(cardId: string) {
+  return {
     queryKey: ['card-refinement', cardId],
     queryFn: () => api.get<CardRefinementDetailDto>(`/api/cards/${cardId}/refinement`),
-    enabled,
-    refetchInterval: (query) => {
+    refetchInterval: (query: { state: { data?: CardRefinementDetailDto } }) => {
       const status = query.state.data?.session?.status
       return status === 'running' || status === 'awaiting_input' ? LIVE_REFETCH_MS : false
     },
-  })
+  }
+}
+
+/**
+ * Le brouillon de découpage de chaque jalon qui en attend un, par id du jalon, sous la
+ * clé de `useCardRefinement` : la page du jalon et « Ce qui t'attend » lisent le même.
+ */
+export function useRefinementDrafts(cardIds: readonly string[]): ReadonlyMap<string, CardRefinementDetailDto['draft']> {
+  const queries = useQueries({ queries: cardIds.map(cardRefinementQuery) })
+  // Recomposé à chaque rendu : on mémorise sur les horodatages de réponse.
+  const stamps = queries.map((query) => query.dataUpdatedAt).join(',')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return useMemo(() => new Map(cardIds.map((id, index) => [id, queries[index]?.data?.draft ?? null])), [cardIds, stamps])
 }
 
 /**
@@ -118,22 +134,22 @@ function refreshRefinement(queryClient: ReturnType<typeof useQueryClient>, proje
 }
 
 /** Répond d'un coup à toutes les questions d'une demande de la session d'affinage (#195). */
-export function useAnswerRefinement(projectId: string, cardId: string) {
+export function useAnswerRefinement(projectId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ conversationId, requestId, answers }: { conversationId: string; requestId: string; answers: Record<string, string[]> }) =>
+    mutationFn: ({ conversationId, requestId, answers }: { cardId: string; conversationId: string; requestId: string; answers: Record<string, string[]> }) =>
       answerQuestion(conversationId, requestId, 'answered', answers),
-    onSuccess: () => refreshRefinement(queryClient, projectId, cardId),
+    onSuccess: (_data, { cardId }) => refreshRefinement(queryClient, projectId, cardId),
   })
 }
 
 /** Valide le brouillon de découpage tel que corrigé sur la page du jalon (#195). */
-export function useValidateRefinementDraft(projectId: string, cardId: string) {
+export function useValidateRefinementDraft(projectId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ conversationId, requestId, draft }: { conversationId: string; requestId: string; draft: CardDraft }) =>
+    mutationFn: ({ conversationId, requestId, draft }: { cardId: string; conversationId: string; requestId: string; draft: CardDraft }) =>
       decideCardDraft(conversationId, requestId, { decision: 'created', draft }),
-    onSuccess: () => refreshRefinement(queryClient, projectId, cardId),
+    onSuccess: (_data, { cardId }) => refreshRefinement(queryClient, projectId, cardId),
   })
 }
 

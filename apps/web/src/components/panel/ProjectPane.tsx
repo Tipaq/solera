@@ -62,6 +62,7 @@ import {
 import { useProjects } from '../../lib/projects'
 import { pullRequestFor, usePullRequests } from '../../lib/pull-requests'
 import { useInbox } from '../../lib/use-inbox'
+import { useMilestoneInbox } from '../../lib/use-milestone-inbox'
 import { useWorktreeStatuses } from '../../lib/worktrees'
 import { AgentIcon } from '../AgentIcon'
 import { CardChooser } from '../board/CardChooser'
@@ -651,7 +652,7 @@ function ProjectView({ projectId, conversationId, cards, current, statusOf, onOp
 }) {
   const t = useTranslate()
   const navigate = useNavigate()
-  const inbox = useInbox({ projectId })
+  const inbox = useInbox({ projectId }, useMilestoneInbox(projectId))
 
   return (
     <>

@@ -9,6 +9,7 @@ import { RecentEvents } from '../components/overview/RecentEvents'
 import { useTranslate } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
 import { useInbox } from '../lib/use-inbox'
+import { useMilestoneInbox } from '../lib/use-milestone-inbox'
 
 /**
  * L'**Aperçu** d'un projet : la vue d'arrivée, et la seule sans action propre — elle ne
@@ -29,7 +30,7 @@ export function ProjectOverviewPage() {
   const { projectId } = useParams()
   const t = useTranslate()
   const { data: projects, isPending } = useProjects()
-  const inbox = useInbox({ projectId: projectId ?? '' })
+  const inbox = useInbox({ projectId: projectId ?? '' }, useMilestoneInbox(projectId))
 
   // Rien tant que le projet charge (A-1.4) : un squelette redirait la page deux fois.
   if (isPending) return null
