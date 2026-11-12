@@ -64,6 +64,13 @@ se changent à chaud.
 `.opencode/` du projet : opencode n'a pas d'interrupteur plus fin. Un projet qui garde
 ses consignes dans son dépôt n'est pas concerné.
 
+Dans ce cas, opencode lit **le premier** fichier de consignes qu'il trouve, et non les
+deux : `AGENTS.md`, sinon `CLAUDE.md` (« The first matching file wins »,
+[opencode.ai/docs/rules](https://opencode.ai/docs/rules/), relu le 2026-11-12, non
+sondé sur le binaire). Un `AGENTS.md` présent, même vide, lui cache donc `CLAUDE.md`.
+Réglages › Consignes du projet le dit dans « Ce que lit chaque CLI »
+(`apps/web/src/lib/instructions-readers.ts`).
+
 ## Comportements relevés
 
 - **Port** : choisi par Solera. Avec `--port 0`, opencode reprend 4096 pendant que le
