@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react'
-import { usePanelPresence } from '../../lib/panel'
+import { usePanelPresence, usePanelWorktree } from '../../lib/panel'
 
 const SidePanel = lazy(() => import('../panel/SidePanel').then((m) => ({ default: m.SidePanel })))
 
@@ -12,13 +12,17 @@ const SidePanel = lazy(() => import('../panel/SidePanel').then((m) => ({ default
  *
  * Un tiroir ouvert par-dessus le recouvre (le calque de la coque est au-dessus), et
  * Échap ferme le tiroir d'abord.
+ *
+ * Le « Diff » d'un arbre sans session l'ouvre sur cet arbre (`openGitPanel`) plutôt que
+ * sur le dossier du projet.
  */
 export function PanelHost({ projectId }: { projectId: string }) {
   const panel = usePanelPresence()
+  const worktree = usePanelWorktree()
   if (!panel.mounted) return null
   return (
     <Suspense fallback={null}>
-      <SidePanel projectId={projectId} open={panel.open} />
+      <SidePanel projectId={projectId} worktree={worktree ?? undefined} open={panel.open} />
     </Suspense>
   )
 }

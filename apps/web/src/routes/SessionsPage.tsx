@@ -1,46 +1,56 @@
-import { ChevronDown, Columns3, FolderTree, List, MessageSquare, Plus } from 'lucide-react'
+import { Archive, ArchiveRestore, CheckSquare, ChevronDown, Columns3, FolderTree, List, MessageSquare, Pin, PinOff, Plus, Trash2 } from 'lucide-react'
 import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import type { AgentKind } from '@solera/protocol'
-import { Button, IconButton, SegmentedControl, cx } from '@solera/ui'
+import { Banner, Button, ConfirmDialog, IconButton, SegmentedControl, cx } from '@solera/ui'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
+import { useGuardedArchive } from '../components/ArchiveRequestsDialog'
 import { AskInbox } from '../components/inbox/AskInbox'
 import { PlaceBand } from '../components/places/PlaceShell'
 import { ProjectGroupHeader, ProjectPip } from '../components/places/ProjectPip'
 import { SectionTitle } from '../components/places/SectionTitle'
 import { STATE_WORD, SessionLine, SessionStateDot } from '../components/sessions/SessionLine'
 import { DrawerLayer } from '../components/shell/Drawer'
-import { FilterChip, OneLineToolbar, ToolbarSearch } from '../components/toolbar/OneLineToolbar'
+import { FilterChip, OneLineToolbar, ToolbarSearch, toolbarButtonClass } from '../components/toolbar/OneLineToolbar'
 import { DisplayMenu, FilterMenu, MenuCheck, MenuHeading, MenuSegment, type ViewOption } from '../components/toolbar/ToolbarMenus'
+import { useArchiveConversation, useDeleteConversation, usePinConversation } from '../lib/conversations'
 import { DetailSurfaceContext } from '../lib/detail-surface'
 import { toggled } from '../lib/filters'
-import { useTranslate, type MessageKey } from '../lib/i18n'
+import { useLocale, useTranslate, type MessageKey } from '../lib/i18n'
 import {
   NO_FILTERS,
   NO_PROJECT,
   SESSION_STATES,
   activeFilterCount,
+  bulkGestures,
   byDay,
   byProject,
   byState,
+  displayedRows,
   filterSessions,
   inScope,
+  pinTarget,
   readSessionQuery,
+  selectedRows,
   sortSessions,
   writeSessionQuery,
+  type BulkGesture,
   type SessionFilters,
   type SessionPeriod,
   type SessionQuery,
   type SessionRow,
   type SessionScope,
   type SessionSort,
+  type SessionView,
   type StateColumn,
 } from '../lib/sessions-view'
+import { inTurn, type BulkFailure } from '../lib/bulk'
+import { pluralKey } from '../lib/schedule-rule'
 import { useInbox } from '../lib/use-inbox'
 import { useSessionRows } from '../lib/use-session-rows'
 import { useView } from '../lib/use-view'
 
-type View = 'liste' | 'etat' | 'projet'
+type View = SessionView
 const VIEW_KEYS = ['liste', 'etat', 'projet'] as const
 
 const PERIODS: { key: SessionPeriod; label: MessageKey }[] = [
@@ -82,6 +92,10 @@ const COLUMN_LIMIT = 30
  * Une page de lieu sans rangée d'onglets : la bande seule, puis la barre sur une ligne
  * (recherche, Filtrer ▾, portée, Affichage ▾). L'adresse porte la recherche, les filtres,
  * la portée et le tri (`lib/sessions-view.ts`) ; la vue suit la mémoire de vue.
+ *
+ * « Sélectionner » (#233) coche des lignes et agit sur elles d'un geste : épingler,
+ * archiver, désarchiver, supprimer. Pas de route en masse : une boucle sur celles d'une
+ * session, qui va au bout et dit ce qui n'a pas suivi.
  */
 export function SessionsPage() {
   const t = useTranslate()
@@ -92,6 +106,8 @@ export function SessionsPage() {
   const { rows, projects, pending } = useSessionRows()
   const inbox = useInbox({ sessions: true })
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set())
+  // Tenu ici et non dans les colonnes : « Tout » ne coche que ce qu'elles montrent.
+  const [unfolded, setUnfolded] = useState<ReadonlySet<StateColumn>>(() => new Set())
 
   /**
    * Une retouche de la page, réécrite dans l'adresse sans entrée d'historique.
@@ -110,6 +126,7 @@ export function SessionsPage() {
     change((current) => ({ filters: { ...current.filters, ...edit(current.filters) } }))
   const { filters } = query
   const [search, setSearch] = useSearchDraft(query.search, (next) => update({ search: next }))
+  const selection = useBulkSelection(query.scope)
 
   const scoped = useMemo(() => rows.filter((row) => inScope(row, query.scope)), [rows, query.scope])
   const agents = useMemo(() => [...new Set(scoped.map((row) => row.agent))], [scoped])
@@ -118,6 +135,11 @@ export function SessionsPage() {
   const counted = (keep: (row: SessionRow) => boolean) => scoped.filter(keep).length
   const scopeCount = (scope: SessionScope) => rows.filter((row) => inScope(row, scope)).length
   const filtered = activeFilterCount(filters)
+  const displayed = useMemo(
+    () => displayedRows(shown, { view, folded, unfolded, limit: COLUMN_LIMIT }),
+    [shown, view, folded, unfolded],
+  )
+  const picked = useMemo(() => selectedRows(selection.selected, displayed), [selection.selected, displayed])
 
   const chips = [
     ...[...filters.projects].map((id) => (
@@ -262,7 +284,22 @@ export function SessionsPage() {
           </span>
         }
         display={displayMenu}
+        action={
+          // Une bascule de la barre, du même habillage que « Filtrer » et « Affichage » à
+          // côté d'elle : un `Button` y détonnerait.
+          <button
+            type="button"
+            aria-pressed={selection.on}
+            aria-label={t(selection.on ? 'sessionsPage.select.done' : 'sessionsPage.select')}
+            onClick={selection.toggleMode}
+            className={toolbarButtonClass(selection.on)}
+          >
+            <CheckSquare size={13} />
+            <span className="hidden sm:inline">{t(selection.on ? 'sessionsPage.select.done' : 'sessionsPage.select')}</span>
+          </button>
+        }
       />
+      {selection.on ? <SelectionBar scope={query.scope} rows={picked} onAll={() => selection.set(displayed.map((row) => row.id))} selection={selection} /> : null}
 
       {/* `relative` : le calque des tiroirs s'y pose sous la barre, et ne défile pas
           avec la liste. */}
@@ -270,11 +307,12 @@ export function SessionsPage() {
         <DetailSurfaceContext.Provider value="drawer">
           <div className="h-full overflow-y-auto">
             <div className="flex flex-col gap-6 p-4 md:p-6">
-              {view === 'liste' && query.scope === 'actives' ? <AskInbox items={inbox} /> : null}
+              {selection.failure ? <Banner>{selection.failure}</Banner> : null}
+              {view === 'liste' && query.scope === 'actives' && !selection.on ? <AskInbox items={inbox} /> : null}
               {shown.length === 0 ? (
                 <p className="text-sm text-ink-faint">{empty}</p>
               ) : view === 'etat' ? (
-                <StateColumns rows={shown} />
+                <StateColumns rows={shown} selection={selection.lines} unfolded={unfolded} onUnfold={(key) => setUnfolded((current) => toggled(current, key))} />
               ) : view === 'projet' ? (
                 <div className="flex flex-col gap-5">
                   {byProject(shown).map((group) => {
@@ -291,7 +329,7 @@ export function SessionsPage() {
                       </IconButton>
                     )
                     return (
-                      <Group key={group.key} rows={open ? group.rows : []} hideProject>
+                      <Group key={group.key} rows={open ? group.rows : []} selection={selection.lines} hideProject>
                         {group.project ? (
                           <ProjectGroupHeader project={group.project} count={group.rows.length} aside={toggle} />
                         ) : (
@@ -304,7 +342,7 @@ export function SessionsPage() {
               ) : (
                 <div className="flex flex-col gap-5">
                   {byDay(shown, query.sort, Date.now()).map((group) => (
-                    <Group key={group.key} rows={group.rows}>
+                    <Group key={group.key} rows={group.rows} selection={selection.lines}>
                       {group.key === 'all' ? null : <SectionTitle size="group" count={group.rows.length}>{t(BUCKET[group.key])}</SectionTitle>}
                     </Group>
                   ))}
@@ -346,14 +384,158 @@ function useSearchDraft(fromUrl: string, write: (next: string) => void): [string
   return [draft, change]
 }
 
+/** Ce que les lignes savent de la sélection : `null` hors du mode, et elles mènent au fil. */
+type LineSelection = { selected: ReadonlySet<string>; toggle: (id: string) => void } | null
+
+const selectionProps = (row: SessionRow, selection: LineSelection) =>
+  selection ? { selected: selection.selected.has(row.id), onToggle: selection.toggle } : {}
+
+/**
+ * Le mode sélection et ce qu'il coche. La portée qui change vide la sélection, d'où
+ * qu'elle change — la barre, le menu Filtrer au téléphone, un lien suivi.
+ */
+function useBulkSelection(scope: SessionScope) {
+  const t = useTranslate()
+  const locale = useLocale()
+  const [on, setOn] = useState(false)
+  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set())
+  const [seenScope, setSeenScope] = useState(scope)
+  const [failed, setFailed] = useState<{ count: number; error: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+  if (scope !== seenScope) {
+    setSeenScope(scope)
+    setSelected(new Set())
+    // Le refus dit d'une ligne qui n'est plus de cette portée.
+    setFailed(null)
+  }
+  const pin = usePinConversation()
+  const setArchived = useArchiveConversation()
+  const remove = useDeleteConversation()
+  const guarded = useGuardedArchive()
+
+  const close = () => {
+    setOn(false)
+    setSelected(new Set())
+    setFailed(null)
+  }
+  /** Le geste fait : tout a suivi et la sélection se referme, ou ce qui a refusé reste coché. */
+  const settle = (failures: BulkFailure[]) => {
+    if (failures.length === 0) return close()
+    setSelected(new Set(failures.map((failure) => failure.id)))
+    setFailed({ count: failures.length, error: messageOf(failures[0]!.error) })
+  }
+  const loop = async (ids: string[], step: (id: string) => Promise<unknown>) => {
+    setFailed(null)
+    setBusy(true)
+    try {
+      settle(await inTurn(ids, step))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const run = (gesture: BulkGesture, rows: SessionRow[]) => {
+    const ids = rows.map((row) => row.id)
+    if (gesture === 'pin') {
+      const pinned = pinTarget(rows)
+      return loop(ids, (id) => pin.mutateAsync({ id, pinned }))
+    }
+    if (gesture === 'unarchive') return loop(ids, (id) => setArchived.mutateAsync({ id, archived: false }))
+    if (gesture === 'delete') return loop(ids, (id) => remove.mutateAsync(id))
+    // Archiver passe par la fenêtre des demandes en attente, qui fait sa propre boucle.
+    setFailed(null)
+    guarded.archive(ids, settle)
+  }
+
+  const failure = failed
+    ? t(`sessionsPage.bulk.failed.${pluralKey(failed.count, locale)}`, { count: failed.count, error: failed.error })
+    : null
+
+  return {
+    on,
+    selected,
+    busy: busy || guarded.pending,
+    failure,
+    dialog: guarded.dialog,
+    lines: on ? { selected, toggle: (id: string) => setSelected((current) => toggled(current, id)) } : null,
+    set: (ids: string[]) => setSelected(new Set(ids)),
+    toggleMode: () => (on ? close() : setOn(true)),
+    run,
+  }
+}
+
+type BulkSelection = ReturnType<typeof useBulkSelection>
+
+const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error))
+
+const GESTURE: Record<BulkGesture | 'unpin', { label: MessageKey; icon: ReactNode }> = {
+  pin: { label: 'sessionsPage.bulk.pin', icon: <Pin size={14} /> },
+  unpin: { label: 'sessionsPage.bulk.unpin', icon: <PinOff size={14} /> },
+  archive: { label: 'sessionsPage.bulk.archive', icon: <Archive size={14} /> },
+  unarchive: { label: 'sessionsPage.bulk.unarchive', icon: <ArchiveRestore size={14} /> },
+  delete: { label: 'sessionsPage.bulk.delete', icon: <Trash2 size={14} /> },
+}
+
+/**
+ * La barre de la sélection, sous la barre d'outils : le compte, « Tout » (les lignes
+ * affichées), puis les gestes de la portée. Au téléphone, où leurs libellés ne tiennent
+ * pas sur la ligne, les gestes passent à l'icône.
+ */
+function SelectionBar({ scope, rows, onAll, selection }: { scope: SessionScope; rows: SessionRow[]; onAll: () => void; selection: BulkSelection }) {
+  const t = useTranslate()
+  const locale = useLocale()
+  const [confirming, setConfirming] = useState(false)
+  const count = rows.length
+  // Épingler défait quand toute la sélection l'est déjà.
+  const face = (gesture: BulkGesture) => GESTURE[gesture === 'pin' && !pinTarget(rows) ? 'unpin' : gesture]
+  return (
+    <div data-selection-bar className="flex h-11 shrink-0 items-center gap-2 border-b border-line bg-surface/60 px-4 text-sm md:px-6">
+      <span className="shrink-0 tabular-nums text-ink-soft">{t(`sessionsPage.selected.${pluralKey(count, locale)}`, { count })}</span>
+      <Button size="sm" variant="ghost" className="shrink-0" onClick={onAll}>
+        {t('sessionsPage.select.all')}
+      </Button>
+      <span className="ml-auto flex items-center gap-1.5">
+        {bulkGestures(scope).map((gesture) => (
+          <Button
+            key={gesture}
+            size="sm"
+            variant="ghost"
+            aria-label={t(face(gesture).label)}
+            disabled={count === 0 || selection.busy}
+            onClick={() => (gesture === 'delete' ? setConfirming(true) : void selection.run(gesture, rows))}
+          >
+            <span className="sm:hidden">{face(gesture).icon}</span>
+            <span className="hidden sm:inline">{t(face(gesture).label)}</span>
+          </Button>
+        ))}
+      </span>
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={t(`sessionsPage.bulk.delete.confirm.${pluralKey(count, locale)}`, { count })}
+        confirmLabel={t('sessionsPage.bulk.delete')}
+        tone="critical"
+        busy={selection.busy}
+        onConfirm={() => {
+          setConfirming(false)
+          void selection.run('delete', rows)
+        }}
+      >
+        <p>{t('sessionsPage.bulk.delete.note')}</p>
+      </ConfirmDialog>
+      {selection.dialog}
+    </div>
+  )
+}
+
 /** Un groupe de la Liste ou de « Par projet » : son en-tête, puis ses lignes entre deux filets. */
-function Group({ rows, hideProject = false, children }: { rows: SessionRow[]; hideProject?: boolean; children: ReactNode }) {
+function Group({ rows, selection, hideProject = false, children }: { rows: SessionRow[]; selection: LineSelection; hideProject?: boolean; children: ReactNode }) {
   return (
     <section className="flex flex-col">
       {children}
       {rows.length > 0 ? (
         <ul className="flex flex-col divide-y divide-line border-y border-line">
-          {rows.map((row) => <SessionLine key={row.id} row={row} hideProject={hideProject} />)}
+          {rows.map((row) => <SessionLine key={row.id} row={row} hideProject={hideProject} {...selectionProps(row, selection)} />)}
         </ul>
       ) : null}
     </section>
@@ -361,9 +543,14 @@ function Group({ rows, hideProject = false, children }: { rows: SessionRow[]; hi
 }
 
 /** Par état : quatre colonnes, une puis deux puis quatre selon la largeur. */
-function StateColumns({ rows }: { rows: SessionRow[] }) {
+function StateColumns({ rows, selection, unfolded, onUnfold }: {
+  rows: SessionRow[]
+  selection: LineSelection
+  /** Les colonnes montrées au-delà de `COLUMN_LIMIT`. */
+  unfolded: ReadonlySet<StateColumn>
+  onUnfold: (column: StateColumn) => void
+}) {
   const t = useTranslate()
-  const [unfolded, setUnfolded] = useState<ReadonlySet<StateColumn>>(() => new Set())
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       {byState(rows).map((column) => {
@@ -376,11 +563,11 @@ function StateColumns({ rows }: { rows: SessionRow[] }) {
               <p className="py-2 text-xs text-ink-faint">{t('sessionsPage.empty.column')}</p>
             ) : (
               <ul className="flex flex-col divide-y divide-line border-y border-line">
-                {(all ? column.rows : column.rows.slice(0, COLUMN_LIMIT)).map((row) => <SessionLine key={row.id} row={row} compact />)}
+                {(all ? column.rows : column.rows.slice(0, COLUMN_LIMIT)).map((row) => <SessionLine key={row.id} row={row} compact {...selectionProps(row, selection)} />)}
               </ul>
             )}
             {extra > 0 ? (
-              <Button variant="ghost" size="sm" className="mt-1 self-start" onClick={() => setUnfolded((current) => toggled(current, column.key))}>
+              <Button variant="ghost" size="sm" className="mt-1 self-start" onClick={() => onUnfold(column.key)}>
                 {all ? t('sessionsPage.less') : t('sessionsPage.more', { count: extra })}
               </Button>
             ) : null}

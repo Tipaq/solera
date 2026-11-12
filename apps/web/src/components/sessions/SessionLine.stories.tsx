@@ -1,5 +1,7 @@
 import type { Decorator, Meta, StoryObj } from '@storybook/react-vite'
+import { useState } from 'react'
 import type { ProjectDto } from '@solera/protocol'
+import { toggled } from '../../lib/filters'
 import type { SessionRow } from '../../lib/sessions-view'
 import { SessionLine } from './SessionLine'
 
@@ -43,7 +45,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "Une session dans `/sessions`. L'icône de l'agent porte le **point d'état** — ambre : t'attend, rouge : en erreur, accent pâle : à relire, accent qui pulse : travaille, gris : terminée. Le titre est gras quand la session réclame, et le mot d'état suit quand il appelle un geste. Dès `lg`, le projet, la branche et la carte. Toute la ligne mène au fil.\n\n`compact` dans les colonnes de « Par état », qui disent déjà l'état ; `hideProject` dans un groupe qui nomme le projet.",
+          "Une session dans `/sessions`. L'icône de l'agent porte le **point d'état** — ambre : t'attend, rouge : en erreur, accent pâle : à relire, accent qui pulse : travaille, gris : terminée. Le titre est gras quand la session réclame, et le mot d'état suit quand il appelle un geste. Dès `lg`, le projet, la branche et la carte. Toute la ligne mène au fil.\n\n`compact` dans les colonnes de « Par état », qui disent déjà l'état ; `hideProject` dans un groupe qui nomme le projet. En mode sélection (`onToggle`), la ligne devient une case à cocher et ne mène plus au fil.",
       },
     },
   },
@@ -62,4 +64,13 @@ export const Etats: Story = {
 /** La forme compacte des colonnes de « Par état ». */
 export const Compacte: Story = {
   render: () => <>{ROWS.map((entry) => <SessionLine key={entry.id} row={entry} compact />)}</>,
+}
+
+/** Le mode sélection de `/sessions` : la case en tête, le fond accent pâle quand elle est cochée. */
+export const Selection: Story = {
+  render: function Render() {
+    const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set([ROWS[1]!.id, ROWS[3]!.id]))
+    const toggle = (id: string) => setSelected((current) => toggled(current, id))
+    return <>{ROWS.map((entry) => <SessionLine key={entry.id} row={entry} selected={selected.has(entry.id)} onToggle={toggle} />)}</>
+  },
 }

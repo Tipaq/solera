@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom'
 import { PROJECT_CAP_MAX, type ConfinedServices, type ProjectDto, type ProjectVisibility } from '@solera/protocol'
 import { Banner, Button, EmptyState, SaveBar, SegmentedControl, Select, Switch } from '@solera/ui'
 import { AutonomousConfinementSelect, EnvironmentSelect } from '../components/Environment'
-import { ProjectInstructions } from '../components/instructions/Instructions'
+import { InstructionsPanel } from '../components/instructions/InstructionsPanel'
 import { ProjectMemory } from '../components/instructions/ProjectMemory'
 import { PathField } from '../components/PathField'
 import {
@@ -46,9 +46,9 @@ const NOTICE_MS = 3200
  * Les réglages d'un projet (page projet v2, PP-21) : une page à menu gauche, un
  * brouillon unique et sa barre d'enregistrement.
  *
- * Général, les réglages d'agent et la Zone de danger sont faits ici ; les savoirs des
- * agents et les Intégrations posent encore les blocs de l'ancienne page, que #244 et
- * #245 refont en rangées.
+ * Général, les réglages d'agent, les consignes et la Zone de danger sont faits ici ; la
+ * mémoire, les skills et les Intégrations posent encore les blocs de l'ancienne page,
+ * que #245 refait en rangées.
  */
 export function ProjectSettingsPage() {
   const { projectId } = useParams()
@@ -257,16 +257,16 @@ function ProjectSettings({ project }: { project: ProjectDto }) {
     },
   ]
 
-  /* Les savoirs des agents et les Intégrations : les blocs de l'ancienne page, en
-     attendant leurs rangées (#244, #245). Un projet partagé ne montre des Agents que ce
-     que les agents savent. */
+  /* Ce que les agents savent : les consignes (#244), puis la mémoire, les skills et les
+     Intégrations, blocs de l'ancienne page en attendant leurs rangées (#245). Un projet
+     partagé ne montre des Agents que ce que les agents savent. */
   const knowledge = t('projectSettings.group.knowledge')
   const agents: SettingItem[] = [
     {
       id: 'instructions', category: 'agents', group: knowledge, kind: 'block',
-      label: t('instructions.project.title'), help: t('instructions.project.description'),
+      label: t('instructions.project.title'), help: t('projectSettings.item.instructions.help'),
       keywords: keywords('projectSettings.item.instructions.keywords'),
-      render: () => <ProjectInstructions projectId={project.id} />,
+      render: () => <InstructionsPanel projectId={project.id} />,
     },
     {
       id: 'memory', category: 'agents', group: knowledge, kind: 'bare',

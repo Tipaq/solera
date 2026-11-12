@@ -285,3 +285,44 @@ export function byState(rows: readonly SessionRow[]): { key: StateColumn; rows: 
   for (const row of rows) columns.find((column) => column.key === COLUMN_OF[row.state])!.rows.push(row)
   return columns
 }
+
+/* ------------------------------------------------------------------ la sélection */
+
+export type SessionView = 'liste' | 'etat' | 'projet'
+
+/**
+ * Les lignes que la page montre vraiment, dans l'ordre de la vue : ni celles des groupes
+ * repliés de « Par projet », ni celles qu'une colonne de « Par état » garde derrière
+ * « N de plus ». « Tout » ne coche qu'elles : un geste ne touche rien qu'on n'a pas vu.
+ */
+export function displayedRows(
+  rows: readonly SessionRow[],
+  display: { view: SessionView; folded: ReadonlySet<string>; unfolded: ReadonlySet<StateColumn>; limit: number },
+): SessionRow[] {
+  if (display.view === 'projet') return byProject(rows).flatMap((group) => (display.folded.has(group.key) ? [] : group.rows))
+  if (display.view === 'etat') {
+    return byState(rows).flatMap((column) => (display.unfolded.has(column.key) ? column.rows : column.rows.slice(0, display.limit)))
+  }
+  return [...rows]
+}
+
+/**
+ * Les lignes sélectionnées **parmi celles affichées**, dans leur ordre : une session
+ * cochée puis masquée par un filtre, ou partie de la portée après un geste, ne compte
+ * plus et ne subit pas le suivant.
+ */
+export function selectedRows(selected: ReadonlySet<string>, shown: readonly SessionRow[]): SessionRow[] {
+  return shown.filter((row) => selected.has(row.id))
+}
+
+export type BulkGesture = 'pin' | 'archive' | 'unarchive' | 'delete'
+
+/** Les gestes de la barre de sélection : on n'épingle ni n'archive une archivée. */
+export function bulkGestures(scope: SessionScope): BulkGesture[] {
+  return scope === 'actives' ? ['pin', 'archive', 'delete'] : ['unarchive', 'delete']
+}
+
+/** Épingler, ou désépingler quand toute la sélection l'est déjà : le même bouton défait. */
+export function pinTarget(rows: readonly SessionRow[]): boolean {
+  return rows.length === 0 || rows.some((row) => !row.pinned)
+}
