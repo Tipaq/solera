@@ -2656,6 +2656,7 @@ export const fr: Catalog = {
   'milestones.filter.due': 'Échéance',
   'milestones.filter.late': 'En retard',
   'milestones.filter.lateChip': 'en retard',
+  'milestones.view.horizon': 'Horizon',
   'milestones.scale.title': 'Échelle du temps',
   'milestones.scale.week': 'Semaine',
   'milestones.scale.month': 'Mois',

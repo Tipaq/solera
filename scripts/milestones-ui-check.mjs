@@ -335,8 +335,9 @@ async function horizonStep(width) {
   assert.equal(await chips.count(), 0)
 
   console.log(width, 'BAR-5 : Affichage règle l’échelle, Mois par défaut')
-  await page.getByRole('button', { name: 'Affichage' }).click()
+  await page.getByRole('button', { name: 'Affichage : Horizon' }).click()
   const display = page.getByRole('dialog', { name: 'Affichage' })
+  await display.getByRole('radio', { name: 'Horizon', checked: true }).waitFor()
   assert.equal(await display.getByRole('radio', { name: 'Mois' }).getAttribute('aria-checked'), 'true')
   const before = await axis.locator('.overflow-x-auto > div').first().evaluate((element) => element.scrollWidth)
   await display.getByRole('radio', { name: 'Semaine' }).click()

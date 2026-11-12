@@ -3,7 +3,10 @@ import type { CardConversationDto, CardDto, CardLinkDto, MilestoneRunDto } from 
 import { horizonOf } from '../../lib/milestone-model'
 import { fixtureCard } from '../board/card-fixtures'
 import { DAY } from '../gantt/scale'
+import { CapBlock } from './CapBlock'
 import { Horizon } from './Horizon'
+import { MilestoneAxis } from './MilestoneAxis'
+import { WaveTiles } from './WaveTiles'
 
 const now = Date.now()
 const link = ({ id, number, title, column }: CardDto): CardLinkDto => ({ id, number, title, column })
@@ -78,3 +81,33 @@ export const Semaine: Story = { args: { zoom: 'week' } }
 
 /** Un projet neuf : pas de cap, rien à chaque étape, chaque temps le dit. */
 export const Vide: Story = { args: { project: { id: 'p-1', cap: null }, entries: [] } }
+
+const pane = 'flex flex-col gap-4 p-4 md:p-6'
+
+/** `CapBlock` seul : la phrase et son crayon au survol ; sans cap, « + Ajouter un cap ». */
+export const Cap: Story = {
+  render: (args) => (
+    <div className={pane}>
+      <CapBlock project={args.project} />
+      <CapBlock project={{ id: 'p-2', cap: null }} />
+    </div>
+  ),
+}
+
+/** `MilestoneAxis` seul : la barre du jalon lancé porte son trait de lancement et « 1 t'attend ». */
+export const Axe: Story = {
+  render: (args) => (
+    <div className={pane}>
+      <MilestoneAxis projectId={args.project.id} entries={ENTRIES.filter((entry) => [910, 920, 940].includes(entry.card.number))} zoom={args.zoom} />
+    </div>
+  ),
+}
+
+/** `WaveTiles` seules : rang, pastille, échéance, traits de maturité, prochaine action. */
+export const Tuiles: Story = {
+  render: (args) => (
+    <div className={pane}>
+      <WaveTiles projectId={args.project.id} entries={ENTRIES.filter((entry) => [950, 930, 902, 901].includes(entry.card.number))} />
+    </div>
+  ),
+}

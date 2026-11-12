@@ -1,5 +1,5 @@
 import { DAY } from '../components/gantt/scale'
-import { lateDays, liveSessions, loadedStatus, type StatusOf } from './card-state'
+import { calendarLateDays, liveSessions, loadedStatus, type StatusOf } from './card-state'
 import { MATURITIES, type Maturity, type MilestoneEntry } from './milestone-model'
 
 /*
@@ -35,8 +35,7 @@ export function isMilestoneLate(entry: MilestoneEntry, now = Date.now()): boolea
 }
 
 function dueLateDays(entry: MilestoneEntry, now: number): number {
-  if (entry.maturity === 'delivered') return 0
-  return lateDays({ column: 'todo', dueAt: entry.card.dueAt }, now)
+  return entry.maturity === 'delivered' ? 0 : calendarLateDays(entry.card.dueAt, now)
 }
 
 export function keepMilestone(entry: MilestoneEntry, query: string, filters: MilestoneFilters, now = Date.now()): boolean {
@@ -106,7 +105,8 @@ export function milestoneBar(entry: MilestoneEntry, now = Date.now()): Milestone
   const total = entry.children.filter((card) => card.column !== 'abandoned').length
   return {
     start,
-    end: due ?? Math.max(now, start + DAY),
+    // Une carte créée après l'échéance tire le début au-delà : la barre ne se retourne pas.
+    end: due === null ? Math.max(now, start + DAY) : Math.max(due, start),
     loose: due === null,
     done: entry.done,
     total,
@@ -116,6 +116,6 @@ export function milestoneBar(entry: MilestoneEntry, now = Date.now()): Milestone
 }
 
 /** Les sessions vivantes de ses cartes, qui tournent ou attendent. */
-export function livesOf(entry: MilestoneEntry, statusOf: StatusOf = loadedStatus): number {
+export function liveSessionCount(entry: MilestoneEntry, statusOf: StatusOf = loadedStatus): number {
   return entry.children.reduce((sum, card) => sum + liveSessions(card, statusOf).length, 0)
 }

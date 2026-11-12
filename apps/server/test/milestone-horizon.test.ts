@@ -8,7 +8,7 @@ const {
   horizonSections,
   isMilestoneLate,
   keepMilestone,
-  livesOf,
+  liveSessionCount,
   maturityCounts,
   milestoneBar,
   milestoneFilterCount,
@@ -205,6 +205,12 @@ test('HOR-5 : les sessions vivantes des cartes, archivées exclues, au statut du
       card(3, { conversations: [session('d', 'awaiting_input')] }),
     ]),
   )
-  assert.equal(livesOf(entry!), 2)
-  assert.equal(livesOf(entry!, (entry) => (entry.id === 'b' ? 'running' : entry.status)), 3)
+  assert.equal(liveSessionCount(entry!), 2)
+  assert.equal(liveSessionCount(entry!, (entry) => (entry.id === 'b' ? 'running' : entry.status)), 3)
+})
+
+test('HOR-5 : une échéance antérieure à toutes les créations ne retourne pas la barre', () => {
+  const [entry] = entries(milestone(1, [card(2, { createdAt: NOW - 2 * DAY })], { createdAt: NOW - 2 * DAY, dueAt: NOW - 5 * DAY }))
+  const bar = milestoneBar(entry!, NOW)
+  assert.equal(bar.end, bar.start, 'la barre tient au moins jusqu’à son début')
 })

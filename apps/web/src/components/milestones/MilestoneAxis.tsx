@@ -5,7 +5,7 @@ import { loadedStatus, type StatusOf } from '../../lib/card-state'
 import { pluralOf } from '../../lib/code-model'
 import { formatDay } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
-import { livesOf, milestoneBar, type MilestoneBarGeometry } from '../../lib/milestone-horizon'
+import { liveSessionCount, milestoneBar, type MilestoneBarGeometry } from '../../lib/milestone-horizon'
 import { maturityTooltip, type MilestoneEntry } from '../../lib/milestone-model'
 import { useMediaQuery } from '../../lib/viewport'
 import { CardInfoButton } from '../cards/CardInfoButton'
@@ -177,7 +177,7 @@ function MilestoneBar({
   const width = Math.max(scale.x(bar.end) - left, 8)
   const delivered = entry.maturity === 'delivered'
   const overdue = bar.lateDays > 0 && entry.card.dueAt !== null ? Math.max(scale.x(now) - scale.x(entry.card.dueAt), 2) : 0
-  const live = livesOf(entry, statusOf)
+  const live = liveSessionCount(entry, statusOf)
   const asking = entry.awaiting.length
 
   return (

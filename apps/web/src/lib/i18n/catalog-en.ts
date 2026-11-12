@@ -2660,6 +2660,7 @@ export const en = {
   'milestones.filter.due': 'Due date',
   'milestones.filter.late': 'Overdue',
   'milestones.filter.lateChip': 'overdue',
+  'milestones.view.horizon': 'Horizon',
   'milestones.scale.title': 'Time scale',
   'milestones.scale.week': 'Week',
   'milestones.scale.month': 'Month',

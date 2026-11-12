@@ -1,5 +1,5 @@
-import { Plus } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { Compass, Plus } from 'lucide-react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useParams } from 'react-router-dom'
 import type { ProjectDto } from '@solera/protocol'
 import { Button, EmptyState } from '@solera/ui'
@@ -8,7 +8,7 @@ import { CardSheetHost } from '../../components/cards/CardSheetHost'
 import type { Zoom } from '../../components/gantt/scale'
 import { Horizon } from '../../components/milestones/Horizon'
 import { FilterChip, OneLineToolbar, ToolbarSearch } from '../../components/toolbar/OneLineToolbar'
-import { DisplayMenu, FilterMenu, MenuCheck, MenuHeading, MenuSegment } from '../../components/toolbar/ToolbarMenus'
+import { DisplayMenu, FilterMenu, MenuCheck, MenuHeading, MenuSegment, type ViewOption } from '../../components/toolbar/ToolbarMenus'
 import { useTranslate } from '../../lib/i18n'
 import { keepMilestone, maturityCounts, milestoneFilterCount, NO_MILESTONE_FILTERS, type MilestoneFilters } from '../../lib/milestone-horizon'
 import { MATURITIES, type Maturity } from '../../lib/milestone-model'
@@ -17,10 +17,12 @@ import { useProjects } from '../../lib/projects'
 import { useView } from '../../lib/use-view'
 
 /**
- * Les vues livrées. Le Gantt détaillé (#191) s'y ajoute : `useView` retient déjà la
- * dernière vue du projet, et « Affichage ▾ » montrera ses tuiles dès qu'il y en a deux.
+ * Les vues livrées, dans l'ordre de leurs tuiles. Le Gantt détaillé (#191) s'y ajoute :
+ * `useView` retient déjà la dernière vue du projet.
  */
 const VIEWS = ['horizon'] as const
+type MilestonesView = (typeof VIEWS)[number]
+const VIEW_ICONS: Record<MilestonesView, ReactNode> = { horizon: <Compass size={16} /> }
 
 /**
  * L'onglet **Jalons** d'un projet (spec jalons BAR, CAP, HOR). L'adresse est restée
@@ -45,6 +47,7 @@ function Milestones({ project }: { project: ProjectDto }) {
   const t = useTranslate()
   const { entries, statusOf, isPending } = useMilestones(project.id)
   const [view, setView] = useView('jalons', project.id, VIEWS)
+  const views: ViewOption<MilestonesView>[] = VIEWS.map((key) => ({ key, label: t(`milestones.view.${key}`), icon: VIEW_ICONS[key] }))
   const [query, setQuery] = useState('')
   const [filters, setFilters] = useState<MilestoneFilters>(NO_MILESTONE_FILTERS)
   // L'échelle n'est pas retenue : on revient toujours à la vue d'ensemble.
@@ -52,7 +55,7 @@ function Milestones({ project }: { project: ProjectDto }) {
   const [adding, setAdding] = useState(false)
 
   // Les comptes du menu portent sur tous les jalons, pour qu'on voie ce qu'un filtre cacherait.
-  const all = useMemo(() => maturityCounts(entries), [entries])
+  const totals = useMemo(() => maturityCounts(entries), [entries])
   const now = Date.now()
   const shown = entries.filter((entry) => keepMilestone(entry, query, filters, now))
   const active = milestoneFilterCount(filters)
@@ -75,7 +78,7 @@ function Milestones({ project }: { project: ProjectDto }) {
           <FilterMenu active={active} onClearAll={() => setFilters(NO_MILESTONE_FILTERS)}>
             <MenuHeading>{t('milestones.filter.maturity')}</MenuHeading>
             {MATURITIES.map((maturity) => (
-              <MenuCheck key={maturity} checked={filters.maturities.includes(maturity)} onChange={() => toggle(maturity)} aside={all[maturity]}>
+              <MenuCheck key={maturity} checked={filters.maturities.includes(maturity)} onChange={() => toggle(maturity)} aside={totals[maturity]}>
                 {t(`milestones.maturity.label.${maturity}`)}
               </MenuCheck>
             ))}
@@ -98,7 +101,7 @@ function Milestones({ project }: { project: ProjectDto }) {
           ) : null,
         ]}
         display={
-          <DisplayMenu>
+          <DisplayMenu views={views} value={view} onChange={setView}>
             <MenuHeading>{t('milestones.scale.title')}</MenuHeading>
             <MenuSegment<Zoom>
               label={t('milestones.scale.title')}
