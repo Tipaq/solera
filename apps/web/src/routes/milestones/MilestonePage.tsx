@@ -1,10 +1,12 @@
 import { ArrowLeft, Flag } from 'lucide-react'
+import { useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { DEFAULT_MILESTONE_CONCURRENCY } from '@solera/protocol'
 import { Badge, Button, EmptyState, cx } from '@solera/ui'
 import { CardMilestone } from '../../components/board/CardMilestone'
 import { CardInfoButton } from '../../components/cards/CardInfoButton'
 import { CardSheetHost } from '../../components/cards/CardSheetHost'
+import { LaunchPanel } from '../../components/milestones/LaunchPanel'
 import { MaturityPill } from '../../components/milestones/MaturityPill'
 import { ExplainedSteps } from '../../components/milestones/MaturitySteps'
 import { WaveGraph } from '../../components/milestones/WaveGraph'
@@ -29,10 +31,10 @@ import { useMergeBranchPullRequest } from '../../lib/pull-requests'
  * pourquoi, ce qu'il attend de toi, et ses cartes en vagues. Une idée a la sienne aussi :
  * c'est d'ici qu'on l'affine.
  *
- * Deux emplacements, `#affinage` et `#lancer`, que la prochaine action fait défiler. En
- * attendant le résumé d'affinage (#195) et le panneau Lancer (#197), ils portent ce que
- * `main` savait déjà faire : les raisons et la session d'affinage, le lancement et le
- * suivi du pilotage (`CardMilestone`).
+ * Deux emplacements, `#affinage` et `#lancer`, que la prochaine action fait défiler.
+ * `#lancer` porte le panneau Lancer (#197) ; en attendant le résumé d'affinage (#195) et
+ * le suivi d'un jalon lancé (#198), ils portent ce que `main` savait déjà faire : les
+ * raisons et la session d'affinage, le suivi du pilotage (`CardMilestone`).
  */
 export function MilestonePage() {
   const { projectId, number } = useParams()
@@ -68,6 +70,8 @@ function MilestoneView({ projectId, entry, statusOf }: { projectId: string; entr
   const navigate = useNavigate()
   const [, setParams] = useSearchParams()
   const merge = useMergeBranchPullRequest(projectId, entry.card.id)
+  // Choisie dans Lancer, montrée par les vagues (VAG-1) ; celle du pilotage, une fois lancé.
+  const [concurrency, setConcurrency] = useState(DEFAULT_MILESTONE_CONCURRENCY)
   const { card } = entry
 
   const action = nextActionText(nextAction(entry), t)
@@ -153,10 +157,14 @@ function MilestoneView({ projectId, entry, statusOf }: { projectId: string; entr
         <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
           {pending ? refine : null}
           <div className="min-w-0 xl:col-start-1">
-            <Waves projectId={projectId} entry={entry} statusOf={statusOf} />
+            <Waves projectId={projectId} entry={entry} statusOf={statusOf} concurrency={entry.run?.concurrency ?? concurrency} />
           </div>
           <div id="lancer" className="min-w-0 scroll-mt-4 xl:sticky xl:top-0 xl:col-start-2 xl:row-span-3 xl:row-start-1">
-            <LaunchSlot projectId={projectId} entry={entry} />
+            {entry.maturity === 'launched' ? (
+              <RunSlot projectId={projectId} entry={entry} />
+            ) : (
+              <LaunchPanel projectId={projectId} entry={entry} concurrency={concurrency} onConcurrency={setConcurrency} statusOf={statusOf} />
+            )}
           </div>
           {pending ? null : refine}
         </div>
@@ -167,10 +175,18 @@ function MilestoneView({ projectId, entry, statusOf }: { projectId: string; entr
 }
 
 /** Le graphe, surmonté de ce qu'il dit : ce qui part ensemble, et combien à la fois (VAG-1, VAG-2). */
-function Waves({ projectId, entry, statusOf }: { projectId: string; entry: MilestoneEntry; statusOf: StatusOf }) {
+function Waves({
+  projectId,
+  entry,
+  statusOf,
+  concurrency,
+}: {
+  projectId: string
+  entry: MilestoneEntry
+  statusOf: StatusOf
+  concurrency: number
+}) {
   const t = useTranslate()
-  // Le panneau Lancer (#197) fera choisir la concurrence ; d'ici là, celle du pilotage.
-  const concurrency = entry.run?.concurrency ?? DEFAULT_MILESTONE_CONCURRENCY
   const empty = entry.children.every((child) => child.column === 'abandoned')
   return (
     <section aria-label={t('milestone.waves.title')} className="flex min-w-0 flex-col gap-2">
@@ -225,14 +241,12 @@ function RefineSlot({ projectId, entry, pending }: { projectId: string; entry: M
 }
 
 /**
- * L'emplacement de Lancer, en attendant son panneau (#197) et le suivi (#198) : le
- * lancement et le pilotage tels que la fiche du board les offre. Rien pour une idée sans
- * cartes, ni pour un jalon livré qu'aucun pilotage ne suit plus.
+ * Le suivi d'un jalon lancé, en attendant son panneau (#198) : le pilotage tel que la
+ * fiche du board l'offre.
  */
-function LaunchSlot({ projectId, entry }: { projectId: string; entry: MilestoneEntry }) {
+function RunSlot({ projectId, entry }: { projectId: string; entry: MilestoneEntry }) {
   const t = useTranslate()
   const [, setParams] = useSearchParams()
-  if (entry.children.length === 0 || (entry.maturity === 'delivered' && entry.run === null)) return null
   return (
     <section aria-label={t('milestone.page.launch')} className="rounded-xl border border-line p-3.5">
       <CardMilestone

@@ -14,6 +14,11 @@ import { viteDependency } from './checks/vite-deps.mjs'
 // les étapes expliquées (fiche par étape, téléphone), la mise en page, les vagues (colonnes,
 // arêtes, cycle, chaîne au survol, empilement au téléphone, repère ambre).
 //
+// Étape « lancer » (#197, LCH-1..12) : le panneau Lancer avant le lancement — à la main
+// (environnements filtrés, cartes, lancer une carte), en autonome (confiné d'office,
+// concurrence remontée aux vagues, quota, vérifications, lancer), livré, rien à lancer.
+// Les lancements ne partent que vers l'API simulée : aucune session ne s'ouvre.
+//
 // Étape « fiche » (#199, FCH-1..9, FLG-1) : `ℹ` n'ouvre pas la session, `?fiche=` se
 // partage, les sections, les liens qui changent de fiche, la réponse sur place, la case
 // « C'est un jalon » (d'office, grisée, cochable).
@@ -344,7 +349,7 @@ async function pageStep(width) {
   console.log(width, 'idée : vide des vagues, « Affiner » ouvre une session de découpage de la carte')
   await mount(page, `/p/${PROJECT}/timeline/320`, 'page')
   await waves.getByText('Pas encore découpé. L’affinage proposera des cartes et leur ordre.').waitFor()
-  assert.equal(await page.locator('#lancer').innerText(), '', 'Rien à lancer sans cartes')
+  assert.equal(await page.locator('#lancer').getByText('Rien à lancer tant que le jalon n’est pas découpé en cartes.').isVisible(), true, 'Rien à lancer sans cartes')
   await band.getByRole('button', { name: 'Affiner', exact: true }).click()
   await page.waitForFunction(() => window.where.includes('/c/new'))
   assert.equal(await where(), `/p/${PROJECT}/c/new?split=card-320`)
@@ -386,6 +391,159 @@ async function pageStep(width) {
   await context.close()
 }
 
+const ENVIRONMENTS = {
+  default: { where: 'host', confined: false },
+  choices: [{ where: 'host', confined: false }, { where: 'host', confined: true }, { where: 'devcontainer', confined: false }, { where: 'devcontainer', confined: true }],
+  suggested: null,
+  autonomousConfined: false,
+}
+
+/** Étape « lancer » : le panneau Lancer d'un jalon pas encore lancé, à une largeur. */
+async function launchStep(width) {
+  const phone = width < 700
+  // Haute : le panneau entier tient à l'écran, et ses captures aussi.
+  const context = await browser.newContext({ viewport: { width, height: 1200 }, hasTouch: phone, isMobile: phone, locale: 'fr-FR', serviceWorkers: 'block' })
+  const page = await context.newPage()
+  page.setDefaultTimeout(10000)
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  const cards = milestones()
+  // Une carte du jalon prêt qui travaille déjà, et un jalon livré.
+  cards.find((entry) => entry.number === 333).conversations = [cardSession('s-333', 'Sonde', 'running', DAY)]
+  const done = [card(371, 'Alias', 'done'), card(372, 'Migration', 'done')]
+  const delivered = card(370, 'Comptes nommés', 'done', {
+    milestone: true, branch: 'jalon/370-comptes-nommes', branchPr: { number: 78, url: 'https://github.com/tipaq/solera/pull/78', mergedAt: now - DAY },
+  })
+  for (const kid of done) kid.parent = link(delivered)
+  delivered.children = done.map(link)
+  cards.push(delivered, ...done)
+  const launches = []
+  await page.route('**/__milestones_check', (route) => route.fulfill({ contentType: 'text/html', body: '<html lang="fr"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="check"></div></body></html>' }))
+  await page.route('**/api/**', async (route) => {
+    const request = route.request()
+    const path = new URL(request.url()).pathname
+    if (path === `/api/projects/${PROJECT}/cards`) return route.fulfill({ json: cards })
+    if (path === `/api/projects/${PROJECT}/milestones/active`) return route.fulfill({ json: [] })
+    if (path === `/api/projects/${PROJECT}/environments`) return route.fulfill({ json: ENVIRONMENTS })
+    const plan = /^\/api\/cards\/card-(\d+)\/milestone\/plan$/.exec(path)
+    if (plan) return route.fulfill({ json: { cardId: `card-${plan[1]}`, cards: [], cycle: [], branch: `jalon/${plan[1]}-essai` } })
+    if (request.method() === 'POST' && /\/milestone(\/cards\/[^/]+\/launch)?$/.test(path)) {
+      launches.push({ path, body: request.postDataJSON() })
+      // Le serveur refuse : la carte n'est pas prête. Rien ne s'ouvre, l'erreur se lit.
+      return route.fulfill({ status: 409, json: { error: { code: 'milestone_card_not_ready', message: 'pas prête' } } })
+    }
+    if (/^\/api\/cards\/[^/]+\/milestone$/.test(path)) return route.fulfill({ json: null })
+    if (path === '/api/conversations') return route.fulfill({ json: [] })
+    if (path === `/api/projects/${PROJECT}/prompts`) return route.fulfill({ json: { prompts: [] } })
+    if (path === '/api/awaiting') return route.fulfill({ json: { requests: [] } })
+    return route.fulfill({ status: 404, json: {} })
+  })
+  const panel = page.locator('#lancer')
+  const waves = page.getByRole('region', { name: 'Vagues' })
+  const mode = panel.getByRole('radiogroup', { name: 'Mode de lancement' })
+  const environment = panel.getByRole('radiogroup', { name: 'Environnement' })
+  const list = panel.getByRole('list', { name: 'Cartes ouvertes' })
+  const row = (number) => list.getByRole('listitem').filter({ has: page.getByRole('link', { name: new RegExp(`^#${number} `) }) })
+  const checks = panel.getByRole('group', { name: 'Vérifications' })
+  // Au thème clair, comme le prototype : les captures s'apparient.
+  const shot = async (name) => {
+    await page.evaluate(() => { document.documentElement.dataset.theme = 'light' })
+    await panel.scrollIntoViewIfNeeded()
+    await panel.screenshot({ animations: 'disabled', path: `/tmp/milestones-lancer-${name}-${width}.png` })
+  }
+
+  console.log(width, 'prêt, à la main : le mode, l’environnement du projet seulement, ses réglages')
+  await mount(page, `/p/${PROJECT}/timeline/330`, 'page')
+  await mode.waitFor()
+  assert.equal(await panel.getByRole('heading', { name: 'Lancer' }).isVisible(), true)
+  assert.equal(await panel.getByText('à la main ou autonome, au choix').isVisible(), true)
+  assert.equal(await mode.getByRole('radio', { name: /^À la main/ }).getAttribute('aria-checked'), 'true')
+  await environment.waitFor()
+  assert.deepEqual(
+    await environment.getByRole('radio').evaluateAll((radios) => radios.map((radio) => radio.textContent)),
+    ['HôteSur cette machine, comme aujourd’hui', 'Hôte confinéCette machine, confinée : son worktree seulement'],
+    'L’emplacement suit le projet : pas de dev container sur un projet à l’hôte',
+  )
+  assert.equal(await environment.getByRole('radio', { name: /^Hôte\s?Sur/ }).getAttribute('aria-checked'), 'true', 'Le réglage du projet')
+  assert.equal(await panel.getByRole('link', { name: 'Réglages' }).getAttribute('href'), `/p/${PROJECT}/settings`)
+
+  console.log(width, 'à la main : les cartes ouvertes, « Lancer », « attend », les sessions qui vivent')
+  assert.equal(await list.getByRole('listitem').count(), 4)
+  assert.equal(await row(331).getByRole('button', { name: 'Lancer #331' }).isVisible(), true)
+  assert.equal(await row(332).getByText('attend', { exact: true }).isVisible(), true, 'Bloquée par #331')
+  assert.equal(await row(333).getByRole('button', { name: /^Lancer/ }).count(), 0, 'Sa session tourne déjà')
+  assert.equal(await row(333).getByText('attend', { exact: true }).count(), 0)
+  assert.equal(await row(334).getByRole('button', { name: 'Détail de la carte #334' }).isVisible(), true)
+  await shot('main')
+
+  console.log(width, 'lancer une carte à la main : la route de la carte, le confinement choisi ; le refus se lit')
+  await row(331).getByRole('button', { name: 'Lancer #331' }).click()
+  await panel.getByRole('alert').waitFor()
+  assert.match(await panel.getByRole('alert').innerText(), /^Le lancement a échoué/)
+  assert.deepEqual(launches.at(-1), { path: '/api/cards/card-330/milestone/cards/card-331/launch', body: { confined: false } })
+
+  console.log(width, 'autonome : confiné d’office, rien à avertir')
+  await mode.getByRole('radio', { name: /^Autonome/ }).click()
+  assert.equal(await environment.getByRole('radio', { name: /^Hôte confiné/ }).getAttribute('aria-checked'), 'true', 'Confiné d’office')
+  assert.equal(await panel.getByText(/^Non confinée/).count(), 0)
+  assert.equal(await panel.getByText('Le serveur lance les cartes prêtes, chacune dans son worktree, les fait relire et les fusionne dans la branche du jalon.').isVisible(), true)
+  assert.equal(await panel.getByText('jalon/330-essai').isVisible(), true, 'La branche du plan')
+  assert.equal(await panel.getByText('comme une session neuve de ce projet').isVisible(), true)
+  assert.equal(await list.count(), 0, 'Pas de liste de cartes en autonome')
+
+  console.log(width, 'autonome non confiné : l’avertissement')
+  await environment.getByRole('radio', { name: /^Hôte\s?Sur/ }).click()
+  assert.equal(await panel.getByText('Non confinée, chaque session te demandera ses autorisations : les cartes concernées attendront ta réponse.').isVisible(), true)
+  await environment.getByRole('radio', { name: /^Hôte confiné/ }).click()
+
+  console.log(width, 'concurrence : 1 à 6, remontée aux vagues, avertissement de quota au-delà de 3')
+  const concurrency = panel.getByRole('radiogroup', { name: 'Concurrence' })
+  assert.equal(await concurrency.getByRole('radio').count(), 6)
+  assert.equal(await concurrency.getByRole('radio', { name: '3' }).getAttribute('aria-checked'), 'true')
+  assert.equal(await panel.getByText(/consomment ton quota/).count(), 0)
+  await concurrency.getByRole('radio', { name: '5' }).click()
+  assert.equal(await panel.getByText('5 sessions à la fois consomment ton quota 5 fois plus vite.').isVisible(), true)
+  assert.equal(await waves.getByText('ce qui part ensemble, de gauche à droite · 5 à la fois').isVisible(), true, 'Les vagues suivent')
+  await page.waitForTimeout(300)
+  const background = (name) => concurrency.getByRole('radio', { name, exact: true }).evaluate((element) => getComputedStyle(element).backgroundColor)
+  assert.equal(await background('3'), await background('1'), 'L’ancien choix redevient comme les autres')
+
+  console.log(width, 'vérifications : prêt à partir, le bouton actif, le corps du lancement')
+  assert.equal(await checks.getByText('Prêt à partir').isVisible(), true)
+  assert.deepEqual(await checks.getByRole('listitem').allInnerTexts(), [
+    'Rien à préciser', 'Toutes les cartes acceptées', 'Pas de cycle de blocages', 'Au moins une carte peut partir', 'Concurrence : 5 à la fois',
+  ])
+  assert.equal(await panel.getByText('En autonome, seuls les blocages te reviennent.').isVisible(), true)
+  await shot('autonome')
+  await panel.getByRole('button', { name: 'Lancer en autonome' }).click()
+  for (let i = 0; i < 50 && launches.length < 2; i++) await delay(100)
+  assert.deepEqual(launches.at(-1), { path: '/api/cards/card-330/milestone', body: { mode: 'auto', concurrency: 5, confined: true } })
+
+  console.log(width, 'à régler : les échecs d’abord, le bouton désactivé')
+  await mount(page, `/p/${PROJECT}/timeline/300`, 'page')
+  await mode.getByRole('radio', { name: /^Autonome/ }).click()
+  await checks.getByText('Avant de partir : 1 point à régler').waitFor()
+  assert.equal((await checks.getByRole('listitem').allInnerTexts())[0], '1 point d’affinage en attente')
+  assert.equal(await panel.getByRole('button', { name: 'Lancer en autonome' }).isDisabled(), true)
+  await shot('a-regler')
+
+  console.log(width, 'cycle : nommé, et aucune carte ne peut partir')
+  await mount(page, `/p/${PROJECT}/timeline/350`, 'page')
+  await mode.getByRole('radio', { name: /^Autonome/ }).click()
+  await checks.getByText('Avant de partir : 2 points à régler').waitFor()
+  assert.deepEqual((await checks.getByRole('listitem').allInnerTexts()).slice(0, 2), ['Cycle : #351, #352', 'Aucune carte ne peut partir'])
+
+  console.log(width, 'livré : le cadre vert')
+  await mount(page, `/p/${PROJECT}/timeline/370`, 'page')
+  await panel.getByRole('heading', { name: 'Livré' }).waitFor()
+  assert.equal(await panel.getByText('2 cartes fusionnées. PR du jalon fusionnée.').isVisible(), true)
+  await shot('livre')
+
+  assert.equal(launches.length, 2, 'Deux lancements tentés, aucun autre')
+  assert.deepEqual(errors, [])
+  await context.close()
+}
+
 try {
   for (let i = 0; i < 150; i++) {
     if (await fetch(origin).then((r) => r.ok).catch(() => false)) break
@@ -394,6 +552,7 @@ try {
   }
   browser = await launchBrowser()
   for (const width of [1280, 390]) await pageStep(width)
+  for (const width of [1280, 390]) await launchStep(width)
   for (const width of [1280, 390]) {
     const phone = width < 700
     const context = await browser.newContext({ viewport: { width, height: 860 }, hasTouch: phone, isMobile: phone, locale: 'fr-FR', serviceWorkers: 'block' })
@@ -554,6 +713,7 @@ try {
     await context.close()
   }
   console.log('OK : page — en-tête, prochaine action et son geste (défiler, affiner, fusionner, fiche), étapes expliquées, affinage en tête quand il attend, vagues (colonnes, arêtes, cycle, chaîne, empilées au téléphone, ambre, ajoutées) ; ordinateur et téléphone.')
+  console.log('OK : lancer — à la main (environnements du projet, cartes, lancer une carte, refus lu), autonome (confiné d’office, avertissement, concurrence jusqu’aux vagues, quota, branche, CLI, vérifications échecs d’abord, lancer), livré, rien à lancer ; ordinateur et téléphone.')
   console.log('OK : fiche — ℹ sans la session, ?fiche= partageable, en-tête, réponse sur place, sessions, sous-tâches, description, notes, pied, liens qui changent de fiche, case « C’est un jalon » (d’office, grisée, cochable) ; ordinateur et téléphone.')
 } finally {
   await browser?.close()
