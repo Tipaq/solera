@@ -132,7 +132,7 @@ test('l’état d’une ligne de la Liste : à relire, puis vivant, planifiée, 
 })
 
 test('les adresses : une action s’ouvre dans l’onglet Actions de son projet, une création par ?nouvelle=', () => {
-  assert.equal(actionHref(DEV), '/p/atlas/actions?action=a-dev')
+  assert.equal(actionHref('atlas', DEV.id), '/p/atlas/actions?action=a-dev')
   assert.equal(newActionHref('atlas', 'service'), '/p/atlas/actions?nouvelle=service')
   assert.equal(newActionHref('atlas', 'any'), '/p/atlas/actions?nouvelle=1')
   for (const kind of ['command', 'service', 'agent', 'schedule', 'any'] as const) {

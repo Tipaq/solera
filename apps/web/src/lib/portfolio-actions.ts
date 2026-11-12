@@ -87,12 +87,15 @@ export function listStateOf(item: Automation): ListState {
   return 'demand'
 }
 
+/** L'onglet Actions d'un projet, où vivent le détail et l'éditeur de ses actions. */
+export const projectActionsHref = (projectId: string): string => `/p/${projectId}/actions`
+
 const actionsOf = (projectId: string, param: string, value: string) =>
-  `/p/${projectId}/actions?${new URLSearchParams({ [param]: value }).toString()}`
+  `${projectActionsHref(projectId)}?${new URLSearchParams({ [param]: value }).toString()}`
 
 /** Le détail d'une action, dans l'onglet Actions de son projet. */
-export function actionHref(item: Pick<Automation, 'id' | 'projectId'>): string {
-  return actionsOf(item.projectId ?? '', ACTION_PARAM, item.id)
+export function actionHref(projectId: string, actionId: string): string {
+  return actionsOf(projectId, ACTION_PARAM, actionId)
 }
 
 /** Une création dans l'onglet Actions d'un projet : l'éditeur pré-réglé, ou le choix à planifier. */

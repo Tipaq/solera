@@ -30,6 +30,12 @@ import type { SessionWork } from './session-works'
 export const ACTIONS_VIEWS = ['lanceur', 'liste', 'agenda'] as const
 export type ActionsView = (typeof ACTIONS_VIEWS)[number]
 
+/** Les entrées Quoi et Quand de « Filtrer ▾ », dans leur ordre, et leurs libellés : un projet et le portefeuille. */
+export const WHAT_FILTERS: readonly What[] = ['command', 'agent']
+export const WHEN_FILTERS: readonly WhenFilter[] = ['demand', 'scheduled']
+export const WHAT_LABEL: Record<What, MessageKey> = { command: 'actionsTab.filter.what.command', agent: 'actionsTab.filter.what.agent' }
+export const WHEN_LABEL: Record<WhenFilter, MessageKey> = { demand: 'actionsTab.filter.when.demand', scheduled: 'actionsTab.filter.when.scheduled' }
+
 /** La méta de la barre (AO-4) : ce qui tourne, et ce qui attend une relecture. */
 export interface ActionsStatus {
   running: number

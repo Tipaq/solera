@@ -12,12 +12,12 @@ import { PortfolioToolbar } from '../components/portfolio/PortfolioToolbar'
 import { FilterChip } from '../components/toolbar/OneLineToolbar'
 import { MenuCheck, MenuHeading, MenuSegment, type ViewOption } from '../components/toolbar/ToolbarMenus'
 import { newActionPanel } from '../lib/action-panel'
-import { ACTIONS_VIEWS, toggleFilter, type ActionsView } from '../lib/actions-tab'
+import { ACTIONS_VIEWS, WHAT_FILTERS, WHAT_LABEL, WHEN_FILTERS, WHEN_LABEL, filterTally, toggleFilter, type ActionsView } from '../lib/actions-tab'
 import type { AgendaScope } from '../lib/agenda-layout'
-import type { Automation, What, WhenFilter } from '../lib/automations'
+import type { Automation } from '../lib/automations'
 import { useAutomations } from '../lib/automations-query'
 import { pluralOf } from '../lib/code-model'
-import { useTranslate, type MessageKey } from '../lib/i18n'
+import { useTranslate } from '../lib/i18n'
 import {
   NO_PORTFOLIO_ACTION_FILTERS,
   actionHref,
@@ -28,6 +28,7 @@ import {
   portfolioActionPasses,
   portfolioActionsActive,
   projectActionCounts,
+  projectActionsHref,
   runningNow,
   type PortfolioActionFilters,
   type RunningEntry,
@@ -35,11 +36,6 @@ import {
 import { useProjects } from '../lib/projects'
 import { useAllSessionWorks } from '../lib/session-works-query'
 import { useView } from '../lib/use-view'
-
-const WHAT: What[] = ['command', 'agent']
-const WHEN: WhenFilter[] = ['demand', 'scheduled']
-const WHAT_LABEL: Record<What, MessageKey> = { command: 'actionsTab.filter.what.command', agent: 'actionsTab.filter.what.agent' }
-const WHEN_LABEL: Record<WhenFilter, MessageKey> = { demand: 'actionsTab.filter.when.demand', scheduled: 'actionsTab.filter.when.scheduled' }
 
 /**
  * Les Actions du portefeuille (#241, `coque.md` PF-32 à PF-37) : celles de tous les
@@ -66,6 +62,7 @@ export function PortfolioActionsPage() {
   const works = useAllSessionWorks(projectIds)
   const running = useMemo(() => runningNow(items, works, projectIds), [items, works, projectIds])
   const counts = useMemo(() => projectActionCounts(items), [items])
+  const tally = useMemo(() => filterTally(items), [items])
 
   const [query, setQuery] = useState('')
   /* Les filtres sont un état de la page, non retenus, comme dans l'onglet d'un projet. */
@@ -82,8 +79,9 @@ export function PortfolioActionsPage() {
 
   const toggle = <G extends 'what' | 'when'>(group: G, value: PortfolioActionFilters[G][number]) =>
     setFilters((current) => toggleFilter(current, group, value))
-  const open = (item: Automation) => navigate(actionHref(item))
-  const openRunning = (entry: RunningEntry) => navigate(entry.kind === 'action' ? actionHref(entry.item) : `/p/${entry.projectId}/actions`)
+  const open = (item: Automation) => navigate(actionHref(item.projectId!, item.id))
+  const openRunning = (entry: RunningEntry) =>
+    navigate(entry.kind === 'action' ? actionHref(entry.projectId, entry.item.id) : projectActionsHref(entry.projectId))
 
   const views: ViewOption<ActionsView>[] = [
     { key: 'lanceur', label: t('actionsTab.view.lanceur'), icon: <LayoutGrid size={16} /> },
@@ -106,14 +104,14 @@ export function PortfolioActionsPage() {
         filterExtra={
           <>
             <MenuHeading>{t('actionsTab.filter.what')}</MenuHeading>
-            {WHAT.map((entry) => (
-              <MenuCheck key={entry} checked={filters.what.includes(entry)} onChange={() => toggle('what', entry)}>
+            {WHAT_FILTERS.map((entry) => (
+              <MenuCheck key={entry} checked={filters.what.includes(entry)} onChange={() => toggle('what', entry)} aside={tally.what[entry]}>
                 {t(WHAT_LABEL[entry])}
               </MenuCheck>
             ))}
             <MenuHeading>{t('actionsTab.filter.when')}</MenuHeading>
-            {WHEN.map((entry) => (
-              <MenuCheck key={entry} checked={filters.when.includes(entry)} onChange={() => toggle('when', entry)}>
+            {WHEN_FILTERS.map((entry) => (
+              <MenuCheck key={entry} checked={filters.when.includes(entry)} onChange={() => toggle('when', entry)} aside={tally.when[entry]}>
                 {t(WHEN_LABEL[entry])}
               </MenuCheck>
             ))}
@@ -193,7 +191,7 @@ function ProjectLauncher({ project, items }: { project: ProjectDto; items: Autom
   const handlers: ActionHandlers = {
     ...gestures.handlers,
     // Le brouillon d'une copie ne tient pas dans une adresse : on la fait depuis son détail.
-    onDuplicate: (item) => navigate(actionHref(item)),
+    onDuplicate: (item) => navigate(actionHref(project.id, item.id)),
   }
   return (
     <section data-portfolio-launcher={project.id} className="border-b border-line last:border-b-0">

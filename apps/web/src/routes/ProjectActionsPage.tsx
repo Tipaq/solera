@@ -18,6 +18,10 @@ import { newActionPanel, type ActionPanel } from '../lib/action-panel'
 import {
   ACTIONS_VIEWS,
   ACTION_PARAM,
+  WHAT_FILTERS,
+  WHAT_LABEL,
+  WHEN_FILTERS,
+  WHEN_LABEL,
   actionsStatus,
   filterTally,
   panelAddress,
@@ -38,8 +42,6 @@ import {
   type AutomationFilters,
   type Section,
   type StateFilter,
-  type What,
-  type WhenFilter,
 } from '../lib/automations'
 import { useAutomations } from '../lib/automations-query'
 import { NEW_PARAM } from '../lib/place'
@@ -48,12 +50,8 @@ import { humanLabel } from '../lib/session-works'
 import { useSessionWorks } from '../lib/session-works-query'
 import { useView } from '../lib/use-view'
 
-const WHAT: What[] = ['command', 'agent']
-const WHEN: WhenFilter[] = ['demand', 'scheduled']
 const STATE: StateFilter[] = ['live', 'review', 'failing']
 
-const WHAT_LABEL: Record<What, MessageKey> = { command: 'actionsTab.filter.what.command', agent: 'actionsTab.filter.what.agent' }
-const WHEN_LABEL: Record<WhenFilter, MessageKey> = { demand: 'actionsTab.filter.when.demand', scheduled: 'actionsTab.filter.when.scheduled' }
 const STATE_LABEL: Record<StateFilter, MessageKey> = {
   live: 'actionsTab.filter.state.live',
   review: 'actionsTab.filter.state.review',
@@ -119,13 +117,13 @@ function ActionsTab({ projectId }: { projectId: string }) {
   const filterMenu = (
     <FilterMenu active={active} onClearAll={() => setFilters(NO_FILTERS)}>
       <MenuHeading>{t('actionsTab.filter.what')}</MenuHeading>
-      {WHAT.map((entry) => (
+      {WHAT_FILTERS.map((entry) => (
         <MenuCheck key={entry} checked={filters.what.includes(entry)} onChange={() => toggle('what', entry)} aside={tally.what[entry]}>
           {t(WHAT_LABEL[entry])}
         </MenuCheck>
       ))}
       <MenuHeading>{t('actionsTab.filter.when')}</MenuHeading>
-      {WHEN.map((entry) => (
+      {WHEN_FILTERS.map((entry) => (
         <MenuCheck key={entry} checked={filters.when.includes(entry)} onChange={() => toggle('when', entry)} aside={tally.when[entry]}>
           {t(WHEN_LABEL[entry])}
         </MenuCheck>

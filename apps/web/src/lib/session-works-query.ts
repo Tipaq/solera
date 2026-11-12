@@ -1,8 +1,6 @@
 import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
-import type { ProjectBackgroundDto } from '@solera/protocol'
-import { api } from './api'
-import { projectBackgroundKey, stopBackgroundTask, useAllConversations, useConversations, useProjectBackground } from './conversations'
+import { projectBackgroundKey, projectBackgroundQuery, stopBackgroundTask, useAllConversations, useConversations, useProjectBackground } from './conversations'
 import { SERVICES_KEY, stopService, useServices } from './services'
 import { mergeWorks, type SessionWork } from './session-works'
 
@@ -42,11 +40,7 @@ export function useAllSessionWorks(projectIds: readonly string[]): Map<string, S
   const services = useServices()
   const { data: conversations } = useAllConversations()
   const backgrounds = useQueries({
-    queries: projectIds.map((projectId) => ({
-      queryKey: projectBackgroundKey(projectId),
-      queryFn: () => api.get<ProjectBackgroundDto[]>(`/api/projects/${projectId}/background`),
-      staleTime: 15_000,
-    })),
+    queries: projectIds.map(projectBackgroundQuery),
   })
   // Le tableau que rend `useQueries` change à chaque rendu : on mémorise sur les réponses.
   const stamps = backgrounds.map((query) => query.dataUpdatedAt).join(',')

@@ -926,7 +926,7 @@ async function checkPortfolioTab(base, env, api) {
     await launcher(nimbus).waitFor({ state: 'detached' })
     await tile('Pf Nuit').waitFor()
     await page.getByRole('button', { name: /^Filtrer/ }).click()
-    await filters.getByRole('checkbox', { name: 'Planifiées' }).click()
+    await filters.getByRole('checkbox', { name: /^Planifiées/ }).click()
     await page.keyboard.press('Escape')
     await chips.getByText('Planifiées').waitFor()
     await tile('Pf Lint').waitFor({ state: 'detached' })
@@ -939,7 +939,7 @@ async function checkPortfolioTab(base, env, api) {
     assert.equal(await chips.count(), 0)
     // Quoi : les agents seuls n'ont rien de ces projets d'essai.
     await page.getByRole('button', { name: /^Filtrer/ }).click()
-    await filters.getByRole('checkbox', { name: 'Agents' }).click()
+    await filters.getByRole('checkbox', { name: /^Agents/ }).click()
     await page.keyboard.press('Escape')
     await tile('Pf Lint').waitFor({ state: 'detached' })
     await chips.getByRole('button', { name: 'Retirer ce filtre' }).click()
