@@ -87,12 +87,8 @@ export function fitStep({ budget, overflow, rowHeight, lists, cutLists }: FitMea
  * qu'elle reprendrait (`gain`) laisserait encore `MIN_SESSIONS` sessions — l'écart entre
  * les deux seuils évite le clignotement.
  */
-export function activityFold({ collapsed, budget, cutLists, overflow, rowHeight, gain }: {
+export function activityFold({ collapsed, budget, cutLists, overflow, rowHeight, gain }: Omit<FitMeasure, 'lists'> & {
   collapsed: boolean
-  budget: number
-  cutLists: number
-  overflow: number
-  rowHeight: number
   /** Ce que l'Activité dépliée prend de plus que repliée ; 0 quand elle est dépliée. */
   gain: number
 }): boolean {

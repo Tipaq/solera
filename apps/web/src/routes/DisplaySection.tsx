@@ -14,9 +14,9 @@ import { SESSION_LIMITS } from '../lib/sidebar-budget'
 /**
  * *Affichage* : ce que la colonne de gauche montre.
  *
- * Combien de sessions d'abord, puis deux listes et une règle. Les lieux d'abord — *Fils* et *Projets* ne se décrochent
- * pas, les quatre autres oui — puis les trois détails qui font la densité de la
- * colonne. La règle est écrite en tête parce qu'elle seule rend ces interrupteurs
+ * Combien de sessions chaque liste montre, puis deux listes et une règle. Les lieux —
+ * *Fils* et *Projets* ne se décrochent pas, les quatre autres oui — puis les trois
+ * détails qui font la densité de la colonne. La règle est écrite en tête parce qu'elle seule rend ces interrupteurs
  * inoffensifs : ce qu'on retire de la colonne reste joignable par la palette.
  */
 

@@ -250,18 +250,7 @@ function FreeThreadsGroup({ conversations, onNavigate }: {
   const t = useTranslate()
   const [open, setOpen] = useState(true)
   const openConversationId = useOpenConversationId()
-  // Même règle que dans un projet : le groupe liste tout ce qui n'est pas rangé, y
-  // compris ce qui travaille.
-  const sessions = useMemo(
-    () => conversations.filter((entry) => !entry.archivedAt),
-    [conversations],
-  )
-  // Ce que compte la page des sessions : archivées comprises, tirs planifiés exclus.
-  const total = useMemo(() => conversations.filter((entry) => !entry.scheduleId).length, [conversations])
-  const archived = useMemo(() => conversations.some((entry) => entry.archivedAt && !entry.scheduleId), [conversations])
   const hasUnread = useHasUnread(conversations, openConversationId)
-  // Même règle que sous un projet : le réglage « Sessions dans la sidebar ».
-  const visible = cutToBudget(sessions, useSessionBudget(), openConversationId)
 
   return (
     <li>
@@ -309,29 +298,8 @@ function FreeThreadsGroup({ conversations, onNavigate }: {
 
       {open ? (
         <div className="mb-1 ml-3 border-l border-line pl-1.5">
-          {sessions.length === 0 ? (
-            <p className="px-2.5 py-1 text-xs text-ink-faint">{t('shell.conversations.empty')}</p>
-          ) : (
-            <ul data-session-list data-cut={visible.length < sessions.length}>
-              {visible.map((conversation) => (
-                <ConversationLine
-                  key={conversation.id}
-                  conversation={conversation}
-                  onNavigate={onNavigate}
-                  // Un fil libre n'a pas d'ordre à défendre : rien ne le réordonne.
-                />
-              ))}
-            </ul>
-          )}
-          {/* Les archivées et ce que le budget coupe se lisent sur la page des sessions. */}
-          {archived || visible.length < sessions.length ? (
-            <AllSessionsLine
-              to={`/sessions?projet=${NO_PROJECT}`}
-              label={t('shell.sessions.all.loose')}
-              count={total}
-              onNavigate={onNavigate}
-            />
-          ) : null}
+          {/* Même liste que sous un projet : même budget, même ligne de fin. */}
+          <ProjectSessions conversations={conversations} projectId={null} onNavigate={onNavigate} />
         </div>
       ) : null}
     </li>
