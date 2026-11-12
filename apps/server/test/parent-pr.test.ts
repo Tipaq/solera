@@ -134,10 +134,10 @@ test('une carte dit sa branche et sa PR finale, fusionnée ou non ; une carte sa
   const h = await harness(t)
   const parent = await h.read('parent')
   assert.equal(parent.branch, BRANCH)
-  assert.deepEqual(parent.branchPr, { number: 101, url: URL_PR, mergedAt: null })
+  assert.deepEqual(parent.branchPr, { number: 101, url: URL_PR, base: null, mergedAt: null, closedAt: null })
 
-  h.db.update(cards).set({ branchPrMergedAt: 1234 }).where(eq(cards.id, 'parent')).run()
-  assert.deepEqual((await h.read('parent')).branchPr, { number: 101, url: URL_PR, mergedAt: 1234 })
+  h.db.update(cards).set({ branchPrMergedAt: 1234, branchPrBase: 'main' }).where(eq(cards.id, 'parent')).run()
+  assert.deepEqual((await h.read('parent')).branchPr, { number: 101, url: URL_PR, base: 'main', mergedAt: 1234, closedAt: null })
 
   const child = await h.read('child')
   assert.equal(child.branch, null)
@@ -206,6 +206,34 @@ test('balayage : une forge muette ou une PR fermée attendent la demi-heure', as
   assert.equal(h.row().branchPrMergedAt, null, 'fermée n’est pas fusionnée')
 })
 
+test('balayage : une PR fermée sans fusion pose sa date de fermeture, une fois, et la rouvrir la lève', async (t) => {
+  const h = await harness(t)
+  h.setPr({ state: 'CLOSED' })
+  await h.sweeper.checkMerged(10_000)
+  assert.equal(h.row().branchPrClosedAt, 10_000)
+  assert.equal(h.row().branchPrMergedAt, null)
+  assert.equal(h.notes().length, 1)
+  assert.match(h.notes()[0]!, /PR #101/)
+  assert.match(h.notes()[0]!, /fermée/)
+  assert.equal((await h.read('parent')).branchPr?.closedAt, 10_000)
+
+  await h.sweeper.checkMerged(10_000 + 30 * 60_000)
+  assert.equal(h.row().branchPrClosedAt, 10_000, 'toujours fermée : la date ne bouge pas')
+  assert.equal(h.notes().length, 1, 'la note ne se répète pas')
+
+  h.setPr({ state: 'OPEN' })
+  await h.sweeper.checkMerged(10_000 + 60 * 60_000)
+  assert.equal(h.row().branchPrClosedAt, null, 'rouverte sur la forge : elle se fusionne de nouveau')
+})
+
+test('balayage : la base de la PR est relevée sur la forge quand la carte ne la connaît pas', async (t) => {
+  const h = await harness(t)
+  h.setPr({ base: 'trunk' })
+  await h.sweeper.checkMerged(0)
+  assert.equal(h.row().branchPrBase, 'trunk')
+  assert.equal((await h.read('parent')).branchPr?.base, 'trunk')
+})
+
 // --- La fusion depuis Solera -------------------------------------------------------
 
 test('fusionner la PR du jalon : en squash au commit lu, la date posée, une note, les caches tombent', async (t) => {
@@ -224,7 +252,8 @@ test('fusionner la PR du jalon : en squash au commit lu, la date posée, une not
   assert.match(h.notes()[0]!, /PR #101/)
   assert.match(h.notes()[0]!, /`main`/)
   assert.deepEqual(h.invalidated, ['prs:project', 'trees:project'])
-  assert.deepEqual((await h.read('parent')).branchPr, { number: 101, url: URL_PR, mergedAt: body.mergedAt })
+  assert.equal(body.base, 'main')
+  assert.deepEqual((await h.read('parent')).branchPr, { number: 101, url: URL_PR, base: 'main', mergedAt: body.mergedAt, closedAt: null })
 })
 
 test('une PR déjà fusionnée est refusée, et la date manquante est posée au passage', async (t) => {
@@ -257,10 +286,12 @@ test('une PR fermée, en brouillon, en conflit ou aux checks pas verts est refus
     assert.equal(res.statusCode, 409, code)
     assert.equal(res.json().error.code, code)
     assert.equal(res.json().error.params.number, 101)
+    // Le refus dit ce que la forge a vu : fermée, le jalon le dit ; rouverte, il ne le dit plus.
+    assert.equal(h.row().branchPrClosedAt !== null, pr.state === 'CLOSED', code)
   }
   assert.deepEqual(h.merges, [])
   assert.equal(h.row().branchPrMergedAt, null)
-  assert.deepEqual(h.notes(), [])
+  assert.equal(h.notes().length, 1, 'la seule note : celle de la fermeture')
   assert.deepEqual(h.invalidated, [])
 })
 

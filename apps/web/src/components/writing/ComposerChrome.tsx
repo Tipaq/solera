@@ -4,9 +4,9 @@ import { IconButton } from '@solera/ui'
 import { useTranslate } from '../../lib/i18n'
 
 /*
- * Le cadre des tiroirs d'écriture (« Ajouter au jalon », et « Nouveau jalon » à venir,
- * #193) : un en-tête qui dit la nature en petit et le titre en grand, et un pied
- * collant — ce qui va se passer à gauche, les gestes à droite.
+ * Le cadre des tiroirs d'écriture (« Nouveau jalon », « Ajouter au jalon ») : un en-tête
+ * qui dit la nature en petit et le titre en grand, et un pied collant — ce qui va se
+ * passer à gauche, les gestes à droite.
  */
 
 /** L'en-tête : la nature en petit, le titre (passé en enfant) en grand, ✕ à droite. */
@@ -25,12 +25,15 @@ export function ComposerHeader({ eyebrow, onClose, children }: { eyebrow: string
   )
 }
 
-/** Le pied collant : `info` à gauche, `actions` à droite, qui passent dessous s'il manque de place. */
+/**
+ * Le pied collant : `info` à gauche, `actions` à droite, qui passent dessous s'il manque de
+ * place — et se replient entre eux plutôt que de déborder du tiroir, au téléphone.
+ */
 export function ComposerFooter({ info, actions }: { info: ReactNode; actions: ReactNode }) {
   return (
     <footer className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-3 border-t border-line bg-canvas px-6 py-3">
       {info}
-      <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div>
+      <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2">{actions}</div>
     </footer>
   )
 }
