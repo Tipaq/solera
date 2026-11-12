@@ -274,7 +274,8 @@ function Lane({
   const title = milestone ? milestone.card.title : t('board.lane.none')
   return (
     <section aria-label={title} className="border-t border-line py-3">
-      <div className="sticky left-0 mb-2 flex w-fit max-w-[calc(100vw-4rem)] items-center gap-2">
+      {/* La méta passe à la ligne plutôt que de réduire le titre à son initiale, au téléphone. */}
+      <div className="sticky left-0 mb-2 flex w-fit max-w-[calc(100vw-4rem)] flex-wrap items-center gap-x-2 gap-y-1">
         <button type="button" onClick={onToggle} aria-expanded={!folded} className="flex min-w-0 items-center gap-2 rounded-md py-0.5 pr-2 text-sm hover:bg-surface-high">
           {folded ? <ChevronRight size={14} aria-hidden className="shrink-0 text-ink-faint" /> : <ChevronDown size={14} aria-hidden className="shrink-0 text-ink-faint" />}
           {milestone ? <span aria-hidden style={tintDot(milestone.tint)} className="size-2 shrink-0 rounded-full" /> : null}
