@@ -58,12 +58,15 @@ export function ToolbarSearch({
   onChange,
   placeholder,
   label,
+  widthClass,
 }: {
   value: string
   onChange: (next: string) => void
   placeholder?: string
   /** Le nom accessible, quand il diffère de l'indication. */
   label?: string
+  /** Les classes de largeur posées par l'hôte, à la place de l'élargissement au focus de la barre. */
+  widthClass?: string
 }) {
   const t = useTranslate()
   const hint = placeholder ?? t('toolbar.search')
@@ -72,9 +75,10 @@ export function ToolbarSearch({
       className={cx(
         'group shrink transition-[width,background-color,border-color]',
         toolbarFieldClass(),
-        value
-          ? 'w-56'
-          : 'w-36 focus-within:w-56 max-sm:group-has-[[data-filter-chip]]/toolbar:w-11 max-sm:group-has-[[data-filter-chip]]/toolbar:focus-within:w-56',
+        widthClass ??
+          (value
+            ? 'w-56'
+            : 'w-36 focus-within:w-56 max-sm:group-has-[[data-filter-chip]]/toolbar:w-11 max-sm:group-has-[[data-filter-chip]]/toolbar:focus-within:w-56'),
       )}
     >
       <Search size={16} className="shrink-0" />

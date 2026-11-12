@@ -1,74 +1,88 @@
-import { BookOpen } from 'lucide-react'
+import { ArrowUpRight } from 'lucide-react'
+import type { ReactNode } from 'react'
+import { Link } from 'react-router-dom'
+import type { LibrarySkillDto } from '@solera/protocol'
+import { Banner, FoldLine } from '@solera/ui'
+import { useLocale, useTranslate } from '../../lib/i18n'
+import { pluralKey } from '../../lib/schedule-rule'
 import { openSettings } from '../../lib/settings-dialog'
-import { useTranslate } from '../../lib/i18n'
-import { useLocalSkills, useSkillLibrary } from '../../lib/skill-library'
-import { Badge, Banner, Card, CardBody, CardHeader } from '@solera/ui'
+import { useSkillLibrary } from '../../lib/skill-library'
 import { AddSkillMenu } from './AddSkillMenu'
+import { SkillBadges } from './SkillList'
 import { SkillUpdates } from './SkillUpdates'
-import { SkillList, originLabel } from './SkillList'
 
 /**
- * Les skills d'un projet, sur sa page : ceux de la bibliothèque, éditables par le
- * propriétaire, et ceux que le dépôt porte déjà, en lecture seule.
- *
- * Ces derniers sont montrés parce qu'ils ne servent qu'à un CLI chacun : un
- * `.claude/skills` n'existe pas pour Codex, ni un `.agents/skills` pour Claude. Le menu
- * d'ajout propose de les reprendre, ce qui les livre aux deux.
+ * Réglages › Agents › Skills : les skills propres au projet, une ligne chacun, puis ce
+ * que l'instance livre ici aussi. Ajouter passe par le même menu que la bibliothèque ;
+ * modifier, par l'éditeur d'un skill, qu'une ligne dépliée ouvre.
  */
 export function ProjectSkills({ projectId, isOwner }: { projectId: string; isOwner: boolean }) {
-  const t = useTranslate()
   const { data } = useSkillLibrary(projectId)
-  const { data: local } = useLocalSkills(projectId, true)
   const skills = data?.skills ?? []
   const own = skills.filter((skill) => skill.scope === 'project')
-  const globals = skills.length - own.length
-  const repository = (local?.skills ?? []).filter((skill) => skill.origin.endsWith('-repo'))
-
   return (
-    <Card>
-      <CardHeader
-        title={t('skills.project.title')}
-        description={t('skills.project.description')}
-        icon={<BookOpen size={16} />}
-        actions={isOwner ? <AddSkillMenu scope="project" projectId={projectId} /> : null}
-      />
-      <CardBody className="flex flex-col gap-4">
-        {data && !data.enabled ? <Banner tone="caution">{t('skills.instanceDisabled')}</Banner> : null}
-        <SkillUpdates skills={own} />
-        {own.length > 0 ? (
-          <SkillList skills={own} />
-        ) : (
-          <p className="text-sm text-ink-faint">{t('skills.project.empty')}</p>
-        )}
-        <p className="text-xs text-ink-faint">
-          {t('skills.project.globals', { count: globals })}{' '}
-          <button
-            type="button"
-            onClick={() => openSettings('skills')}
-            className="text-accent hover:underline"
-          >
-            {t('skills.project.globals.link')}
-          </button>
-        </p>
+    <ProjectSkillList
+      own={own}
+      instanceCount={skills.length - own.length}
+      libraryOff={Boolean(data && !data.enabled)}
+      add={isOwner ? <AddSkillMenu scope="project" projectId={projectId} variant="ghost" align="start" /> : null}
+    />
+  )
+}
 
-        {repository.length > 0 ? (
-          <section className="flex flex-col gap-2">
-            <div>
-              <h3 className="text-sm font-semibold text-ink-soft">{t('skills.project.repo.title')}</h3>
-              <p className="text-xs text-ink-faint">{t('skills.project.repo.hint')}</p>
-            </div>
-            <ul className="flex flex-col gap-1.5">
-              {repository.map((skill) => (
-                <li key={skill.path} className="flex flex-wrap items-center gap-2 rounded-md bg-sunken px-3 py-2">
-                  <span className="font-mono text-sm">{skill.name}</span>
-                  <Badge>{originLabel(skill.origin)}</Badge>
-                  <span className="min-w-0 flex-1 truncate text-sm text-ink-faint">{skill.description}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
-      </CardBody>
-    </Card>
+/** La liste, sans ses requêtes : ce que la story et les Réglages partagent. */
+export function ProjectSkillList({
+  own,
+  instanceCount,
+  libraryOff,
+  add,
+}: {
+  own: LibrarySkillDto[]
+  instanceCount: number
+  libraryOff: boolean
+  add: ReactNode
+}) {
+  const t = useTranslate()
+  const locale = useLocale()
+  return (
+    <div className="flex flex-col gap-2">
+      {libraryOff ? <Banner tone="caution">{t('skills.instanceDisabled')}</Banner> : null}
+      <SkillUpdates skills={own} />
+      {own.length === 0 ? (
+        <p className="text-sm text-ink-faint">{t('skills.project.empty')}</p>
+      ) : (
+        <ul className="flex flex-col">
+          {own.map((skill) => (
+            <FoldLine
+              key={skill.id}
+              title={
+                <span className="flex items-center gap-2">
+                  <span className="font-mono">{skill.name}</span>
+                  {skill.enabled ? null : <span className="text-xs text-ink-faint">{t('projectSettings.skills.disabled')}</span>}
+                </span>
+              }
+              meta={skill.description || t('skills.description.empty')}
+            >
+              <div className="flex flex-col gap-2">
+                <p className="text-sm text-ink-soft">{skill.description || t('skills.description.empty')}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <SkillBadges skill={skill} showScope={false} />
+                  <Link to={`/skills/${skill.id}`} className="inline-flex items-center gap-1 text-xs text-accent hover:underline">
+                    {t('projectSettings.skills.open')} <ArrowUpRight size={12} aria-hidden />
+                  </Link>
+                </div>
+              </div>
+            </FoldLine>
+          ))}
+        </ul>
+      )}
+      <p className="text-xs text-ink-faint">
+        {t(`projectSettings.skills.instance.${pluralKey(instanceCount, locale)}`, { count: instanceCount })}{' '}
+        <button type="button" onClick={() => openSettings('skills')} className="text-accent hover:underline">
+          {t('skills.project.globals.link')}
+        </button>
+      </p>
+      {add}
+    </div>
   )
 }
