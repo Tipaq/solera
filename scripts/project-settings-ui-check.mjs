@@ -316,7 +316,7 @@ try {
     mode: () => instructions.getByRole('region', { name: 'Où vivent les consignes du projet' }),
     fichiers: () => instructions.getByRole('region', { name: 'Fichiers à la racine du dépôt' }),
     lecteurs: () => readers,
-    texte: () => instructions.locator('section').last(),
+    texte: () => instructions.locator('section').filter({ has: page.getByRole('button', { name: 'Modifier', exact: true }) }),
   }
   const shotInstructions = async (prefix, parts) => {
     await page.evaluate(() => document.fonts.ready)
@@ -368,6 +368,8 @@ try {
   await instructions.getByText(/^AGENTS\.md et CLAUDE\.md ont chacun leur contenu/).waitFor()
   await readerOf('Claude').getByText('AGENTS.md + CLAUDE.md', { exact: true }).waitFor()
   await readerOf('Codex').getByText('AGENTS.md', { exact: true }).waitFor()
+  // OpenCode s'arrête au premier fichier trouvé.
+  await readerOf('OpenCode').getByText('AGENTS.md', { exact: true }).waitFor()
   await instructions.getByRole('button', { name: /^CLAUDE\.md/ }).click()
   await instructions.getByText('- Préférer pnpm à npm.', { exact: false }).first().waitFor()
   await shotInstructions('1280-consignes-divergents', ['fichiers', 'lecteurs'])
@@ -381,6 +383,7 @@ try {
   await instructions.getByRole('radio', { name: /^Dans Solera/ }).click()
   const importDialog = page.getByRole('dialog', { name: 'Passer les consignes dans Solera' })
   await importDialog.getByText(/^Le contenu de AGENTS\.md est copié/).waitFor()
+  await importDialog.getByRole('button', { name: 'Passer dans Solera sans importer', exact: true }).waitFor()
   await shot(importDialog, '1280-consignes-import')
   await importDialog.getByRole('button', { name: 'Importer et basculer' }).click()
   await importDialog.waitFor({ state: 'detached' })

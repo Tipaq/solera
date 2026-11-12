@@ -50,17 +50,30 @@ export function InstructionsPanel({ projectId }: { projectId: string }) {
   if (!data) return <p className="text-sm text-ink-faint">{t('instructions.panel.loading')}</p>
   // Le mode demandé se montre choisi le temps de l'enregistrer.
   const pendingMode = update.isPending ? update.variables?.mode : undefined
+  // Une erreur se dit là où est né le geste : sous les cartes pour un changement de
+  // mode, dans l'éditeur pour un texte. Un nouveau geste efface la précédente.
+  const modeChange = update.variables?.mode !== undefined
+  const resetErrors = () => {
+    update.reset()
+    write.reset()
+  }
   return (
     <InstructionsView
       data={pendingMode ? { ...data, mode: pendingMode } : data}
       global={global?.content ?? ''}
-      onMode={(body) => update.mutate(body)}
+      onMode={(body) => {
+        resetErrors()
+        update.mutate(body)
+      }}
       onSave={async (target, content) => {
+        resetErrors()
         if (target.kind === 'solera') await update.mutateAsync({ content })
         else await write.mutateAsync({ path: target.path, content })
       }}
       saving={update.isPending || write.isPending}
-      error={update.error ?? write.error}
+      modeError={modeChange ? update.error : null}
+      saveError={write.error ?? (modeChange ? null : update.error)}
+      onEditing={resetErrors}
       onEditGlobal={() => openSettings('consignes')}
     />
   )
@@ -73,7 +86,9 @@ export function InstructionsView({
   onMode,
   onSave,
   saving,
-  error,
+  modeError,
+  saveError,
+  onEditing,
   onEditGlobal,
 }: {
   data: ProjectInstructionsDto
@@ -83,7 +98,10 @@ export function InstructionsView({
   /** Rejette si l'écriture échoue : l'éditeur reste alors ouvert. */
   onSave: (target: EditTarget, content: string) => Promise<void>
   saving: boolean
-  error: unknown
+  modeError: unknown
+  saveError: unknown
+  /** L'éditeur s'ouvre ou se referme : une erreur d'avant n'a plus lieu d'être. */
+  onEditing: () => void
   onEditGlobal: () => void
 }) {
   const t = useTranslate()
@@ -124,6 +142,7 @@ export function InstructionsView({
             ]}
           />
         </fieldset>
+        {modeError instanceof ApiRequestError ? <Banner>{modeError.message}</Banner> : null}
       </section>
 
       <RepoFilesList mode={data.mode} files={files} />
@@ -156,12 +175,14 @@ export function InstructionsView({
       <InstructionsEditor
         // Un autre texte, un autre éditeur : changer de mode referme celui qui était ouvert.
         key={target.kind === 'solera' ? 'solera' : target.path}
-        data={data}
         target={target}
         text={target.kind === 'solera' ? data.content : (files[target.path] ?? '')}
+        canEdit={data.canEdit}
+        updatedAt={target.kind === 'solera' ? data.updatedAt : null}
         onSave={onSave}
         saving={saving}
-        error={error}
+        error={saveError}
+        onEditing={onEditing}
       />
 
       <ConfirmDialog
@@ -177,6 +198,16 @@ export function InstructionsView({
       >
         <p>{t('instructions.migrate.body', { files: importable.map((file) => file.path).join(', ') })}</p>
         <p>{t('instructions.migrate.body.keep')}</p>
+        <button
+          type="button"
+          className="self-start text-accent hover:underline"
+          onClick={() => {
+            onMode({ mode: 'solera' })
+            setImporting(false)
+          }}
+        >
+          {t('instructions.panel.import.skip')}
+        </button>
       </ConfirmDialog>
     </div>
   )
@@ -297,22 +328,31 @@ function YesNo({ ok, children }: { ok: boolean; children: ReactNode }) {
 
 /** Le texte en vigueur, rendu ; « Modifier » l'ouvre en saisie brute. */
 function InstructionsEditor({
-  data,
   target,
   text,
+  canEdit,
+  updatedAt,
   onSave,
   saving,
   error,
+  onEditing,
 }: {
-  data: ProjectInstructionsDto
   target: EditTarget
   text: string
+  canEdit: boolean
+  /** La dernière écriture du texte de Solera ; rien pour un fichier du dépôt. */
+  updatedAt: number | null
   onSave: (target: EditTarget, content: string) => Promise<void>
   saving: boolean
   error: unknown
+  onEditing: () => void
 }) {
   const t = useTranslate()
-  const [draft, setDraft] = useState<string | null>(null)
+  const [draft, setDrafted] = useState<string | null>(null)
+  const setDraft = (value: string | null) => {
+    if ((value === null) !== (draft === null)) onEditing()
+    setDrafted(value)
+  }
   const title =
     target.kind === 'solera'
       ? t('instructions.panel.target.solera')
@@ -321,7 +361,7 @@ function InstructionsEditor({
         : t('instructions.panel.target.create', { file: target.path })
   const meta = [
     linesLabel(t, nonEmptyLines(text)),
-    target.kind === 'solera' && data.updatedAt !== null ? relativeDate(data.updatedAt) : null,
+    updatedAt !== null ? relativeDate(updatedAt) : null,
   ].filter(Boolean).join(' · ')
 
   return (
@@ -331,7 +371,7 @@ function InstructionsEditor({
         <span className="text-xs whitespace-nowrap text-ink-faint">{meta}</span>
         <span className="ml-auto" />
         {draft === null ? (
-          <Button size="sm" variant="ghost" icon={<Pencil size={13} />} onClick={() => setDraft(text)} disabled={!data.canEdit}>
+          <Button size="sm" variant="ghost" icon={<Pencil size={13} />} onClick={() => setDraft(text)} disabled={!canEdit}>
             {t('instructions.panel.edit')}
           </Button>
         ) : null}
@@ -353,7 +393,7 @@ function InstructionsEditor({
             <Button
               size="sm"
               disabled={saving || draft === text}
-              onClick={() => void onSave(target, draft).then(() => setDraft(null), () => undefined)}
+              onClick={() => void onSave(target, draft).then(() => setDrafted(null), () => undefined)}
             >
               {t(saving ? 'instructions.saving' : 'instructions.save')}
             </Button>

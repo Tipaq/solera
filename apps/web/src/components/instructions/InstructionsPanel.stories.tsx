@@ -41,7 +41,9 @@ function Demo({ initial, global = GLOBAL }: { initial: ProjectInstructionsDto; g
           )
         }}
         saving={false}
-        error={null}
+        modeError={null}
+        saveError={null}
+        onEditing={() => undefined}
         onEditGlobal={() => undefined}
       />
     </div>

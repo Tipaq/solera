@@ -28,13 +28,13 @@ test('lecteurs : les quatre CLI, dans l’ordre de la table', () => {
   assert.deepEqual(readersOf({ mode: 'solera', solera: CONTENT, files: {}, global: GLOBAL }).map((reading) => reading.agent), INSTRUCTION_READERS)
 })
 
-test('lecteurs, dans le dépôt : Codex ne lit que AGENTS.md, les autres lisent les deux', () => {
+test('lecteurs, dans le dépôt : Codex ne lit que AGENTS.md, OpenCode le premier trouvé, Claude et Grok les deux', () => {
   const both: RepoFiles = { 'AGENTS.md': CONTENT, 'CLAUDE.md': POINTER }
   assert.deepEqual(projectOf({ mode: 'repo', solera: '', files: both, global: GLOBAL }), {
     claude: 'AGENTS.md + CLAUDE.md',
     codex: 'AGENTS.md',
     grok: 'AGENTS.md + CLAUDE.md',
-    opencode: 'AGENTS.md + CLAUDE.md',
+    opencode: 'AGENTS.md',
   })
   assert.deepEqual(projectOf({ mode: 'repo', solera: '', files: { 'AGENTS.md': CONTENT }, global: GLOBAL }), {
     claude: 'AGENTS.md',
@@ -51,6 +51,12 @@ test('lecteurs, dans le dépôt : seul CLAUDE.md, Codex reste sans rien et dit p
     grok: 'CLAUDE.md',
     opencode: 'CLAUDE.md',
   })
+})
+
+test('lecteurs, dans le dépôt : un AGENTS.md vide masque CLAUDE.md à OpenCode, le premier trouvé l’emporte', () => {
+  const project = projectOf({ mode: 'repo', solera: '', files: { 'AGENTS.md': '\n', 'CLAUDE.md': CONTENT }, global: GLOBAL })
+  assert.equal(project.opencode, '✗ noFile')
+  assert.equal(project.claude, 'CLAUDE.md')
 })
 
 test('lecteurs, dans le dépôt : aucun fichier, ou des fichiers vides, c’est n’avoir rien', () => {

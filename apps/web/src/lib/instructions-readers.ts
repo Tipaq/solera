@@ -7,8 +7,9 @@ import type { AgentKind, InstructionsMode, RepoInstructionFile } from '@solera/p
  * `packages/protocol/src/instructions.ts` et `docs/{CODEX,GROK,OPENCODE}.md` :
  * - *dans Solera*, Solera injecte son texte aux quatre CLI et leur masque les fichiers
  *   du dépôt ;
- * - *dans le dépôt*, chaque CLI lit lui-même ce qu'il sait lire : Claude, Grok et
- *   OpenCode lisent `AGENTS.md` et `CLAUDE.md`, **Codex ignore `CLAUDE.md`** ;
+ * - *dans le dépôt*, chaque CLI lit lui-même ce qu'il sait lire : Claude et Grok lisent
+ *   `AGENTS.md` et `CLAUDE.md`, OpenCode le premier des deux qui existe (`CLAUDE.md`
+ *   seulement à défaut d'`AGENTS.md`, même vide), **Codex ignore `CLAUDE.md`** ;
  * - la partie globale de SOLERA.md est injectée dans les deux cas.
  */
 
@@ -54,12 +55,15 @@ export type EditTarget = { kind: 'solera' } | { kind: 'file'; path: RepoInstruct
 
 const OTHER: Record<RepoInstructionFile, RepoInstructionFile> = { 'AGENTS.md': 'CLAUDE.md', 'CLAUDE.md': 'AGENTS.md' }
 
-/** Ce que chaque CLI sait lire du dépôt. */
-const READABLE: Record<CliReading['agent'], RepoInstructionFile[]> = {
-  claude: ['AGENTS.md', 'CLAUDE.md'],
-  codex: ['AGENTS.md'],
-  grok: ['AGENTS.md', 'CLAUDE.md'],
-  opencode: ['AGENTS.md', 'CLAUDE.md'],
+/**
+ * Ce que chaque CLI sait lire du dépôt, dans son ordre ; `first` : seul le premier
+ * fichier présent compte, les suivants ne sont qu'un repli.
+ */
+const READABLE: Record<CliReading['agent'], { files: RepoInstructionFile[]; first?: true }> = {
+  claude: { files: ['AGENTS.md', 'CLAUDE.md'] },
+  codex: { files: ['AGENTS.md'] },
+  grok: { files: ['AGENTS.md', 'CLAUDE.md'] },
+  opencode: { files: ['AGENTS.md', 'CLAUDE.md'], first: true },
 }
 
 /** Au-delà, un fichier porte des consignes à lui, même s'il cite l'autre. */
@@ -76,9 +80,12 @@ export function pointsTo(content: string, other: RepoInstructionFile): boolean {
 
 function projectReading(state: InstructionsState, agent: CliReading['agent']): ProjectReading {
   if (state.mode === 'solera') return filled(state.solera) ? { kind: 'solera' } : { kind: 'missing', reason: 'soleraEmpty' }
-  const used = READABLE[agent].filter((file) => filled(state.files[file]))
+  const { files, first } = READABLE[agent]
+  const present = files.filter((file) => state.files[file] !== undefined)
+  const used = (first ? present.slice(0, 1) : present).filter((file) => filled(state.files[file]))
   if (used.length > 0) return { kind: 'files', files: used }
-  const ignored = agent === 'codex' && filled(state.files['CLAUDE.md'])
+  // Le seul cas où un fichier rempli reste hors de portée : Codex devant un `CLAUDE.md`.
+  const ignored = !files.includes('CLAUDE.md') && filled(state.files['CLAUDE.md'])
   return { kind: 'missing', reason: ignored ? 'codexIgnoresClaude' : 'noFile' }
 }
 
@@ -99,15 +106,15 @@ export function alertsOf(state: InstructionsState): InstructionsAlert[] {
     const rename = state.mode === 'repo' && filled(state.files['CLAUDE.md']) && !filled(state.files['AGENTS.md'])
     alerts.push({ kind: 'missing', agents: missing.map((reading) => reading.agent), rename })
   }
-  const agents = state.files['AGENTS.md'] ?? ''
-  const claude = state.files['CLAUDE.md'] ?? ''
+  const agentsMd = state.files['AGENTS.md'] ?? ''
+  const claudeMd = state.files['CLAUDE.md'] ?? ''
   if (
     state.mode === 'repo' &&
-    filled(agents) &&
-    filled(claude) &&
-    agents.trim() !== claude.trim() &&
-    !pointsTo(agents, 'CLAUDE.md') &&
-    !pointsTo(claude, 'AGENTS.md')
+    filled(agentsMd) &&
+    filled(claudeMd) &&
+    agentsMd.trim() !== claudeMd.trim() &&
+    !pointsTo(agentsMd, 'CLAUDE.md') &&
+    !pointsTo(claudeMd, 'AGENTS.md')
   ) {
     alerts.push({ kind: 'diverge' })
   }
@@ -130,11 +137,11 @@ export function fileStateOf(mode: InstructionsMode, files: RepoFiles, file: Repo
  */
 export function editTargetOf(mode: InstructionsMode, files: RepoFiles): EditTarget {
   if (mode === 'solera') return { kind: 'solera' }
-  const agents = files['AGENTS.md']
-  const claude = files['CLAUDE.md']
-  if (agents !== undefined && !(claude !== undefined && pointsTo(agents, 'CLAUDE.md'))) {
+  const agentsMd = files['AGENTS.md']
+  const claudeMd = files['CLAUDE.md']
+  if (agentsMd !== undefined && !(claudeMd !== undefined && pointsTo(agentsMd, 'CLAUDE.md'))) {
     return { kind: 'file', path: 'AGENTS.md', exists: true }
   }
-  if (claude !== undefined) return { kind: 'file', path: 'CLAUDE.md', exists: true }
+  if (claudeMd !== undefined) return { kind: 'file', path: 'CLAUDE.md', exists: true }
   return { kind: 'file', path: 'AGENTS.md', exists: false }
 }
