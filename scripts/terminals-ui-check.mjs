@@ -204,7 +204,8 @@ try {
   // Et il dit pourquoi : désarmé, pas `disabled`, sinon l'infobulle ne paraîtrait jamais.
   await plus.hover()
   await page.getByRole('tooltip').filter({ hasText: 'Maximum 6 terminaux par projet' }).waitFor()
-  await plus.click()
+  // Playwright tient un bouton aria-disabled pour inerte : on force le clic pour vérifier qu'il l'est.
+  await plus.click({ force: true })
   await delay(500)
   assert.equal(await line().locator('[data-terminal-pill]').count(), 6, 'un clic au plafond n’ouvre rien')
   await oneLine('six shells, 40 rem')
