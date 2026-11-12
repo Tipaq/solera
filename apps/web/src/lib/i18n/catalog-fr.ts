@@ -2815,6 +2815,7 @@ export const fr: Catalog = {
   'cardFiling.change.none': 'aucune',
   'cardFiling.change.blocks': 'Bloquera {cards}',
   'cardFiling.change.unblocks': 'Ne bloquera plus {cards}',
+  'cardFiling.change.subtasks': 'Ajouter {count} sous-tâche(s) :',
   'cardFiling.notApplied': 'Non appliqué : la carte a changé depuis la proposition.',
   'cardFiling.title.close.pending': 'Un agent propose de clore une carte',
   'cardFiling.title.close.past': 'Clôture de carte proposée',
