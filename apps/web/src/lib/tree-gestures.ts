@@ -2,11 +2,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from './api'
-import type { TreeFields } from './code-model'
+import { canDiffTree, canRebaseTree, liveSessionId, treeSessionId, type TreeFields } from './code-model'
 import { sendMessage } from './conversations'
 import { useTranslate } from './i18n'
 import { openGitPanel, openPanelOnArrival } from './panel'
-import { liveSessionId, treeSessionId } from './tree-actions'
 import { worktreeScope } from './workspace-scope'
 import { worktreeStatusKey } from './worktrees'
 
@@ -20,6 +19,9 @@ import { worktreeStatusKey } from './worktrees'
  */
 
 type TreeTarget = Pick<TreeFields, 'id' | 'root' | 'name' | 'branch' | 'sessions' | 'anySessionId'>
+
+// Les règles des gestes sont pures, dans le modèle ; on les lit encore d'ici.
+export { canDiffTree, canRebaseTree, liveSessionId, treeSessionId }
 
 /** Le geste « Diff » : l'onglet Git du panneau, dans la session de l'arbre ou sur lui. */
 export function useTreeDiff(projectId: string): (tree: TreeTarget) => void {

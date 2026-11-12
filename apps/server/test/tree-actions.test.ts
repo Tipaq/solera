@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { TreeFields, TreeRow } from '../../web/src/lib/code-model.js'
 
-const { verdictOf } = await import('../../web/src/lib/code-model.js')
-const { treeGestures, primaryGesture, treeSessionId, HEAVY_BYTES, isHeavy } = await import('../../web/src/lib/tree-actions.js')
+const { verdictOf, treeSessionId } = await import('../../web/src/lib/code-model.js')
+const { treeGestures, primaryGesture, HEAVY_BYTES, isHeavy } = await import('../../web/src/lib/tree-actions.js')
 
 const DAY = 86_400_000
 const NOW = 1_800_000_000_000

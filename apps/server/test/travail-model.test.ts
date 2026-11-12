@@ -27,6 +27,9 @@ const {
   indexTrees,
   treeSummary,
   legacyTravailQuery,
+  STATE_PARAM,
+  travailStateHref,
+  arrivalFilters,
 } = await import('../../web/src/lib/travail-model.js')
 
 const DAY = 86_400_000
@@ -325,4 +328,11 @@ test('anciennes adresses : Activité par worktree → Par arbre, Journal → Par
   assert.equal(legacyTravailQuery('activity', '?groupe=state&q=1'), 'q=1')
   assert.equal(legacyTravailQuery('journal', ''), 'vue=fil')
   assert.equal(legacyTravailQuery('journal', '?carte=4'), 'carte=4&vue=fil')
+})
+
+test('arrivée filtrée : « À nettoyer » depuis l’Aperçu, les autres filtres levés', () => {
+  assert.equal(travailStateHref('p1', 'cleanup'), `/p/p1/travail?vue=couloirs&${STATE_PARAM}=cleanup`)
+  assert.deepEqual(arrivalFilters('cleanup'), { what: [], states: ['cleanup'], milestones: [], agents: [], period: null })
+  assert.equal(arrivalFilters(null), null)
+  assert.equal(arrivalFilters('nimporte'), null)
 })

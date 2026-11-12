@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { deflateSync } from 'node:zlib'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { closePanelButton } from './panel.mjs'
+import { closePanelButton, openProjectPanel } from './panel.mjs'
 
 /**
  * La visionneuse d'images : les trois repères, le zoom, le glissement, le plein écran
@@ -23,8 +23,7 @@ export async function checkImage({ page, base, project }) {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto(`${base}/p/${project.id}/board`)
   await page.evaluate(() => localStorage.setItem('solera.panelTree', '1'))
-  await page.reload()
-  await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
+  await openProjectPanel(page, base, project)
   const panel = page.locator('[data-panel="workspace"]')
   const showTree = panel.getByRole('button', { name: "Afficher l'arborescence", exact: true })
   if (await showTree.count()) await showTree.click()

@@ -142,6 +142,11 @@ const cleanupPlanQuery = (projectId: string, path: string | null) => ({
   gcTime: 0,
 })
 
+/** Ce que le nettoyage ferait d'un arbre, lu à l'ouverture de la confirmation. */
+export function useWorktreeCleanupPlan(projectId: string, path: string | null) {
+  return useQuery(cleanupPlanQuery(projectId, path))
+}
+
 /**
  * Les plans de plusieurs arbres, pour le dialogue « Nettoyer » de Travail : la fonction
  * rend celui d'un chemin, `undefined` tant qu'il se lit, `null` s'il n'a pas pu l'être.

@@ -127,7 +127,7 @@ export function CleanDialog({
   }
   if (summary.terminals > 0) facts.push(t(`travail.clean.terminals.${pluralOf(summary.terminals)}`, { count: summary.terminals }))
   if (summary.restarted.length > 0) {
-    const titles = names(summary.restarted.map((entry) => (entry.running ? t('travail.clean.restartedRunning', { title: entry.title }) : entry.title)))
+    const titles = names(summary.restarted.map((entry) => (entry.running ? t('worktrees.clean.restarted.running', { title: entry.title }) : entry.title)))
     facts.push(t(`travail.clean.restarted.${pluralOf(summary.restarted.length)}`, { titles }))
   }
 

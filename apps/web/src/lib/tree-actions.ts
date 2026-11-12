@@ -1,38 +1,12 @@
-import type { TreeFields, TreeRow } from './code-model'
+import { canDiffTree, canRebaseTree, treeSessionId, type TreeFields, type TreeRow } from './code-model'
 
 /**
- * Les gestes d'un arbre, sans React (`projet.md` T-13.1, T-6.2) : lesquels se montrent,
- * dans quel ordre, et celui que la ligne met en avant. Les gestes eux-mêmes vivent dans
- * `components/travail/useTreeActions` et `lib/tree-gestures`.
+ * Les gestes d'un arbre dans Travail, sans React (`projet.md` T-13.1, T-6.2) : lesquels
+ * se montrent, dans quel ordre, et celui que la ligne met en avant. Les prédicats
+ * (`canDiffTree`, `treeSessionId`…) sont ceux du modèle, partagés avec l'Aperçu
+ * (`lineGestures`) ; les gestes eux-mêmes vivent dans `components/travail/useTreeActions`
+ * et `lib/tree-gestures`.
  */
-
-type TreeTarget = Pick<TreeFields, 'id' | 'root' | 'sessions' | 'anySessionId'>
-
-/** La session vivante d'un arbre : celle qui attend, sinon la première. */
-export function liveSessionId(tree: Pick<TreeFields, 'sessions'>): string | null {
-  return tree.sessions.find((session) => session.tone !== 'running')?.id ?? tree.sessions[0]?.id ?? null
-}
-
-/**
- * La session à rouvrir, et celle où s'ouvre le diff d'un arbre : la vivante, sinon la
- * plus récente. Rouvrir une session close ne relance rien.
- */
-export function treeSessionId(tree: Pick<TreeFields, 'sessions' | 'anySessionId'>): string | null {
-  return liveSessionId(tree) ?? tree.anySessionId
-}
-
-/**
- * Faux pour un arbre créé au shell et sans session : Solera n'en a pas l'identifiant, et
- * n'a donc aucune portée par laquelle l'ouvrir. Le geste ne se montre pas.
- */
-export function canDiffTree(tree: TreeTarget): boolean {
-  return tree.root || tree.id !== null || treeSessionId(tree) !== null
-}
-
-/** Faux pour la racine (on ne rebase pas la base sur elle-même), et comme `canDiffTree`. */
-export function canRebaseTree(tree: TreeTarget): boolean {
-  return !tree.root && (tree.id !== null || liveSessionId(tree) !== null)
-}
 
 export type TreeGestureKey = 'session' | 'diff' | 'pr' | 'rebase' | 'merge' | 'clean'
 

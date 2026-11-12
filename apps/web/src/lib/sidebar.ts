@@ -110,8 +110,8 @@ export function placeOfPath(pathname: string): Place | null {
  *
  * L'exception reste possible, et ne survit pas à la navigation suivante :
  *
- * - `override` est posé en cliquant un lieu. Il sert surtout à *Fils*, le seul lieu
- *   sans page : sans lui, le clic serait défait dans la foulée par la dérivation.
+ * - `override` est posé en cliquant un lieu : sans lui, le clic serait défait dans la
+ *   foulée par la dérivation, tant que l'adresse n'a pas changé.
  * - Il est effacé au premier changement d'adresse — autrement dit dès qu'on ouvre autre
  *   chose. Ce qu'on regarde commande à nouveau.
  */
