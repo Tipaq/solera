@@ -125,14 +125,23 @@ export function BriefField({
   const suggesting = open !== null && matches.length > 0
 
   /** Écrit le texte suivant et y replace le curseur ; `focus` le rend à la zone. */
+  const placing = useRef<{ caret: number; focus: boolean } | null>(null)
   const apply = (edit: Edit, focus = true) => {
+    placing.current = { caret: edit.caret, focus }
     onChange(edit.text)
-    requestAnimationFrame(() => {
-      if (focus) textRef.current?.focus()
-      textRef.current?.setSelectionRange(edit.caret, edit.caret)
-      setCaret(edit.caret)
-    })
+    setCaret(edit.caret)
   }
+  // Le curseur se replace dans le rendu qui écrit le texte, pas à la frame suivante : une
+  // touche frappée entre-temps serait sinon écrite, puis le curseur reculerait derrière
+  // elle (« #Lir » devenait « Lir# », et la liste ne s'ouvrait pas).
+  useLayoutEffect(() => {
+    const pending = placing.current
+    const area = textRef.current
+    if (!pending || !area) return
+    placing.current = null
+    if (pending.focus) area.focus()
+    area.setSelectionRange(pending.caret, pending.caret)
+  })
 
   // Le `#` fermé sans choix oublié dès qu'on le quitte : un autre `#` au même endroit,
   // plus tard, rouvre la liste.
