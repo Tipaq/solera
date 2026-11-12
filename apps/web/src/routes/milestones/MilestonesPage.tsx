@@ -1,12 +1,12 @@
 import { Compass, Plus } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import type { ProjectDto } from '@solera/protocol'
 import { Button, EmptyState } from '@solera/ui'
-import { NewCardDialog } from '../../components/board/NewCardDialog'
 import { CardSheetHost } from '../../components/cards/CardSheetHost'
 import type { Zoom } from '../../components/gantt/scale'
 import { Horizon } from '../../components/milestones/Horizon'
+import { MilestoneCreatedNotice, NewMilestoneDrawer, type MilestoneOutcome } from '../../components/milestones/NewMilestoneDrawer'
 import { FilterChip, OneLineToolbar, ToolbarSearch } from '../../components/toolbar/OneLineToolbar'
 import { DisplayMenu, FilterMenu, MenuCheck, MenuHeading, MenuSegment, type ViewOption } from '../../components/toolbar/ToolbarMenus'
 import { useTranslate } from '../../lib/i18n'
@@ -53,6 +53,9 @@ function Milestones({ project }: { project: ProjectDto }) {
   // L'échelle n'est pas retenue : on revient toujours à la vue d'ensemble.
   const [zoom, setZoom] = useState<Zoom>('month')
   const [adding, setAdding] = useState(false)
+  // Une idée notée, ou un jalon dont une pièce n'a pas suivi : la page le dit sous le cap.
+  const [created, setCreated] = useState<MilestoneOutcome | null>(null)
+  const navigate = useNavigate()
 
   // Les comptes du menu portent sur tous les jalons, pour qu'on voie ce qu'un filtre cacherait.
   const totals = useMemo(() => maturityCounts(entries), [entries])
@@ -128,9 +131,27 @@ function Milestones({ project }: { project: ProjectDto }) {
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {view === 'horizon' ? <Horizon project={project} entries={shown} zoom={zoom} statusOf={statusOf} /> : null}
+        {view === 'horizon' ? (
+          <Horizon
+            project={project}
+            entries={shown}
+            zoom={zoom}
+            statusOf={statusOf}
+            notice={created ? <MilestoneCreatedNotice outcome={created} onDismiss={() => setCreated(null)} /> : null}
+          />
+        ) : null}
       </div>
-      <NewCardDialog projectId={project.id} milestone open={adding} onClose={() => setAdding(false)} onCreated={() => setAdding(false)} />
+      <NewMilestoneDrawer
+        open={adding}
+        onClose={() => setAdding(false)}
+        projectId={project.id}
+        onDone={(outcome) => {
+          // Affiner ou découper ouvre la session d'affinage, sauf s'il faut d'abord dire
+          // ce qui n'a pas suivi : le lien vers la session est alors dans le message.
+          if (outcome.href && !outcome.failed) navigate(outcome.href)
+          else setCreated(outcome)
+        }}
+      />
       <CardSheetHost projectId={project.id} />
     </div>
   )
