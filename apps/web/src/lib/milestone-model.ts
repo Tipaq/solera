@@ -76,7 +76,10 @@ export interface MilestoneEntry {
   run: MilestoneRunDto | null
   launchedAt: number | null
   paused: boolean
-  /** La PR du jalon vers la branche par défaut, ouverte et pas encore fusionnée. */
+  /**
+   * La PR du jalon vers la branche par défaut, pas encore fusionnée : ouverte, ou fermée
+   * sur la forge (`closedAt`), et alors à rouvrir plutôt qu'à fusionner.
+   */
   pr: CardBranchPrDto | null
   /** Les questions ouvertes de la session d'affinage. */
   questions: { conversationId: string; requestId: string; items: { id: string; text: string }[] } | null
@@ -221,11 +224,22 @@ export type NextAction =
   | { kind: 'reviewDeps' }
   | { kind: 'launch'; count: number }
   | { kind: 'merge'; pr: CardBranchPrDto }
+  | { kind: 'prClosed'; pr: CardBranchPrDto }
   | { kind: 'answerBlock'; card: number; request: SessionRequest | null }
   | { kind: 'follow'; done: number; total: number; added: number; paused: boolean }
   | { kind: 'review'; count: number }
 
 const numbers = (cards: readonly CardDto[]) => cards.map((card) => card.number)
+
+/**
+ * La PR finale du jalon (RUN-9) : à fusionner, fermée sans fusion sur la forge, ou rien à
+ * en faire. Tant qu'un pilotage tourne — une carte entrée au jalon après son ouverture —,
+ * elle attend : la fusionner livrerait sans cette carte.
+ */
+export function prStage(entry: Pick<MilestoneEntry, 'pr' | 'run'>): 'open' | 'closed' | null {
+  if (!entry.pr || entry.run) return null
+  return entry.pr.closedAt === null ? 'open' : 'closed'
+}
 
 export function nextAction(entry: MilestoneEntry): NextAction {
   switch (entry.maturity) {
@@ -246,7 +260,8 @@ export function nextAction(entry: MilestoneEntry): NextAction {
     case 'ready':
       return { kind: 'launch', count: entry.startable.length }
     case 'launched': {
-      if (entry.pr) return { kind: 'merge', pr: entry.pr }
+      const pr = prStage(entry)
+      if (pr) return { kind: pr === 'open' ? 'merge' : 'prClosed', pr: entry.pr! }
       const [first] = entry.awaiting
       if (first) return { kind: 'answerBlock', card: first.card.number, request: first.request }
       return {
@@ -280,6 +295,7 @@ export type MaturityReason =
   | { kind: 'paused' }
   | { kind: 'blocked'; cards: number[] }
   | { kind: 'prOpen' }
+  | { kind: 'prClosed' }
   | { kind: 'delivered'; count: number }
 
 export function maturityReasons(entry: MilestoneEntry): MaturityReason[] {
@@ -307,7 +323,8 @@ export function maturityReasons(entry: MilestoneEntry): MaturityReason[] {
       if (entry.paused) reasons.push({ kind: 'paused' })
       // Le repère, pas la demande : elle se lit dans « Ce qui t'attend » (DECISIONS, « une seule liste »).
       if (entry.awaiting.length) reasons.push({ kind: 'blocked', cards: entry.awaiting.map((awaiting) => awaiting.card.number) })
-      if (entry.pr) reasons.push({ kind: 'prOpen' })
+      const pr = prStage(entry)
+      if (pr) reasons.push({ kind: pr === 'open' ? 'prOpen' : 'prClosed' })
       return reasons
     }
     case 'delivered':
@@ -326,6 +343,7 @@ export type MilestoneGesture =
   | { kind: 'refine' }
   | { kind: 'scroll'; target: 'affinage' | 'lancer' }
   | { kind: 'merge' }
+  | { kind: 'link'; url: string }
   | { kind: 'sheet'; number: number }
 
 export function gestureOf(entry: MilestoneEntry): MilestoneGesture | null {
@@ -344,6 +362,8 @@ export function gestureOf(entry: MilestoneEntry): MilestoneGesture | null {
     case 'launch':
     case 'follow':
       return { kind: 'scroll', target: 'lancer' }
+    case 'prClosed':
+      return { kind: 'link', url: action.pr.url }
     case 'merge':
       return { kind: 'merge' }
     case 'answerBlock':
@@ -446,7 +466,7 @@ export function milestoneAsks(entry: MilestoneEntry): MilestoneAsk[] {
     asks.push({ kind: 'refine', key: `refine-${card.id}`, milestone: card, conversationId, requestId, questions: items })
   }
   if (entry.draft) asks.push({ kind: 'draft', key: `draft-${card.id}`, milestone: card, ...entry.draft })
-  if (entry.pr && card.branch) asks.push({ kind: 'merge', key: `merge-${card.id}`, milestone: card, branch: card.branch, pr: entry.pr })
+  if (entry.pr && prStage(entry) === 'open' && card.branch) asks.push({ kind: 'merge', key: `merge-${card.id}`, milestone: card, branch: card.branch, pr: entry.pr })
   return asks
 }
 
@@ -488,7 +508,8 @@ export function nextActionText(action: NextAction, t: Translate): { label: strin
     case 'undoCycle':
       return { label, detail: t('milestones.next.settle.cycle', { cards: listed(action.cycle) }) }
     case 'merge':
-      return { label, detail: t('milestones.next.merge.detail') }
+    case 'prClosed':
+      return { label, detail: t(`milestones.next.${action.kind}.detail`, { number: action.pr.number }) }
     case 'answerBlock':
       return {
         label,
@@ -514,6 +535,7 @@ export function reasonText(reason: MaturityReason, t: Translate): string {
     case 'noStartable':
     case 'paused':
     case 'prOpen':
+    case 'prClosed':
       return t(`milestones.maturity.reason.${reason.kind}`)
     case 'questions':
     case 'draft':
