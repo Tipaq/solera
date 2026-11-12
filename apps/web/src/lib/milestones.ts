@@ -1,24 +1,28 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type {
-  AgentConfig,
-  CardDraft,
-  CardDto,
-  CardRefinementDetailDto,
-  ConversationStatus,
-  LaunchMilestoneCardBody,
-  MilestonePlanDto,
-  MilestoneRunDto,
-  MilestoneRunMode,
-  UpdateMilestoneRunBody,
+import {
+  appendCardPrecision,
+  type AgentConfig,
+  type CardDraft,
+  type CardDto,
+  type CardRefinementDetailDto,
+  type ConversationStatus,
+  type LaunchMilestoneCardBody,
+  type MilestonePlanDto,
+  type MilestoneRunDto,
+  type MilestoneRunMode,
+  type UpdateMilestoneRunBody,
 } from '@solera/protocol'
 import { useLiveConversations } from './activity'
 import { api } from './api'
+import { uploadAttachment } from './attachments'
 import type { StatusOf } from './card-state'
-import { useCards } from './cards'
+import { clarifyingThread, useCards } from './cards'
 import { liveStatus, subscribeStatus } from './conversation-status'
-import { answerQuestion, decideCardDraft, useAllConversations } from './conversations'
+import { answerQuestion, decideCardDraft, decideCardFiling, sendMessage, useAllConversations } from './conversations'
+import { dayInputValue } from './dates'
 import { horizonOf, type MilestoneEntry } from './milestone-model'
+import { additionHref, additionPrompt, draftUnderMilestone, type ProposedAddition } from './refinement'
 import { useSessionRequests } from './session-requests'
 
 /**
@@ -112,6 +116,93 @@ export function useValidateRefinementDraft(projectId: string, cardId: string) {
       decideCardDraft(conversationId, requestId, { decision: 'created', draft }),
     onSuccess: () => refreshRefinement(queryClient, projectId, cardId),
   })
+}
+
+/**
+ * Accepte ou laisse l'ajout proposé par la session d'affinage (#196, AFF-7) : des
+ * sous-tâches se décident comme le changement de cartes qu'elles sont, de nouvelles
+ * cartes comme le brouillon qu'elles sont — créées enfants du jalon. « Laisser tel quel »
+ * refuse la demande.
+ */
+export function useDecideAddition(projectId: string, milestone: Pick<CardDto, 'id' | 'number' | 'title'>) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ addition, accept }: { addition: ProposedAddition; accept: boolean }) =>
+      addition.kind === 'subtasks'
+        ? decideCardFiling(addition.conversationId, addition.requestId, accept ? 'accepted' : 'refused')
+        : decideCardDraft(
+            addition.conversationId,
+            addition.requestId,
+            accept ? { decision: 'created', draft: draftUnderMilestone(addition.draft, milestone) } : { decision: 'refused' },
+          ),
+    onSuccess: () => refreshRefinement(queryClient, projectId, milestone.id),
+  })
+}
+
+/**
+ * Envoie un ajout au jalon (#196, ADD-4). À la session d'affinage qui vit, c'est un
+ * message, ses fichiers en pièces jointes. Sans elle, les fichiers se joignent au jalon,
+ * et l'adresse rendue ouvre un brouillon de découpage pré-rempli : c'est là qu'on choisit
+ * le CLI, comme pour « Affiner avec un agent ».
+ */
+export function useAddToMilestone(projectId: string, milestone: Pick<CardDto, 'id' | 'number' | 'refinement'>) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ text, links, files }: { text: string; links: string[]; files: File[] }): Promise<{ open: string | null }> => {
+      const session = milestone.refinement
+      if (session) {
+        const ids: string[] = []
+        for (const file of files) ids.push((await uploadAttachment(file)).id)
+        await sendMessage(session.conversationId, additionPrompt({ number: milestone.number, text, links, session: true }), ids)
+        return { open: null }
+      }
+      // Un à un : plusieurs vidéos ne saturent pas la mémoire du serveur.
+      for (const file of files) await uploadAttachment(file, `/api/cards/${milestone.id}/attachments`)
+      const prompt = additionPrompt({ number: milestone.number, text, links, files: files.map((file) => file.name), session: false })
+      return { open: additionHref(projectId, milestone.id, prompt) }
+    },
+    onSuccess: () => refreshRefinement(queryClient, projectId, milestone.id),
+  })
+}
+
+/**
+ * Ce que « À régler avant de partir » règle sur place (#196, RGL-3..5) : préciser une
+ * carte, l'accepter, retirer un lien d'un cycle. Tous relisent les cartes, d'où vient
+ * la liste.
+ */
+export function useSettleMilestone(projectId: string) {
+  const queryClient = useQueryClient()
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['cards', projectId] })
+  return {
+    /**
+     * La précision part à la session qui a posé la carte « à préciser » : c'est elle qui
+     * la lève. Sans session, elle s'écrit dans la description, datée et signée comme celles
+     * des agents, et l'état se lève du même geste.
+     */
+    clarify: useMutation({
+      mutationFn: async ({ card, text, author }: { card: CardDto; text: string; author: string }): Promise<'session' | 'description'> => {
+        const thread = clarifyingThread(card)
+        if (thread) {
+          await sendMessage(thread.id, text.trim())
+          return 'session'
+        }
+        const description = appendCardPrecision(card.description, { day: dayInputValue(Date.now()), author, body: text })
+        await api.patch<CardDto>(`/api/cards/${card.id}`, { description, toClarify: false })
+        return 'description'
+      },
+      onSuccess: refresh,
+    }),
+    accept: useMutation({
+      mutationFn: (cardId: string) => api.post<CardDto>(`/api/cards/${cardId}/accept`, {}),
+      onSuccess: refresh,
+    }),
+    /** `blockerId` cesse de bloquer `blockedId`. */
+    unblock: useMutation({
+      mutationFn: ({ blockerId, blockedId }: { blockerId: string; blockedId: string }) =>
+        api.delete<CardDto>(`/api/cards/${blockerId}/blocks/${blockedId}`),
+      onSuccess: refresh,
+    }),
+  }
 }
 
 /** Ce que ferait le lancement, lu à l'ouverture de l'aperçu et jamais mis en cache. */
