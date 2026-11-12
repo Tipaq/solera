@@ -13,7 +13,7 @@ import {
 } from '@solera/protocol'
 import { cronToHuman } from './cron'
 import type { MessageKey, MessageParams } from './i18n'
-import type { ScheduleInput } from './schedules'
+import type { ScheduleInput, ScheduleTarget } from './schedules'
 
 /**
  * Une **action** = **Quoi** × **Quand**, un seul objet pour les actions de projet et les
@@ -220,6 +220,16 @@ export function fromTask(input: ScheduledTaskDto): Automation {
     failStreak: failStreakOf(runs),
     source: { kind: 'task', task: input },
   }
+}
+
+/**
+ * Où une action vit : son projet, ou la portée d'une tâche hors projet (le vault,
+ * l'instance, rien). Une commande appartient toujours à son projet.
+ */
+export function scheduleTargetOf(item: Automation): ScheduleTarget {
+  if (item.projectId) return { scope: 'project', projectId: item.projectId }
+  const scope = item.source.kind === 'task' ? item.source.task.scope : 'none'
+  return scope === 'vault' || scope === 'instance' ? { scope } : { scope: 'none' }
 }
 
 export type AutomationScope = { projectId: string } | { all: true }

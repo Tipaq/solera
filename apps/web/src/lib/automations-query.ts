@@ -18,10 +18,12 @@ import { useProjects } from './projects'
 import {
   useApproveScheduleCheck,
   useCreateSchedule,
+  useCreateScopedSchedule,
   useDeleteSchedule,
   useRunSchedule,
   useSchedules,
   useUpdateSchedule,
+  type ScheduleTarget,
 } from './schedules'
 import { useAllSessionWorks, useSessionWorks } from './session-works-query'
 
@@ -85,8 +87,8 @@ export interface LaunchPlace {
 
 /**
  * Les gestes sur une action, quelle que soit sa table : chacun aiguille vers
- * `/api/actions` ou `/api/schedules`. `projectId` sert aux créations ; null hors projet,
- * où l'on ne crée pas encore (AC-09).
+ * `/api/actions` ou `/api/schedules`. `projectId` sert aux créations ; hors projet, une
+ * tâche d'agent se crée dans la portée que `save` reçoit (la page Planifiées, PLF-10).
  *
  * La nature d'une action ne change pas à l'enregistrement (Q5) : une commande reste une
  * commande. L'éditeur fige le choix ; « Dupliquer » sert à en changer.
@@ -99,6 +101,7 @@ export function useAutomationMutations(projectId: string | null) {
   const deleteAction = useDeleteAction()
   const runAction = useRunAction()
   const createSchedule = useCreateSchedule(projectId ?? '')
+  const createScoped = useCreateScopedSchedule()
   const updateSchedule = useUpdateSchedule()
   const deleteSchedule = useDeleteSchedule()
   const runSchedule = useRunSchedule()
@@ -123,8 +126,11 @@ export function useAutomationMutations(projectId: string | null) {
   ): Promise<T> => (item.source.kind === 'action' ? onAction(item.source.action) : onTask(item.source.task))
 
   return {
-    /** Crée, ou enregistre `existing` dans sa table. */
-    save: async (draft: AutomationDraft, existing?: Automation): Promise<void> => {
+    /**
+     * Crée, ou enregistre `existing` dans sa table. `target` : la portée choisie hors d'un
+     * projet ; une tâche d'agent s'y crée, une commande reste dans son projet.
+     */
+    save: async (draft: AutomationDraft, existing?: Automation, target?: ScheduleTarget | null): Promise<void> => {
       // Une erreur de programmation, pas un message : l'éditeur fige la nature d'une action existante.
       if (existing && existing.what !== draft.what) throw new Error('An action keeps its nature: duplicate it instead.')
       if (draft.what === 'command') {
@@ -132,6 +138,8 @@ export function useAutomationMutations(projectId: string | null) {
         else await createAction.mutateAsync(draft.body)
       } else if (existing?.source.kind === 'task') {
         await updateSchedule.mutateAsync({ id: existing.source.task.id, ...draft.body })
+      } else if (target) {
+        await createScoped.mutateAsync({ target, input: draft.body })
       } else {
         await createSchedule.mutateAsync(draft.body)
       }

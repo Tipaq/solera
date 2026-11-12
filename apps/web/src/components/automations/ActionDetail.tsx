@@ -94,11 +94,17 @@ export function ActionDetail({
   projectId,
   conversationId,
   focusReview = false,
+  launchWhere,
   onPanel,
   onClose,
 }: {
   item: Automation
   projectId: string
+  /**
+   * La page Planifiées : où part un lancement à la main, selon la portée (PLF-9). Il part
+   * alors droit, sans choisir d'arbre.
+   */
+  launchWhere?: string
   /** Depuis une conversation : on lance dans son worktree. */
   conversationId?: string
   /** Ouvert par « Relire » : le tiroir se place sur le bloc de relecture (DET-3). */
@@ -191,11 +197,14 @@ export function ActionDetail({
   }
   const service = (op: 'stop' | 'restart' | 'logs') => action && run.mutate({ action, op })
 
-  const primary = (
+  // Le même geste en tête et au pied ; seul le pied dit où part un lancement (PLF-9).
+  const gesture = (saysWhere: boolean) => (
     <DetailGesture
       item={item}
       here={here}
       direct={Boolean(conversationId)}
+      where={launchWhere}
+      saysWhere={saysWhere}
       busy={busy || run.isPending}
       onReview={() => reviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
       onStart={() => launch(null)}
@@ -228,7 +237,7 @@ export function ActionDetail({
         >
           <span aria-hidden className={cx('size-2 shrink-0 rounded-full', STATE_DOT[sentence.tone], sentence.tone === 'live' && 'motion-safe:animate-pulse')} />
           <span className="min-w-0 flex-1 text-sm text-ink">{sentence.text}</span>
-          <span className="flex shrink-0 items-center gap-1.5">{primary}</span>
+          <span className="flex shrink-0 items-center gap-1.5">{gesture(false)}</span>
         </div>
 
         {review ? (
@@ -356,7 +365,7 @@ export function ActionDetail({
             </>
           )
         }
-        right={confirmDelete ? null : primary}
+        right={confirmDelete ? null : gesture(true)}
       />
     </>
   )
@@ -379,6 +388,8 @@ function DetailGesture({
   item,
   here,
   direct,
+  where: scopeWhere,
+  saysWhere = false,
   busy,
   onReview,
   onStart,
@@ -390,6 +401,10 @@ function DetailGesture({
   here: LaunchHere | null
   /** Depuis une conversation : « Lancer » part droit dans son arbre, sans chevron. */
   direct: boolean
+  /** Où part un lancement hors d'un projet ouvert (PLF-9), en infobulle. */
+  where?: string
+  /** Le dire aussi à côté du bouton : au pied du détail. */
+  saysWhere?: boolean
   busy: boolean
   onReview: () => void
   onStart: () => void
@@ -441,9 +456,10 @@ function DetailGesture({
       </Button>
     )
   }
-  if (direct) {
-    const where = item.what === 'agent' ? t('launcher.launch.newSession') : here ? t('launcher.launch.inTree', { tree: here.name }) : t('launcher.launch.atRoot')
+  if (direct || scopeWhere) {
+    const where = scopeWhere ?? (item.what === 'agent' ? t('launcher.launch.newSession') : here ? t('launcher.launch.inTree', { tree: here.name }) : t('launcher.launch.atRoot'))
     return (
+      <>
       <Button
         size="sm"
         icon={<Play size={13} />}
@@ -454,6 +470,8 @@ function DetailGesture({
       >
         {t('launcher.launch.button')}
       </Button>
+      {scopeWhere && saysWhere ? <span className="text-xs text-ink-faint" data-launch-where>{scopeWhere}</span> : null}
+      </>
     )
   }
   return <LaunchButton item={item} onLaunch={onLaunch} here={here} disabled={busy} />
