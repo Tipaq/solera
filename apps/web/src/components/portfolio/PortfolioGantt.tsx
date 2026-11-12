@@ -5,7 +5,7 @@ import { cx } from '@solera/ui'
 import { loadedStatus, type StatusOf } from '../../lib/card-state'
 import { useTranslate } from '../../lib/i18n'
 import { maturityTooltip } from '../../lib/milestone-model'
-import { milestoneAnchors, type PortfolioMilestone } from '../../lib/portfolio-milestones'
+import { milestoneAnchors, type PortfolioMilestone, type PortfolioMilestoneGroup } from '../../lib/portfolio-milestones'
 import { useMediaQuery } from '../../lib/viewport'
 import { GanttArrows } from '../gantt/GanttArrows'
 import { AXIS_H, GanttAxis } from '../gantt/GanttAxis'
@@ -22,7 +22,7 @@ const LIST_NARROW = 150
 const ROW_H = 40
 const BAR_TOP = (ROW_H - MILESTONE_BAR_H) / 2
 
-type Line = { kind: 'project'; project: ProjectDto } | { kind: 'row'; row: PortfolioMilestone }
+type Line = { kind: 'project'; project: ProjectDto; count: number } | { kind: 'row'; row: PortfolioMilestone }
 
 /**
  * Le **Gantt commun** des Jalons du portefeuille (PF-30) : un seul axe pour tous les
@@ -39,7 +39,7 @@ export function PortfolioGantt({
   statusOf = loadedStatus,
   now = Date.now(),
 }: {
-  groups: { project: ProjectDto; rows: PortfolioMilestone[] }[]
+  groups: PortfolioMilestoneGroup[]
   zoom: Zoom
   statusOf?: StatusOf
   now?: number
@@ -52,7 +52,7 @@ export function PortfolioGantt({
   const axisWidth = useAxisWidth(scroller, listWidth)
 
   const lines = useMemo<Line[]>(
-    () => groups.flatMap(({ project, rows }) => [{ kind: 'project', project } as const, ...rows.map((row) => ({ kind: 'row', row }) as const)]),
+    () => groups.flatMap(({ project, rows }) => [{ kind: 'project', project, count: rows.length } as const, ...rows.map((row) => ({ kind: 'row', row }) as const)]),
     [groups],
   )
   const entries = useMemo(() => groups.flatMap(({ rows }) => rows.map((row) => row.entry)), [groups])
@@ -82,7 +82,7 @@ export function PortfolioGantt({
           {lines.map((line) =>
             line.kind === 'project' ? (
               <div key={line.project.id} className="flex items-center bg-surface/40 px-4 md:px-6" style={{ height: ROW_H }}>
-                <ProjectGroupHeader project={line.project} count={groups.find((group) => group.project.id === line.project.id)?.rows.length} />
+                <ProjectGroupHeader project={line.project} count={line.count} />
               </div>
             ) : (
               <Link

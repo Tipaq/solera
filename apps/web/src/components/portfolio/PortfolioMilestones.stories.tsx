@@ -4,7 +4,7 @@ import { milestoneGroups, portfolioMilestones } from '../../lib/portfolio-milest
 import { fixtureCard } from '../board/card-fixtures'
 import { DAY } from '../gantt/scale'
 import { PortfolioGantt } from './PortfolioGantt'
-import { PortfolioMilestoneTile } from './PortfolioMilestoneTile'
+import { PortfolioHorizon } from './PortfolioHorizon'
 
 const now = Date.now()
 const link = ({ id, number, title, column }: CardDto): CardLinkDto => ({ id, number, title, column })
@@ -53,21 +53,6 @@ const RUNS = new Map([['p-nimbus', [{ id: 'run-110', cardId: 'card-110', state: 
 const PROJECTS = [NIMBUS, ATELIER]
 const GROUPS = milestoneGroups(portfolioMilestones({ projects: PROJECTS, cards: CARDS, runs: RUNS }), PROJECTS)
 
-/** L'horizon : une bande par projet, une tuile par jalon (PF-29). */
-function HorizonView() {
-  return (
-    <div className="flex flex-col gap-6 p-4 md:p-6">
-      {GROUPS.map(({ project: owner, rows }) => (
-        <section key={owner.id} className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          {rows.map((row) => (
-            <PortfolioMilestoneTile key={row.entry.card.id} row={row} now={now} />
-          ))}
-        </section>
-      ))}
-    </div>
-  )
-}
-
 const meta = {
   title: "Composants d'application/Portefeuille · Jalons",
   component: PortfolioGantt,
@@ -76,7 +61,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "Les Jalons du portefeuille (#240, `coque.md` PF-28 à PF-31), sur le modèle de maturité d'un projet. **Gantt** commun : un axe pour tous les projets, une bande d'en-tête par projet, la barre d'un jalon de l'axe d'un projet (`MilestoneBar` : part faite, lancement, losange d'échéance, retard hachuré), et les flèches « bloque » entre jalons, d'un projet à l'autre aussi. **Horizon** : une tuile par jalon, triée par maturité puis échéance ; bord rouge en retard.\n\nLa page (`routes/PortfolioMilestonesPage`) passe des bandes déjà filtrées par sa barre ; les jalons livrés y sont masqués par défaut.",
+          "Les Jalons du portefeuille (#240, `coque.md` PF-28 à PF-31), sur le modèle de maturité d'un projet. **Gantt** commun : un axe pour tous les projets, une bande d'en-tête par projet, la barre d'un jalon de l'axe d'un projet (`MilestoneBar` : part faite, lancement, losange d'échéance, retard hachuré), et les flèches « bloque » entre jalons, d'un projet à l'autre aussi. **Horizon** (`PortfolioHorizon`) : une bande par projet, une tuile par jalon, triée par maturité puis échéance ; bord rouge en retard.\n\nLa page (`routes/PortfolioMilestonesPage`) passe des bandes déjà filtrées par sa barre ; les jalons livrés y sont masqués par défaut.",
       },
     },
   },
@@ -93,4 +78,4 @@ export const Gantt: Story = {}
 export const GanttSemaine: Story = { args: { zoom: 'week' } }
 
 /** L'horizon en tuiles. */
-export const Horizon: Story = { render: () => <HorizonView /> }
+export const Horizon: Story = { render: () => <PortfolioHorizon groups={GROUPS} now={now} /> }

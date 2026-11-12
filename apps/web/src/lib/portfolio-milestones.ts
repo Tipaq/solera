@@ -95,6 +95,12 @@ export function openMilestoneCounts(rows: readonly PortfolioMilestone[]): Map<st
   return counts
 }
 
+/** Une bande de l'horizon ou du Gantt : un projet et ses jalons montrés. */
+export interface PortfolioMilestoneGroup {
+  project: ProjectDto
+  rows: PortfolioMilestone[]
+}
+
 /** Du plus avancé au moins avancé, le livré à la fin : ce qui bouge se lit d'abord (PF-29). */
 const RANK: Record<Maturity, number> = { launched: 0, ready: 1, split: 2, refine: 3, idea: 4, delivered: 5 }
 
@@ -105,7 +111,7 @@ const RANK: Record<Maturity, number> = { launched: 0, ready: 1, split: 2, refine
 export function milestoneGroups(
   rows: readonly PortfolioMilestone[],
   projects: readonly ProjectDto[],
-): { project: ProjectDto; rows: PortfolioMilestone[] }[] {
+): PortfolioMilestoneGroup[] {
   return projects.flatMap((project) => {
     const mine = rows
       .filter((row) => row.project.id === project.id)

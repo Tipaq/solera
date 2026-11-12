@@ -4583,13 +4583,11 @@ export const en = {
   'portfolio.board.countOne': "{cards} cards · 1 project",
   // The portfolio's Milestones (#240): every project's horizon and Gantt.
   'portfolio.milestones.view.gantt': "Gantt",
-  'portfolio.milestones.filter.project': "Project",
   'portfolio.milestones.show.delivered': "Delivered milestones",
   'portfolio.milestones.meta.one': "{count} open milestone",
   'portfolio.milestones.meta.other': "{count} open milestones",
   'portfolio.milestones.empty': "No milestone matches.",
   'portfolio.milestones.noDue': "no date",
-  'portfolio.milestones.bar': "#{number} {title} · {done}/{total}",
   'place.schedules.title': "Scheduled",
   'place.schedules.empty': "No scheduled task yet",
   'place.schedules.task': "Task",

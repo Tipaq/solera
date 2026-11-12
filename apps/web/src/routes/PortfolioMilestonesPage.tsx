@@ -2,9 +2,8 @@ import { CalendarRange, Compass } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import type { Zoom } from '../components/gantt/scale'
 import { PortfolioGantt } from '../components/portfolio/PortfolioGantt'
-import { PortfolioMilestoneTile } from '../components/portfolio/PortfolioMilestoneTile'
+import { PortfolioHorizon } from '../components/portfolio/PortfolioHorizon'
 import { PortfolioToolbar } from '../components/portfolio/PortfolioToolbar'
-import { ProjectGroupHeader } from '../components/places/ProjectPip'
 import { FilterChip } from '../components/toolbar/OneLineToolbar'
 import { MenuCheck, MenuHeading, MenuSegment, type ViewOption } from '../components/toolbar/ToolbarMenus'
 import { useAllCards } from '../lib/cards'
@@ -68,7 +67,8 @@ export function PortfolioMilestonesPage() {
   // Les comptes du menu portent sur tous les jalons, pour qu'on voie ce qu'un filtre cacherait.
   const open = useMemo(() => openMilestoneCounts(rows), [rows])
   const totals = useMemo(() => maturityCounts(rows.map((row) => row.entry)), [rows])
-  const openTotal = [...open.values()].reduce((sum, count) => sum + count, 0)
+  // La méta suit le filtre Projet : ce qu'il reste à livrer dans les projets regardés.
+  const openTotal = [...open].reduce((sum, [id, count]) => (filters.projects.size === 0 || filters.projects.has(id) ? sum + count : sum), 0)
   const now = Date.now()
   const shown = rows.filter((row) => keepPortfolioMilestone(row, query, filters, now))
   const groups = milestoneGroups(shown, projects)
@@ -149,18 +149,7 @@ export function PortfolioMilestonesPage() {
         {groups.length === 0 ? (
           <p className="p-4 text-sm text-ink-faint md:p-6">{t('portfolio.milestones.empty')}</p>
         ) : view === 'horizon' ? (
-          <div className="flex flex-col gap-6 p-4 md:p-6">
-            {groups.map(({ project, rows: list }) => (
-              <section key={project.id} aria-label={project.name} className="flex flex-col gap-2">
-                <ProjectGroupHeader project={project} count={list.length} />
-                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                  {list.map((row) => (
-                    <PortfolioMilestoneTile key={row.entry.card.id} row={row} now={now} />
-                  ))}
-                </div>
-              </section>
-            ))}
-          </div>
+          <PortfolioHorizon groups={groups} now={now} />
         ) : (
           <PortfolioGantt groups={groups} zoom={zoom} statusOf={statusOf} now={now} />
         )}

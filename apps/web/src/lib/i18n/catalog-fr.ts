@@ -4577,13 +4577,11 @@ export const fr: Catalog = {
   'portfolio.board.countOne': "{cards} cartes · 1 projet",
   // Les Jalons du portefeuille (#240) : l'horizon et le Gantt de tous les projets.
   'portfolio.milestones.view.gantt': "Gantt",
-  'portfolio.milestones.filter.project': "Projet",
   'portfolio.milestones.show.delivered': "Jalons livrés",
   'portfolio.milestones.meta.one': "{count} jalon ouvert",
   'portfolio.milestones.meta.other': "{count} jalons ouverts",
   'portfolio.milestones.empty': "Aucun jalon ne correspond.",
   'portfolio.milestones.noDue': "sans date",
-  'portfolio.milestones.bar': "#{number} {title} · {done}/{total}",
   'place.schedules.title': "Planifiées",
   'place.schedules.empty': "Aucune tâche planifiée",
   'place.schedules.task': "Tâche",
