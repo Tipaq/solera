@@ -74,6 +74,9 @@ try {
     SOLERA_CONFIG: config,
     SOLERA_DATA_DIR: join(data, 'data'),
     SOLERA_WEB_ROOT: join(data, 'web'),
+    // Le serveur commite et rebase depuis l'interface : sans identité, git refuse sur une
+    // machine qui n'en a pas de globale, comme le runner de la CI.
+    GIT_AUTHOR_NAME: 'Suite', GIT_AUTHOR_EMAIL: 'suite@example.com', GIT_COMMITTER_NAME: 'Suite', GIT_COMMITTER_EMAIL: 'suite@example.com',
   }
   const server = run(['--import', 'tsx', 'src/main.ts'], serverDir, env)
   const vite = run([join(webDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webDir, env)

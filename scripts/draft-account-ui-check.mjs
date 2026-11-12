@@ -117,9 +117,11 @@ try {
   // Le choix est celui du composer : son réglage « Compte » le reflète.
   // Codex : les comptes connectés se proposent avec leur usage, la connexion du terminal
   // plus du tout (#147), et le premier est déjà choisi.
-  await page.locator('input[name="draft-agent"][value="codex"]').check()
+  // La carte, pas le bouton radio : masqué (sr-only), il est recouvert par le nom du CLI.
+  await page.locator('label', { has: page.locator('input[name="draft-agent"][value="codex"]') }).click()
   await page.getByRole('radio', { name: /Codex Boîte/ }).waitFor()
-  await page.getByRole('radio', { name: /Codex Boîte/ }).getByText(/Clé API · facturée/).waitFor()
+  // Plus de « Clé API · facturée à l'usage » sous le nom (#85) : l'option ne porte que
+  // l'aperçu de consommation, absent tant qu'aucune sonde n'a lu ce compte.
   assert.equal(await page.getByRole('radio', { name: /Connexion du terminal/ }).count(), 0, 'Pas de connexion du terminal pour Codex')
   assert.equal(await page.getByRole('radio', { name: /Codex Boîte/ }).isChecked(), true, 'Le premier compte est choisi')
   console.log('codex account hint:', await page.getByRole('radio', { name: /Codex Boîte/ }).textContent())

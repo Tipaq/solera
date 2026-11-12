@@ -153,7 +153,7 @@ try {
     await days.getByRole('checkbox', { name: 'jeudi' }).click()
     await check.getByRole('alert').getByText('Choisis au moins un jour.').waitFor()
     await sentence('Règle incomplète.')
-    assert.equal(await cadence(), null)
+    await expectCadence(null, 'aucun jour')
     await days.getByRole('checkbox', { name: 'mardi' }).click()
 
     // PLA-7 : le jour du mois, l'aide au-delà de 28, le dernier jour.
@@ -196,7 +196,7 @@ try {
     await cron.fill('0 9 * *')
     await check.getByRole('alert').getByText('Il faut 5 champs', { exact: false }).waitFor()
     assert.equal(await cron.getAttribute('aria-invalid'), 'true')
-    assert.equal(await cadence(), null)
+    await expectCadence(null, 'cron invalide')
     await shot(check.locator('xpath=./div/div[1]'), 'personnalise-invalide')
     await cron.fill('0 9 * * 1')
     await expectCadence({ kind: 'cron', expression: '0 9 * * 1' }, 'cron valide')
