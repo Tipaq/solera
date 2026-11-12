@@ -213,7 +213,8 @@ function toneOf(entry: JournalEntryDto): string {
   return FAMILY_TONE[JOURNAL_FAMILY_OF[entry.kind]]
 }
 
-function Pip({ entry, model, size = 'md' }: { entry: JournalEntryDto; model: RailModel; size?: 'md' | 'sm' }) {
+/** La pastille d'un événement, teintée par famille : le rail, et les couloirs de « Par arbre ». */
+export function Pip({ entry, model, size = 'md' }: { entry: JournalEntryDto; model: Pick<RailModel, 'isMilestone' | 'agentOf'>; size?: 'md' | 'sm' }) {
   // Un jalon livré : la carte fermée est une carte-jalon. Un losange, plein, à part.
   if (entry.kind === 'cardClosed' && model.isMilestone(entry.cardNumber)) {
     return (
