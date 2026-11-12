@@ -1,6 +1,8 @@
 import { useParams } from 'react-router-dom'
 import { EmptyState } from '@solera/ui'
+import { CardSheetHost } from '../components/cards/CardSheetHost'
 import { AskInbox } from '../components/inbox/AskInbox'
+import { MilestoneBeacon } from '../components/overview/MilestoneBeacon'
 import { OverviewActions } from '../components/overview/OverviewActions'
 import { RecentEvents } from '../components/overview/RecentEvents'
 import { useTranslate } from '../lib/i18n'
@@ -37,7 +39,7 @@ export function ProjectOverviewPage() {
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="flex flex-col gap-10">
         <AskInbox items={inbox} />
-        {/* La place du phare des jalons (#174). */}
+        <MilestoneBeacon projectId={projectId} inbox={inbox} />
         <div className="grid gap-10 xl:grid-cols-[minmax(0,1fr)_24rem]">
           {/* La place du « Code en cours » (#173) ; en une colonne, rien ne la réserve. */}
           <div className="hidden min-w-0 xl:block" />
@@ -47,6 +49,8 @@ export function ProjectOverviewPage() {
           </div>
         </div>
       </div>
+      {/* Une carte du phare qui t'attend ouvre sa fiche sur place (`?fiche=N`). */}
+      <CardSheetHost projectId={projectId} />
     </div>
   )
 }

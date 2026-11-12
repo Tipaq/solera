@@ -1,6 +1,6 @@
 import { Search, X } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { IconButton, cx } from '@solera/ui'
+import { IconButton, TooltipButton, cx, panelGestureClass } from '@solera/ui'
 import { useTranslate } from '../../lib/i18n'
 
 /**
@@ -112,6 +112,23 @@ export const toolbarFieldClass = (invalid = false) =>
  * 44 px de large au doigt comme de haut (*Gabarit tactile*).
  */
 export const iconToolClass = 'justify-center min-w-11 md:min-w-9 pointer-coarse:min-w-11'
+
+/**
+ * Un outil fait d'une icône dans la ligne d'outils d'un onglet du panneau : la hauteur
+ * de `Button size="sm"`, carré à la souris, 44 px au doigt, son nom en infobulle.
+ */
+export function IconTool({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <TooltipButton
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      className={cx(panelGestureClass, 'shrink-0', iconToolClass)}
+    >
+      {children}
+    </TooltipButton>
+  )
+}
 
 /**
  * Le bouton d'un menu de la barre (« Filtrer », « Affichage ») : icône, libellé, compte.
