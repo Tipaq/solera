@@ -1,7 +1,7 @@
 import { Check, GitBranch, TriangleAlert } from 'lucide-react'
 import { cx } from '@solera/ui'
-import { baseLineOf, pluralOf, type TreeRow } from '../../lib/code-model'
-import { useTranslate } from '../../lib/i18n'
+import { baseLineOf, type TreeRow } from '../../lib/code-model'
+import { useTranslate, pluralOf } from '../../lib/i18n'
 
 /**
  * La ligne de base (T-2) : la branche de comparaison, et la racine du projet. En gris

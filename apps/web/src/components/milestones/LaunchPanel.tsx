@@ -13,8 +13,7 @@ import { CardInfoButton } from '../cards/CardInfoButton'
 import { MilestoneCardLink } from './MilestoneCardLink'
 import { STATE_DOT } from '../gantt/tones'
 import { awaitsMe, cardState, isOpen, loadedStatus, type StatusOf } from '../../lib/card-state'
-import { pluralOf } from '../../lib/code-model'
-import { useTranslate } from '../../lib/i18n'
+import { useTranslate, pluralOf } from '../../lib/i18n'
 import {
   environmentForMode,
   initialLaunchEnvironment,

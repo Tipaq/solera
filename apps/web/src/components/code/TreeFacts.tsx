@@ -1,8 +1,8 @@
 import { ArrowDown, ArrowUp, HardDrive } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Badge, cx } from '@solera/ui'
-import { BEHIND_ALERT, PR_TONE, formatBytes, pluralOf, type TreeRow } from '../../lib/code-model'
-import { useLocale, useTranslate } from '../../lib/i18n'
+import { BEHIND_ALERT, PR_TONE, formatBytes, type TreeRow } from '../../lib/code-model'
+import { useLocale, useTranslate, pluralOf } from '../../lib/i18n'
 
 /** Un fait en signes, et sa phrase pour un lecteur d'écran : l'infobulle n'existe pas au doigt. */
 function Fact({ label, className, children }: { label: string; className?: string; children: ReactNode }) {
