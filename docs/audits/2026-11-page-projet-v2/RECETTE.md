@@ -50,7 +50,7 @@ Rien n'est absent. Les 17 écarts mineurs ont tous une carte :
 | #252 | graphe git : « GRAPHE » chevauche « MESSAGE » (T-7.1) | — |
 | #253 | `PanelHost` encore monté sur le Tableau (TIR-9) | #230 |
 | #261 | l'aperçu du mois gèle sur un cron « chaque minute » (PLA-11) | #200 |
-| #269 | `/sessions` au téléphone : deux bandes (COQ-12, SES-1) | #230 |
+| #269 | `/sessions` au téléphone : deux bandes (COQ-12, SES-1) — **corrigé dans la PR de #269** | #230 |
 | #270 | « 0 lignes » au lieu de « 0 ligne » (R-6.6) | #230 |
 | #271 | échéances relatives arrondies en heures, pas en jours (JAL-3, HOR-11, FCH-3) — **corrigé dans la PR de #246**, il faisait échouer `places-ui-check` chaque après-midi | #157 |
 | #272 | axe des jalons au téléphone : mois chevauchés sous « auj. » (HOR-3, GNT-3) | #182 |
@@ -97,7 +97,7 @@ Restes signalés par #228 en dehors de la recette : #279 (la couleur de « trava
 | COQ-9 pleine largeur | ✅ | contenu 1176 px = 1440 − sidebar, sur les 5 vues |
 | COQ-10 plus d'action de vue dans la rangée | ✅ | « + Carte » dans la barre du Tableau ; `?nouvelle=1` ouvre le dialogue (coque-nouvelle-carte) |
 | COQ-11 anciennes adresses redirigées | ✅ | décidé : `/p/:id/code` n'a existé que dans le prototype, jamais sur `main` ; les autres anciennes adresses sont redirigées |
-| COQ-12 bande seule /sessions, /schedules | 🟡 | même bande au large ; au téléphone /sessions a deux bandes (☰ Solera + ☰ Sessions) : `/sessions` absent de `contextualHeader` (AppShell.tsx:66)  — #269 |
+| COQ-12 bande seule /sessions, /schedules | ✅ | même bande au large ; au téléphone une seule bande depuis #269 (`/sessions` dans `contextualHeader`) : sessions-ui-check.mjs, un seul « Ouvrir la navigation » |
 
 #### 1.2 Tiroir commun et Échap par couches
 | Point | État | Preuve / carte |
@@ -171,7 +171,7 @@ Restes signalés par #228 en dehors de la recette : #279 (la couleur de « trava
 #### 1.7 Page /sessions
 | Point | État | Preuve / carte |
 |---|---|---|
-| SES-1 route, bande seule, « + Conversation » | 🟡 | au large OK (MessageSquare, « Sessions », « Nouvelle conversation ») ; au téléphone deux bandes — voir COQ-12 — #269 |
+| SES-1 route, bande seule, « + Conversation » | ✅ | au large OK (MessageSquare, « Sessions », « Nouvelle conversation ») ; au téléphone une seule bande depuis #269 — voir COQ-12 |
 | SES-2 toutes sauf les planifiées | ✅ | 13 sessions listées sur 15 conversations (les 2 de tâches planifiées exclues) |
 | SES-3 cinq états, dans l'ordre | ✅ | Par état et Filtrer : t'attend, en erreur, à relire, travaille, terminée ; sessions-view.test.ts |
 | SES-4 ligne : agent + point, titre, mot, projet, branche, #carte, date | ✅ | coque-sessions-liste : 40 px, point titré, pastille, branche mono, `#2`, date relative |
