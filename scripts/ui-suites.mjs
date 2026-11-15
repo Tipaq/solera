@@ -49,6 +49,7 @@ const BATCHES = [
     'api-mcp', // 15
     'card-draft', // 12
     'brief-field', // 12
+    'onboarding', // ~10 en local, à mesurer
     'planned', // ~25, à mesurer
   ],
   [
@@ -87,7 +88,6 @@ const BATCHES = [
 const OUTSIDE = {
   desktop: "l'app empaquetée, éprouvée par le job desktop sur main",
   actions: 'instable, lignes en double (#259)',
-  onboarding: 'page.goto bloque par intermittence (#263)',
 }
 
 const onDisk = readdirSync(join(root, 'scripts'))
