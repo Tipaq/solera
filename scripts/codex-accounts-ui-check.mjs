@@ -8,10 +8,12 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { writeFakeCodex } from './checks/fake-codex.mjs'
 
 // Comptes Codex supplémentaires : création, connexion par clé API et par code d'appareil,
 // sélecteur de compte dans les défauts du CLI. Vrais composants, vraie API, base temporaire ;
-// le vrai `codex app-server` est lancé pour les connexions, dans un home jetable.
+// un faux `codex app-server` (`checks/fake-codex.mjs`) joue les connexions, dans un home
+// jetable : la suite tourne en CI, sans CLI ni appel à OpenAI.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -51,7 +53,8 @@ try {
   const apiPort = await freePort()
   const webPort = await freePort()
   const config = join(data, 'config.toml')
-  await writeFile(config, '[agents.claude]\nenabled = false\n[agents.opencode]\nenabled = false\n')
+  const fakeCodex = await writeFakeCodex(data)
+  await writeFile(config, `[agents.claude]\nenabled = false\n[agents.codex]\nbinary = "${fakeCodex}"\n[agents.opencode]\nenabled = false\n`)
   const env = {
     ...process.env,
     SOLERA_PORT: String(apiPort),

@@ -42,7 +42,8 @@ jobs:
     # elles pourrissent en silence (#85, cartes #132 et #258) : `scripts/ui-suites.mjs`
     # les range toutes, en lots, et refuse une suite rangée nulle part.
     # Aucune n'a besoin d'un vrai CLI : chacune les coupe par sa configuration, les
-    # déclare sur un binaire introuvable ou pose son faux binaire (claude-login).
+    # déclare sur un binaire introuvable ou pose son faux binaire (claude-login, et
+    # `scripts/checks/fake-claude.mjs` et `fake-codex.mjs` pour schedule et les comptes).
     name: ui (${{ matrix.batch }}/${{ strategy.job-total }})
     runs-on: ubuntu-latest
     strategy:

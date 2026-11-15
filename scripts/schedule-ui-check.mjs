@@ -1,16 +1,18 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
-import { homedir, tmpdir } from 'node:os'
-import { delimiter, join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { writeFakeClaude } from './checks/fake-claude.mjs'
 
-// Vrais composants, vraie API et vrai CLI Claude, dans une base temporaire : la tâche
-// créée ici tire pour de bon, à la minute. Compter deux tours très courts de quota.
+// Vrais composants et vraie API, dans une base temporaire : la tâche créée ici tire pour
+// de bon, à la minute. Le CLI Claude est un faux (`checks/fake-claude.mjs`) qui joue un
+// tour court : la suite tourne en CI, sans compte ni quota.
 // Les captures vont dans SCHEDULE_SHOTS, ou dans un dossier temporaire annoncé à la fin.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
@@ -26,21 +28,6 @@ async function freePort() {
   const port = socket.address().port
   await new Promise((resolve) => socket.close(resolve))
   return port
-}
-
-/**
- * Le dossier où le Solera du poste a installé ses CLI agents.
- *
- * La suite donne au serveur un `SOLERA_DATA_DIR` jetable, et ce préfixe suit le dossier
- * de données : un CLI installé depuis l'interface devient alors introuvable, et le tir
- * meurt à la naissance sur « native binary not found at claude ». On rend donc le `bin`
- * du poste au `PATH` du serveur d'essai — c'est une installation, pas un état, et rien
- * dans la suite n'a de raison de l'isoler.
- */
-function hostAgentsBin() {
-  const data = process.env.SOLERA_DATA_DIR
-    ?? join(process.env.XDG_DATA_HOME || join(homedir(), '.local/share'), 'solera')
-  return join(data, 'agents', 'bin')
 }
 
 function run(args, cwd, env) {
@@ -66,7 +53,9 @@ try {
   const apiPort = await freePort()
   const webPort = await freePort()
   const config = join(data, 'config.toml')
-  await writeFile(config, '[agents.codex]\nenabled = false\n[agents.opencode]\nenabled = false\n')
+  const fakeClaude = await writeFakeClaude(data)
+  const sent = join(data, 'claude-stdin.jsonl')
+  await writeFile(config, `[agents.claude]\nbinary = "${fakeClaude}"\n[agents.codex]\nenabled = false\n[agents.opencode]\nenabled = false\n`)
   const env = {
     ...process.env,
     SOLERA_PORT: String(apiPort),
@@ -74,7 +63,7 @@ try {
     SOLERA_CONFIG: config,
     SOLERA_DATA_DIR: join(data, 'data'),
     SOLERA_WEB_ROOT: join(data, 'web'),
-    PATH: `${hostAgentsBin()}${delimiter}${process.env.PATH ?? ''}`,
+    FAKE_CLAUDE_LOG: sent,
   }
   const server = run(['--import', 'tsx', 'src/main.ts'], serverDir, env)
   const vite = run([join(webDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webDir, env)
@@ -216,9 +205,12 @@ try {
   const runLink = detail.locator(`a[href$="/c/${thread.id}"]`)
   await runLink.waitFor()
 
-  // Le fil s'ouvre comme une conversation ordinaire, et l'agent a su qu'il tournait seul.
+  // Le fil s'ouvre comme une conversation ordinaire, et l'agent a su qu'il tournait seul :
+  // le serveur le lui a dit dans le premier message envoyé au CLI.
   await runLink.click()
   await page.getByText(/personne n'est au clavier/).first().waitFor()
+  const prompts = (await readFile(sent, 'utf8')).split('\n').filter(Boolean).map((line) => JSON.parse(line)).filter((message) => message.type === 'user')
+  assert.ok(prompts.some((message) => JSON.stringify(message.message.content).includes("personne n'est au clavier")), 'Le tir dit au CLI que personne n’est au clavier')
   await page.screenshot({ animations: 'disabled', path: join(shots, 'run-desktop.png') })
 
   // --- Lancer maintenant, depuis le téléphone ------------------------------------

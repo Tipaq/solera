@@ -8,9 +8,12 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { writeFakeClaude } from './checks/fake-claude.mjs'
+import { writeFakeCodex } from './checks/fake-codex.mjs'
 
 // Choix du compte sur la page de nouvelle session, avec l'usage de chaque compte sous son
-// nom. Vrais composants, vraie API, base temporaire ; les vrais CLI sont sondés pour l'usage.
+// nom. Vrais composants, vraie API, base temporaire ; de faux CLI (`checks/fake-*.mjs`)
+// répondent aux sondes, pour que la suite tourne en CI sans CLI installé.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -50,7 +53,8 @@ try {
   const apiPort = await freePort()
   const webPort = await freePort()
   const config = join(data, 'config.toml')
-  await writeFile(config, '[agents.opencode]\nenabled = false\n')
+  const [fakeClaude, fakeCodex] = await Promise.all([writeFakeClaude(data), writeFakeCodex(data)])
+  await writeFile(config, `[agents.claude]\nbinary = "${fakeClaude}"\n[agents.codex]\nbinary = "${fakeCodex}"\n[agents.opencode]\nenabled = false\n`)
   const env = {
     ...process.env,
     SOLERA_PORT: String(apiPort),
