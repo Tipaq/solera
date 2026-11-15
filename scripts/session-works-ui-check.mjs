@@ -134,7 +134,7 @@ try {
     // La charge et la mémoire passent dans le ⋯.
     await vite.getByRole('button', { name: 'Plus pour « Serveur vite »' }).click()
     for (const item of ['En faire une action', 'Aller à la session', 'Arrêter']) await page.getByRole('menuitem', { name: item, exact: true }).waitFor()
-    await page.getByRole('menu').getByText('4 % · 182.0 Mo').waitFor()
+    await page.getByRole('menu').getByText('4 % · 182 Mo').waitFor()
     await page.keyboard.press('Escape')
     await noOverflow('le Lanceur')
     await shot(check.locator('section').first(), 'tuiles')

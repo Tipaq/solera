@@ -1,6 +1,7 @@
 import { MAX_ATTACHMENT_BYTES, type AttachmentDto } from '@solera/protocol'
 import { ApiRequestError, api } from './api'
-import { translate } from './i18n'
+import { locale, translate } from './i18n'
+import { sizeParts } from './writing'
 
 /**
  * Téléverse un fichier et retourne sa fiche.
@@ -49,11 +50,8 @@ export function discardAttachment(id: string): Promise<void> {
   return api.delete<void>(`/api/attachments/${id}`)
 }
 
+/** « 21,5 Mo », « 21.5 MB » : le nombre et l'unité dans la langue de l'interface (#274). */
 export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} o`
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} ko`
-  // Les gigaoctets ne servent pas aux pièces jointes, plafonnées à 20 Mo, mais aux
-  // fichiers déposés dans l'explorateur : « 4300.5 Mo » ne se lit pas.
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} Mo`
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} Go`
+  const { unit, value } = sizeParts(bytes)
+  return translate(`attachments.size.${unit}`, { value: new Intl.NumberFormat(locale()).format(value) })
 }
