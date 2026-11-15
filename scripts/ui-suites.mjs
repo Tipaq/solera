@@ -52,6 +52,7 @@ const BATCHES = [
   [
     'git', // 70
     'places', // 56
+    'actions', // ~56 en local, à mesurer
     'sidebar', // 34
     'composer', // 26
     'terminals', // 26
@@ -76,7 +77,6 @@ const BATCHES = [
     'grok', // 4
     'opencode', // 4
     'panel-agent', // ~15, à mesurer
-    'actions', // ~56 en local, à mesurer
   ],
 ]
 
