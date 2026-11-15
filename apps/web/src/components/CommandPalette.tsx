@@ -41,7 +41,7 @@ import { NEW_PARAM } from '../lib/place'
 import { useCurrentUser } from '../lib/session'
 import { openSettings } from '../lib/settings-dialog'
 import { openTab } from '../lib/editor-tabs'
-import { openPanelOnArrival, setPanelOpen, setPanelTab, showTerminal } from '../lib/panel'
+import { openPanelOnArrival, setPanelOpen, setPanelTab, showTerminal, type PanelTab } from '../lib/panel'
 import { projectScope } from '../lib/workspace-scope'
 import { visibleSections } from './settings/sections'
 import { AgentIcon } from './AgentIcon'
@@ -146,16 +146,16 @@ export function CommandPalette({
    * coque : la palette s'ouvre depuis n'importe quelle vue, et l'adresse est ce que
    * toutes ont en commun.
    */
-  const route = /^\/p\/([^/]+)(?:\/(c\/([^/]+)|board))?/.exec(pathname)
+  const route = /^\/p\/([^/]+)(?:\/(c\/([^/]+)|board|travail|actions))?/.exec(pathname)
   const projectId = route?.[1] ?? null
   const conversationId = route?.[3] && route[3] !== 'new' ? route[3] : null
   /**
    * Les vues qui montent le panneau, où un fichier s'ouvre sans quitter la page : la
-   * conversation et le board. Le brouillon n'en a pas, et un panneau « ouvert » qu'il
-   * ne monte pas resterait sans bouton pour le refermer.
+   * conversation, Travail et Actions. Le brouillon et le Tableau n'en ont pas, et un
+   * panneau « ouvert » qu'une vue ne monte pas resterait sans bouton pour le refermer.
    */
-  const onBoard = route?.[2] === 'board'
-  const panelHere = conversationId !== null || onBoard
+  const onPanelView = route?.[2] === 'travail' || route?.[2] === 'actions'
+  const panelHere = conversationId !== null || onPanelView
 
   // Un fichier se cherche dès la première lettre derrière `/` : le préfixe dit déjà ce
   // qu'on veut, et un nom de fichier se tape court.
@@ -267,9 +267,9 @@ export function CommandPalette({
         run: () => go(`/p/${projectId}/board`),
       })
     }
-    // Le panneau du Tableau n'a plus de bouton (#180) : on l'appelle d'ici, comme le
-    // ferait un fichier ouvert.
-    if (onBoard) {
+    // Le panneau de Travail et d'Actions n'a pas de bouton : on l'appelle d'ici, comme
+    // le ferait un fichier ouvert.
+    if (onPanelView) {
       entries.push({
         key: 'cmd-panel',
         icon: <PanelRight size={14} />,
@@ -292,11 +292,24 @@ export function CommandPalette({
     })
 
     return entries
-  }, [close, go, onBoard, projectId, projectNames, t])
+  }, [close, go, onPanelView, projectId, projectNames, t])
+
+  /**
+   * Rejoindre Travail d'un projet, panneau ouvert sur `tab`. L'arrivée rend au panneau
+   * l'état de sa nouvelle page : c'est celui-là qu'on écrit.
+   */
+  const goToPanelOf = useCallback(
+    (target: string, tab: PanelTab) => {
+      const travailPath = `/p/${target}/travail`
+      openPanelOnArrival(travailPath, tab)
+      navigate(travailPath)
+    },
+    [navigate],
+  )
 
   /**
    * Ouvrir un fichier dans le panneau de son projet. Celui d'un autre projet, ou vu
-   * depuis une page sans panneau, fait d'abord aller au board de ce projet : c'est la
+   * depuis une page sans panneau, fait d'abord aller à Travail de ce projet : c'est la
    * vue de projet qui monte le panneau sans qu'il faille choisir une conversation.
    */
   const openFile = useCallback(
@@ -309,18 +322,15 @@ export function CommandPalette({
         setPanelOpen(true)
         return
       }
-      // L'arrivée rend au panneau l'état de sa nouvelle page : c'est celui-là qu'on écrit.
-      const board = `/p/${fileProject}/board`
-      openPanelOnArrival(board, 'files')
-      navigate(board)
+      goToPanelOf(fileProject, 'files')
     },
-    [close, conversationId, navigate, panelHere, projectId],
+    [close, conversationId, goToPanelOf, panelHere, projectId],
   )
 
   /**
    * Le geste d'une action de projet. Dans le projet sous les yeux et sur une vue qui
    * monte le panneau, elle se joue là où l'on est, worktree de la conversation compris ;
-   * ailleurs, on rejoint d'abord le board de son projet, et elle se joue à sa racine.
+   * ailleurs, on rejoint d'abord Travail de son projet, et elle se joue à sa racine.
    * Relire ouvre l'onglet *Actions*, où la commande se lit avant de partir.
    */
   const runProjectAction = useCallback(
@@ -333,9 +343,7 @@ export function CommandPalette({
       }
       const here = action.projectId === projectId && panelHere
       if (!here) {
-        const board = `/p/${action.projectId}/board`
-        openPanelOnArrival(board, op === 'output' ? 'terminals' : 'actions')
-        navigate(board)
+        goToPanelOf(action.projectId, op === 'output' ? 'terminals' : 'actions')
       }
       if (op === 'review') {
         setPanelTab('actions')
@@ -346,7 +354,7 @@ export function CommandPalette({
         startAction({ action, op, conversationId: here ? (conversationId ?? undefined) : undefined })
       }
     },
-    [close, conversationId, navigate, panelHere, projectId, startAction],
+    [close, conversationId, goToPanelOf, panelHere, projectId, startAction],
   )
 
   const groups = useMemo((): Group[] => {

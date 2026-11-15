@@ -151,7 +151,7 @@ export async function checkSearch({ page, base, project }) {
   assert.equal(await readFile(join(dir, 'beta.txt'), 'utf8'), 'seulement REMPLACE sur une ligne\n')
   assert.match(await readFile(join(dir, 'alpha.txt'), 'utf8'), new RegExp(TOKEN), 'Le filtre borne le remplacement')
 
-  // Le contrôle suivant repart du board seul.
+  // Le contrôle suivant repart de Travail seul.
   await (await closePanelButton(page)).click()
   await panel.waitFor({ state: 'hidden' })
   console.log('OK : recherche par nom et contenu, drapeaux, filtres, saut à la ligne et remplacement borné.')

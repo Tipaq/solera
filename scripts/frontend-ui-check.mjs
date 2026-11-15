@@ -294,8 +294,8 @@ try {
   await mobileCard.getByRole('button', { name: 'Changer la colonne : À vérifier', exact: true }).waitFor()
   await mobileCard.getByRole('button', { name: 'Fermer', exact: true }).click()
   await mobileCard.waitFor({ state: 'hidden' })
-  // Le panneau du Tableau n'a plus de bouton : la palette l'appelle (#180).
-  await openProjectPanel(page, base, project, { inPlace: true })
+  // Le panneau de Travail n'a pas de bouton : la palette l'appelle.
+  await openProjectPanel(page, base, project)
   const workspace = page.getByRole('dialog', { name: 'Panneau du workspace', exact: true })
   await workspace.waitFor()
   // La recherche est une vue du panneau depuis le 2026-10-11 : le champ de filtre de
