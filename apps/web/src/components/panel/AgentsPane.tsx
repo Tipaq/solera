@@ -626,7 +626,9 @@ function SubAgentDetail({
         <button type="button" onClick={reveal} className={panelGestureClass}>
           <CornerUpLeft size={12} aria-hidden /> {t('panel.agent.reveal')}
         </button>
-        {canMessage ? (
+        {/* Sans nom ni `agentId`, l'agent principal n'aurait aucune cible à donner à
+            `SendMessage` : un sous-agent au premier plan n'en annonce qu'en rendant son appel. */}
+        {canMessage && agent.address ? (
           <button type="button" aria-expanded={writing} onClick={() => setWriting((value) => !value)} className={panelGestureClass}>
             <MessageSquare size={12} aria-hidden /> {t('panel.agent.message.open')}
           </button>
@@ -651,7 +653,8 @@ function SubAgentDetail({
 /**
  * Écrire à un sous-agent. Aucun CLI n'accepte, depuis son flux, un message adressé à un
  * sous-agent : c'est l'agent principal qui le lui transmet avec `SendMessage`, par le nom
- * que l'appel lui a donné ou l'`agentId` que son résultat annonce. Le message part comme
+ * que l'appel lui a donné ou l'`agentId` que son résultat annonce. Le message se lit donc
+ * dans le fil principal tel qu'il part, consigne de relais comprise. Le message part comme
  * n'importe quel message du fil : en file d'attente si un tour tourne, et l'agent principal
  * ne le relaie qu'une fois libre — un sous-agent qu'il attend le lira donc à son retour.
  */
@@ -678,10 +681,7 @@ function SubAgentMessage({
     if (!body || sending) return
     setSending(true)
     setError(null)
-    const relay = agent.address
-      ? t('panel.agent.message.relayTo', { label, address: agent.address, body })
-      : t('panel.agent.message.relayCall', { label, call: agent.id, body })
-    sendMessage(conversationId, relay)
+    sendMessage(conversationId, t('panel.agent.message.relay', { label, address: agent.address ?? '', body }))
       .then(onSent)
       .catch((cause: Error) => {
         setSending(false)

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import type { AgentKind, ConversationDto, ConversationStatus } from '@solera/protocol'
+import type { ConversationDto, ConversationStatus } from '@solera/protocol'
 import type { StatusTone } from '@solera/ui'
 import { useMemo } from 'react'
 import { api } from './api'
@@ -17,7 +17,6 @@ export interface Teammate {
   id: string
   projectId: string | null
   title: string
-  agent: AgentKind
   status: ConversationStatus
   card: { number: number; title: string } | null
   /** Le nom de son worktree, nul quand elle travaille à la racine du projet. */
@@ -34,15 +33,13 @@ export function teammateTone(status: ConversationStatus): StatusTone {
 export function useTeammates(conversationId: string | undefined, projectId: string | undefined): Teammate[] {
   const { data: list } = useConversations(projectId)
   const { data: trees } = useWorktrees(projectId)
-  // La liste du projet grandit quand une session naît : c'est elle qui fait relire les
-  // coéquipiers, sans minuterie.
-  const known = list?.length ?? 0
   const { data: ids } = useQuery({
-    queryKey: ['teammates', conversationId, known],
+    // Sous `conversations` : le flux des listes, qui relit toutes ces clés quand une
+    // session naît ou change, relit aussi celle-ci, sans minuterie à tenir.
+    queryKey: ['conversations', 'teammates', conversationId],
     queryFn: () => api.get<string[]>(`/api/conversations/${conversationId}/teammates`),
     enabled: Boolean(conversationId && projectId),
     staleTime: 15_000,
-    placeholderData: (previous) => previous,
   })
   return useMemo(() => {
     if (!ids || ids.length === 0 || !list) return []
@@ -60,7 +57,6 @@ function teammateOf(entry: ConversationDto, treeName: Map<string, string>): Team
     id: entry.id,
     projectId: entry.projectId,
     title: entry.title,
-    agent: entry.agent,
     status: entry.status,
     card: entry.card ? { number: entry.card.number, title: entry.card.title } : null,
     worktree: entry.worktreeId ? (treeName.get(entry.worktreeId) ?? null) : null,

@@ -36,9 +36,9 @@ const AGENTS: SubAgent[] = [
   subAgent('a6', 'Lire panel.ts', 'running', [], { startedAt: now - 90_000, parentId: 'a5' }),
 ]
 const TEAMMATES: Teammate[] = [
-  { id: 's1', projectId: 'p1', title: 'Coéquipiers dans l’onglet Agent', agent: 'claude', status: 'running', card: { number: 74, title: 'Revoir l’onglet Agents' }, worktree: 'feat/onglet-agents-v2' },
-  { id: 's2', projectId: 'p1', title: 'Relire la PR #212', agent: 'codex', status: 'awaiting_input', card: null, worktree: null },
-  { id: 's3', projectId: 'p1', title: 'Ménage des worktrees', agent: 'claude', status: 'idle', card: { number: 140, title: 'Ménage' }, worktree: 'chore/menage' },
+  { id: 's1', projectId: 'p1', title: 'Coéquipiers dans l’onglet Agent', status: 'running', card: { number: 74, title: 'Revoir l’onglet Agents' }, worktree: 'feat/onglet-agents-v2' },
+  { id: 's2', projectId: 'p1', title: 'Relire la PR #212', status: 'awaiting_input', card: null, worktree: null },
+  { id: 's3', projectId: 'p1', title: 'Ménage des worktrees', status: 'idle', card: { number: 140, title: 'Ménage' }, worktree: 'chore/menage' },
 ]
 const BACKGROUND: BackgroundWork[] = [
   { id: 'k1', kind: 'local_bash', description: 'Serveur de dev', command: 'pnpm exec vite --port 5418', activity: null, lastTool: null, toolUses: 0, totalTokens: 0 },

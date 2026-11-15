@@ -166,10 +166,10 @@ export const SidePanel = memo(function SidePanel({
         : conversationId || !sessionTab
           ? chosenTab
           : 'files'
-  // Le badge de *Projet* compte ce qui attend une relecture : c'est la seule chose du
-  // board qui réclame quelqu'un, et le reste se lit en ouvrant l'onglet.
   // Lus seulement quand l'onglet Agent est ouvert : c'est le seul à les montrer.
   const teammates = useTeammates(tab === 'agents' ? conversationId : undefined, tab === 'agents' ? (projectId ?? undefined) : undefined)
+  // Le badge de *Projet* compte ce qui attend une relecture : c'est la seule chose du
+  // board qui réclame quelqu'un, et le reste se lit en ouvrant l'onglet.
   const { data: cards } = useCards(conversationId && projectId ? projectId : undefined)
   const reviewCount = toReviewCount(cards)
   const selectedSubAgent = useSelectedSubAgent()

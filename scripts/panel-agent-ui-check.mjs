@@ -75,8 +75,8 @@ const reader = subAgent('t2', 'Lire SidePanel', 'running', [], { startedAt: now 
 const deep = subAgent('t3', 'Lire panel.ts', 'running', [], { startedAt: now - 2 * MIN, parentId: 't2' })
 const TREE = [lead, reader, deep]
 const TEAMMATES = [
-  { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', projectId: 'p1', title: 'Coéquipiers dans l’onglet Agent', agent: 'claude', status: 'running', card: { number: 74, title: 'Revoir l’onglet Agents' }, worktree: 'feat/onglet-agents-v2' },
-  { id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', projectId: 'p1', title: 'Relire la PR #212', agent: 'codex', status: 'awaiting_input', card: null, worktree: null },
+  { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', projectId: 'p1', title: 'Coéquipiers dans l’onglet Agent', status: 'running', card: { number: 74, title: 'Revoir l’onglet Agents' }, worktree: 'feat/onglet-agents-v2' },
+  { id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', projectId: 'p1', title: 'Relire la PR #212', status: 'awaiting_input', card: null, worktree: null },
 ]
 
 const TURNS = [
@@ -408,11 +408,11 @@ try {
     }
 
     /* ------------------------- #74 : un CLI qui ne relaie pas, un agent sans nom */
-    {
-      const { page, pane } = await open({ agents: [deep], background: [], editTurns: [], agent: 'codex' })
-      await click(pane.getByRole('button', { name: /Lire panel\.ts/ }))
+    for (const [agents, agent, why] of [[[lead], 'codex', 'un CLI sans relais'], [[deep], 'claude', 'un agent sans nom ni agentId']]) {
+      const { page, pane } = await open({ agents, background: [], editTurns: [], agent })
+      await click(pane.getByRole('button', { name: new RegExp(agents[0].description) }))
       await back(pane).waitFor()
-      assert.equal(await pane.getByRole('button', { name: 'Écrire à l’agent' }).count(), 0, 'pas de geste qui ne ferait rien')
+      assert.equal(await pane.getByRole('button', { name: 'Écrire à l’agent' }).count(), 0, `pas de geste qui ne ferait rien : ${why}`)
       await page.close()
     }
 
