@@ -3,8 +3,9 @@ import type { LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { CardDto } from '@solera/protocol'
 import { Tooltip, cx } from '@solera/ui'
-import { locale, useTranslate } from '../../lib/i18n'
-import { sizeParts, type LinkPiece } from '../../lib/writing'
+import { useTranslate } from '../../lib/i18n'
+import type { LinkPiece } from '../../lib/writing'
+import { formatBytes } from '../../lib/attachments'
 import { columnLabel } from '../board/columns'
 import type { BriefAttachments, CardMode } from './use-brief-attachments'
 
@@ -84,10 +85,6 @@ function ModeSwitch({ card, mode, onChange }: { card: CardDto; mode: CardMode; o
 export function AttachedPieces({ attachments, allowInclude }: { attachments: BriefAttachments; allowInclude: boolean }) {
   const t = useTranslate()
   if (attachments.count === 0) return null
-  const size = (bytes: number) => {
-    const { unit, value } = sizeParts(bytes)
-    return t(`attachments.size.${unit}`, { value: new Intl.NumberFormat(locale()).format(value) })
-  }
   return (
     <section aria-label={t('attachments.aria')} className="flex flex-col gap-2">
       <span className="text-xs text-ink-faint">{t('attachments.joined', { count: attachments.count })}</span>
@@ -131,7 +128,7 @@ export function AttachedPieces({ attachments, allowInclude }: { attachments: Bri
             onRemove={() => attachments.removeFile(piece.key)}
           >
             <span className="max-w-44 truncate text-ink">{piece.file.name}</span>
-            <span className="shrink-0 text-ink-faint tabular-nums">{size(piece.file.size)}</span>
+            <span className="shrink-0 text-ink-faint tabular-nums">{formatBytes(piece.file.size)}</span>
           </Piece>
         ))}
       </div>

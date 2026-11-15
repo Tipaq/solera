@@ -10,7 +10,6 @@ import {
   type ConfigLayerPatch,
   type AgentKind,
   type AppearancePrefs,
-  type BoardOrder,
   type NotificationPrefs,
   type OnboardingState,
   type ProjectDefaults,
@@ -93,16 +92,6 @@ export function writeCollapsedProjects(db: Db, userId: string, projectIds: strin
 export function writeHiddenAgents(db: Db, userId: string, agents: AgentKind[]): void {
   const current = readUserSettings(db, userId)
   save(db, userId, { ...current, hiddenAgents: [...new Set(agents)] })
-}
-
-/** L'ordre du board d'un projet, sans toucher à celui des autres. */
-export function writeBoardOrder(db: Db, userId: string, projectId: string, order: BoardOrder): void {
-  const current = readUserSettings(db, userId)
-  const boardOrder = { ...current.boardOrder }
-  // Le manuel est le défaut : l'écrire ne ferait que grossir la charge.
-  if (order === 'manual') delete boardOrder[projectId]
-  else boardOrder[projectId] = order
-  save(db, userId, { ...current, boardOrder })
 }
 
 /** Le dossier parent proposé à la prochaine création de projet, ou `null` pour l'oublier. */
