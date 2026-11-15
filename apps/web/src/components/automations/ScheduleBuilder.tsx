@@ -500,6 +500,9 @@ function DateButton({ date, today, onChange }: { date: CalendarDay; today: numbe
 
 /* ------------------------------------------------------------------ l'aperçu */
 
+/** Ce que la pastille d'un jour montre au plus, sur deux chiffres. */
+const DAY_SHOWN = 99
+
 function Preview({ cadence, sentence, clock }: { cadence: ScheduleCadence | null; sentence: string | null; clock: Clock }) {
   const t = useTranslate()
   const locale = useLocale()
@@ -508,7 +511,11 @@ function Preview({ cadence, sentence, clock }: { cadence: ScheduleCadence | null
   const [month, setMonth] = useState(today)
 
   // Les passages du mois affiché, comptés jour par jour du calendrier du serveur.
-  const marked = useMemo(() => monthMarks(cadence, calendarDayOfLocal(month), { now, timeZone }), [cadence, month, now, timeZone])
+  // La pastille d'un jour s'arrête à `DAY_SHOWN` : « chaque minute » en ferait 1 440.
+  const marked = useMemo(() => {
+    const marks = monthMarks(cadence, calendarDayOfLocal(month), { now, timeZone })
+    return new Map([...marks].map(([day, count]) => [day, Math.min(count, DAY_SHOWN)]))
+  }, [cadence, month, now, timeZone])
   const next = useMemo(() => upcoming(cadence, 5, { after: now, timeZone }), [cadence, now, timeZone])
 
   return (
@@ -521,7 +528,11 @@ function Preview({ cadence, sentence, clock }: { cadence: ScheduleCadence | null
           month={month}
           onMonth={setMonth}
           marked={marked}
-          markedLabel={(count) => t(`scheduleRule.preview.passes.${pluralKey(count, locale)}`, { count })}
+          markedLabel={(count) =>
+            count >= DAY_SHOWN
+              ? t('scheduleRule.preview.passesAtLeast', { count })
+              : t(`scheduleRule.preview.passes.${pluralKey(count, locale)}`, { count })
+          }
           today={today}
           locale={locale}
         />

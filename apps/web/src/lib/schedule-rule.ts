@@ -400,12 +400,15 @@ export function upcoming(
   return runs
 }
 
+/** Au-delà, un jour de changement d'heure se compte comme un autre, à une heure près. */
+const DST_EXACT_RUNS = 96
+
 /**
  * Les passages de chaque jour d'un mois du fuseau à venir après `now`, en clés de
  * `MonthGrid`. Sans les énumérer : un motif « chaque minute » en a 44 640 par mois, et
  * croner les rend un à un, fuseau compris (#261). Un motif cron lit son jour par un seul
  * `nextRun`, puis compte ses heures, minutes et secondes ; un jour de changement d'heure
- * reste compté sur 24 h. Un intervalle se compte depuis `now`, comme « Prochains passages ».
+ * n'est énuméré que pour un motif d'au plus `DST_EXACT_RUNS` passages par jour. Un intervalle se compte depuis `now`, comme « Prochains passages ».
  */
 export function monthMarks(
   cadence: ScheduleCadence | null,
@@ -446,29 +449,39 @@ export function monthMarks(
   } catch {
     return marks
   }
-  const on = (flags: number[]) => flags.flatMap((flag, index) => (flag ? [index] : []))
-  const seconds = on(fields.second)
-  const minutes = on(fields.minute)
-  const hours = on(fields.hour)
-  // Les instants du jour (en secondes depuis minuit) que le motif sonne à partir de `from`.
-  const from = (second: number) => {
+  const ringing = (flags: number[]) => flags.flatMap((flag, index) => (flag ? [index] : []))
+  const seconds = ringing(fields.second)
+  const minutes = ringing(fields.minute)
+  const hours = ringing(fields.hour)
+  // Les instants du jour (en secondes depuis minuit) que le motif sonne à partir de `second`.
+  const countFrom = (second: number) => {
     let count = 0
     for (const h of hours) {
       if ((h + 1) * 3600 <= second) continue
       for (const m of minutes) {
-        if (h * 3600 + (m + 1) * 60 <= second) continue
-        count += seconds.filter((s) => h * 3600 + m * 60 + s >= second).length
+        const minute = h * 3600 + m * 60
+        if (minute + 60 <= second) continue
+        count += minute >= second ? seconds.length : seconds.filter((s) => minute + s >= second).length
       }
     }
     return count
   }
+  const perDay = hours.length * minutes.length * seconds.length
   for (let day = 1; day <= length; day++) {
     const [start, end] = dayBounds(day)
     if (end <= now) continue
-    const first = pattern.nextRun(new Date(Math.max(now, start - 1)))?.getTime()
+    const after = Math.max(now, start - 1)
+    const first = pattern.nextRun(new Date(after))?.getTime()
     if (first === undefined || first >= end) continue
+    const key = localDayOf(first, timeZone)
+    // Un jour de changement d'heure n'a pas 24 h : croner y saute ou y décale des heures,
+    // qu'on ne recompte qu'en énumérant. Un motif dense y reste compté sur 24 h.
+    if (end - start !== DAY && perDay <= DST_EXACT_RUNS) {
+      marks.set(key, upcoming(cadence, DST_EXACT_RUNS + 1, { after, horizon: end - 1, timeZone }).length)
+      continue
+    }
     const wall = zonedParts(first, timeZone)
-    marks.set(localDayOf(first, timeZone), from(wall.hour * 3600 + wall.minute * 60 + Math.floor((first % MIN) / 1000)))
+    marks.set(key, Math.max(1, countFrom(wall.hour * 3600 + wall.minute * 60 + Math.floor((first % MIN) / 1000))))
   }
   return marks
 }
