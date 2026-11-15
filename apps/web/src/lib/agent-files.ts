@@ -143,26 +143,72 @@ export function sessionFiles(turns: EditTurn[], agents: SubAgent[]): SessionFile
 }
 
 export type AgentEntry =
-  | { kind: 'agent'; key: string; agent: SubAgent }
+  | { kind: 'agent'; key: string; node: AgentNode }
   | { kind: 'work'; key: string; work: BackgroundWork }
+
+/** Un sous-agent et ceux qu'il a lancés, comme l'arbre du panneau de Claude Code. */
+export interface AgentNode {
+  agent: SubAgent
+  children: AgentNode[]
+  /** Tous ceux qu'il porte, à toute profondeur : le `(+N)` de sa ligne. */
+  descendants: number
+}
+
+/**
+ * Range une liste de sous-agents en arbre, dans l'ordre de la liste : chacun sous son plus
+ * proche ancêtre **de la liste**. `all` sert à remonter la chaîne : un agent terminé dont le
+ * parent travaille encore n'a pas ce parent dans le même groupe, il remonte donc à la racine
+ * plutôt que de disparaître.
+ */
+export function agentTree(list: SubAgent[], all: SubAgent[]): AgentNode[] {
+  const byId = new Map(all.map((agent) => [agent.id, agent]))
+  const nodes = new Map(list.map((agent) => [agent.id, { agent, children: [], descendants: 0 } as AgentNode]))
+  const roots: AgentNode[] = []
+  for (const node of nodes.values()) {
+    let parentId = node.agent.parentId
+    // Le compte borne la remontée : un journal incohérent ne doit pas faire tourner l'onglet.
+    for (let hops = 0; parentId && !nodes.has(parentId) && hops < byId.size; hops += 1) parentId = byId.get(parentId)?.parentId ?? null
+    const parent = parentId && parentId !== node.agent.id ? nodes.get(parentId) : undefined
+    if (parent) parent.children.push(node)
+    else roots.push(node)
+  }
+  const count = (node: AgentNode): number => {
+    node.descendants = node.children.reduce((sum, child) => sum + 1 + count(child), 0)
+    return node.descendants
+  }
+  roots.forEach(count)
+  return roots
+}
+
+/** Les lignes à montrer d'un arbre, avec leur profondeur ; un nœud replié cache sa descendance. */
+export function treeRows(nodes: AgentNode[], folded: ReadonlySet<string>, depth = 0): { node: AgentNode; depth: number }[] {
+  return nodes.flatMap((node) => [
+    { node, depth },
+    ...(folded.has(node.agent.id) ? [] : treeRows(node.children, folded, depth + 1)),
+  ])
+}
 
 /**
  * Les deux groupes de l'onglet (PAG-1, PAG-4). **En cours** : les sous-agents qui
- * travaillent, du plus ancien au plus récent, puis les travaux de fond — le journal ne
- * les date pas, ils gardent l'ordre où ils sont apparus. **Terminés** : les autres, du
- * plus récent au plus ancien.
+ * travaillent, du plus ancien au plus récent, rangés en arbre, puis les travaux de fond —
+ * le journal ne date pas ces derniers. **Terminés** : les autres, en arbre aussi, du plus
+ * récent au plus ancien.
  */
-export function agentGroups(agents: SubAgent[], background: BackgroundWork[]): { running: AgentEntry[]; done: SubAgent[] } {
+export function agentGroups(agents: SubAgent[], background: BackgroundWork[]): { running: AgentEntry[]; done: AgentNode[] } {
+  const running = agents.filter((agent) => agent.status === 'running').sort((a, b) => a.startedAt - b.startedAt)
+  const done = agents.filter((agent) => agent.status !== 'running').sort((a, b) => b.startedAt - a.startedAt)
   return {
     running: [
-      ...agents
-        .filter((agent) => agent.status === 'running')
-        .sort((a, b) => a.startedAt - b.startedAt)
-        .map((agent) => ({ kind: 'agent' as const, key: agent.id, agent })),
+      ...agentTree(running, agents).map((node) => ({ kind: 'agent' as const, key: node.agent.id, node })),
       ...background.map((work) => ({ kind: 'work' as const, key: work.id, work })),
     ],
-    done: agents.filter((agent) => agent.status !== 'running').sort((a, b) => b.startedAt - a.startedAt),
+    done: agentTree(done, agents),
   }
+}
+
+/** « sonnet · high » : ce que l'appel a demandé, rien quand il n'a rien demandé. */
+export function modelLabel(agent: Pick<SubAgent, 'model' | 'effort'>): string | null {
+  return [agent.model, agent.effort].filter(Boolean).join(' · ') || null
 }
 
 export function toolCount(count: number, t: Translate): string {

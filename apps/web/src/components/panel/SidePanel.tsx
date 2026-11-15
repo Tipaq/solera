@@ -33,6 +33,7 @@ import { useCards } from '../../lib/cards'
 import { toReviewCount } from '../../lib/project-pane'
 import { IconButton, cx } from '@solera/ui'
 import { ActionsPane } from './ActionsPane'
+import { useTeammates } from '../../lib/teammates'
 import { AgentsPane } from './AgentsPane'
 import { FilesPane } from './FilesPane'
 import { GitPane } from './GitPane'
@@ -167,6 +168,8 @@ export const SidePanel = memo(function SidePanel({
           : 'files'
   // Le badge de *Projet* compte ce qui attend une relecture : c'est la seule chose du
   // board qui réclame quelqu'un, et le reste se lit en ouvrant l'onglet.
+  // Lus seulement quand l'onglet Agent est ouvert : c'est le seul à les montrer.
+  const teammates = useTeammates(tab === 'agents' ? conversationId : undefined, tab === 'agents' ? (projectId ?? undefined) : undefined)
   const { data: cards } = useCards(conversationId && projectId ? projectId : undefined)
   const reviewCount = toReviewCount(cards)
   const selectedSubAgent = useSelectedSubAgent()
@@ -464,6 +467,7 @@ export const SidePanel = memo(function SidePanel({
           agents={subAgents}
           background={background}
           editTurns={editTurns}
+          teammates={teammates}
           selectedId={selectedSubAgent}
           onOpenFile={openInFiles}
         />

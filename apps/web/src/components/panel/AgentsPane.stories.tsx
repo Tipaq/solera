@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import type { BackgroundWork } from '../../lib/background'
 import type { ChatItem, EditTurn } from '../../lib/chat-fold'
 import type { SubAgent } from '../../lib/subagents'
+import type { Teammate } from '../../lib/teammates'
 import { AgentsPane } from './AgentsPane'
 
 const ROOT = '/srv/solera/apps/web/src'
@@ -17,19 +18,27 @@ const said = (id: string, parent: string, text: string): ChatItem => ({
 })
 const subAgent = (id: string, description: string, status: SubAgent['status'], items: ChatItem[], extra: Partial<SubAgent> = {}): SubAgent => ({
   id, type: 'Explore', description, status, startedAt: now - 2 * MIN, durationMs: null, activity: null, items,
-  toolCount: items.filter((item) => item.kind === 'tool').length, totalTokens: 0, parentId: null, ...extra,
+  toolCount: items.filter((item) => item.kind === 'tool').length, totalTokens: 0, parentId: null, model: null, effort: null, address: null, ...extra,
 })
 
 const EXPLORER = subAgent('a1', 'Explorer le panneau', 'running', [
   tool('r1', 'Read', { file_path: `${ROOT}/components/panel/SidePanel.tsx` }, 'a1'),
   tool('e1', 'Edit', { file_path: `${ROOT}/components/panel/AgentsPane.tsx`, old_string: 'a\nb', new_string: 'a\nb\nc\nd' }, 'a1'),
   said('m1', 'a1', 'Le panneau Agent lit trois sources : les sous-agents, les travaux de fond et les tours qui ont écrit.\nLes sous-agents viennent des appels de spawn.\nLes travaux de fond viennent de la liste de niveau du CLI.\nRien d’autre à signaler.'),
-], { startedAt: now - 3 * MIN, totalTokens: 18_400 })
+], { startedAt: now - 3 * MIN, totalTokens: 18_400, model: 'sonnet', effort: 'high', address: 'explorateur' })
 const AGENTS: SubAgent[] = [
   subAgent('a2', 'Relire les specs', 'done', [tool('w1', 'Write', { file_path: `${ROOT}/lib/agent-files.ts`, content: 'un\ndeux\ntrois' }, 'a2')], { startedAt: now - 10 * MIN, durationMs: 90_000 }),
   EXPLORER,
   subAgent('a3', 'Chercher les clés i18n', 'interrupted', [], { startedAt: now - 8 * MIN }),
-  subAgent('a4', 'Mesurer la hauteur des lignes', 'running', [], { startedAt: now - MIN }),
+  subAgent('a4', 'Mesurer la hauteur des lignes', 'running', [], { startedAt: now - MIN, model: 'haiku' }),
+  // Lancés par l'explorateur : l'arbre et son « (+2) ».
+  subAgent('a5', 'Lire SidePanel', 'running', [], { startedAt: now - 2 * MIN, parentId: 'a1', model: 'haiku', effort: 'low' }),
+  subAgent('a6', 'Lire panel.ts', 'running', [], { startedAt: now - 90_000, parentId: 'a5' }),
+]
+const TEAMMATES: Teammate[] = [
+  { id: 's1', projectId: 'p1', title: 'Coéquipiers dans l’onglet Agent', agent: 'claude', status: 'running', card: { number: 74, title: 'Revoir l’onglet Agents' }, worktree: 'feat/onglet-agents-v2' },
+  { id: 's2', projectId: 'p1', title: 'Relire la PR #212', agent: 'codex', status: 'awaiting_input', card: null, worktree: null },
+  { id: 's3', projectId: 'p1', title: 'Ménage des worktrees', agent: 'claude', status: 'idle', card: { number: 140, title: 'Ménage' }, worktree: 'chore/menage' },
 ]
 const BACKGROUND: BackgroundWork[] = [
   { id: 'k1', kind: 'local_bash', description: 'Serveur de dev', command: 'pnpm exec vite --port 5418', activity: null, lastTool: null, toolUses: 0, totalTokens: 0 },
@@ -54,7 +63,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "L'onglet *Agent* du panneau d'une conversation : qu'est-ce qui tourne sous ce fil ? Pas de ligne d'outils : **En cours** mêle les sous-agents qui travaillent et les travaux de fond ; les terminés se replient en « N terminés ▸ » ; le pied « **Modifié par la session** » nomme chaque fichier écrit et qui l'a écrit. Un clic ouvre le détail **en pile** (« ‹ Agent ») : fichiers, résultat et fil d'un sous-agent, ou ce qu'on sait d'un travail de fond, avec « Arrêter » et « En faire une action ».",
+          "L'onglet *Agent* du panneau d'une conversation : qu'est-ce qui tourne sous ce fil ? Pas de ligne d'outils : **En cours** mêle les sous-agents qui travaillent, rangés en arbre avec leur modèle et leur effort et un `(+N)` qui replie, et les travaux de fond ; **Coéquipiers** liste les sessions qu'elle a lancées, avec leur carte, leur worktree et leur état ; les terminés se replient en « N terminés ▸ » ; le pied « **Modifié par la session** » nomme chaque fichier écrit et qui l'a écrit. Un clic ouvre le détail **en pile** (« ‹ Agent ») : fichiers, résultat et fil d'un sous-agent, ou ce qu'on sait d'un travail de fond, avec « Arrêter » et « En faire une action ».",
       },
     },
   },
@@ -65,6 +74,7 @@ const meta = {
     agents: AGENTS,
     background: BACKGROUND,
     editTurns: TURNS,
+    teammates: TEAMMATES,
     selectedId: null,
     onOpenFile: () => {},
   },
@@ -78,14 +88,26 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** Deux sous-agents qui travaillent, deux travaux de fond, deux terminés repliés, trois fichiers écrits. */
+/**
+ * Quatre sous-agents qui travaillent, dont deux imbriqués sous l'explorateur (`(+2)`), avec le
+ * modèle et l'effort demandés ; deux travaux de fond ; trois coéquipiers ; deux terminés repliés.
+ */
 export const Liste: Story = {}
 
-/** Rien ne tourne, rien d'écrit : une ligne, sans illustration. */
-export const Vide: Story = { args: { agents: [], background: [], editTurns: [] } }
+/** Rien ne tourne, rien d'écrit, aucun coéquipier : une ligne, sans illustration. */
+export const Vide: Story = { args: { agents: [], background: [], editTurns: [], teammates: [] } }
 
-/** Le détail d'un sous-agent qui travaille : ses fichiers, son résultat, son fil, « Interrompre la session ». */
+/** Seulement des coéquipiers : la session a délégué, elle ne fait rien tourner elle-même. */
+export const Coequipiers: Story = { args: { agents: [], background: [], editTurns: [] } }
+
+/**
+ * Le détail d'un sous-agent qui travaille : ses fichiers, son résultat, son fil, « Écrire à
+ * l'agent » (relayé par l'agent principal) et « Interrompre la session ».
+ */
 export const SousAgent: Story = { args: { selectedId: EXPLORER.id } }
+
+/** Sous un CLI qui ne sait pas relayer de message à un sous-agent, le geste n'existe pas. */
+export const SousAgentCodex: Story = { args: { selectedId: EXPLORER.id, agent: 'codex' } }
 
 /** À 22 rem : les métas cèdent avant les libellés. */
 export const Etroit: Story = {
