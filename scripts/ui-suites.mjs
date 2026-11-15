@@ -76,13 +76,13 @@ const BATCHES = [
     'grok', // 4
     'opencode', // 4
     'panel-agent', // ~15, à mesurer
+    'actions', // ~56 en local, à mesurer
   ],
 ]
 
 /** Hors CI, et pourquoi : la carte qui doit l'y ramener, ou le job qui l'éprouve ailleurs. */
 const OUTSIDE = {
   desktop: "l'app empaquetée, éprouvée par le job desktop sur main",
-  actions: 'instable, lignes en double (#259)',
   onboarding: 'page.goto bloque par intermittence (#263)',
   'codex-accounts': 'lance le vrai codex, qui joint OpenAI (#264)',
   'draft-account': 'sonde les vrais codex et claude (#264)',
