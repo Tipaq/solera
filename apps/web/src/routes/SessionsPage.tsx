@@ -16,7 +16,7 @@ import { DisplayMenu, FilterMenu, MenuCheck, MenuHeading, MenuSegment, type View
 import { useArchiveConversation, useDeleteConversation, usePinConversation } from '../lib/conversations'
 import { DetailSurfaceContext } from '../lib/detail-surface'
 import { toggled } from '../lib/filters'
-import { useLocale, useTranslate, type MessageKey } from '../lib/i18n'
+import { useLocale, useTranslate, type MessageKey, pluralOf } from '../lib/i18n'
 import {
   NO_FILTERS,
   NO_PROJECT,
@@ -45,7 +45,6 @@ import {
   type StateColumn,
 } from '../lib/sessions-view'
 import { inTurn, type BulkFailure } from '../lib/bulk'
-import { pluralKey } from '../lib/schedule-rule'
 import { useInbox } from '../lib/use-inbox'
 import { useSessionRows } from '../lib/use-session-rows'
 import { useView } from '../lib/use-view'
@@ -448,7 +447,7 @@ function useBulkSelection(scope: SessionScope) {
   }
 
   const failure = failed
-    ? t(`sessionsPage.bulk.failed.${pluralKey(failed.count, locale)}`, { count: failed.count, error: failed.error })
+    ? t(`sessionsPage.bulk.failed.${pluralOf(failed.count, locale)}`, { count: failed.count, error: failed.error })
     : null
 
   return {
@@ -490,7 +489,7 @@ function SelectionBar({ scope, rows, onAll, selection }: { scope: SessionScope; 
   const face = (gesture: BulkGesture) => GESTURE[gesture === 'pin' && !pinTarget(rows) ? 'unpin' : gesture]
   return (
     <div data-selection-bar className="flex h-11 shrink-0 items-center gap-2 border-b border-line bg-surface/60 px-4 text-sm md:px-6">
-      <span className="shrink-0 tabular-nums text-ink-soft">{t(`sessionsPage.selected.${pluralKey(count, locale)}`, { count })}</span>
+      <span className="shrink-0 tabular-nums text-ink-soft">{t(`sessionsPage.selected.${pluralOf(count, locale)}`, { count })}</span>
       <Button size="sm" variant="ghost" className="shrink-0" onClick={onAll}>
         {t('sessionsPage.select.all')}
       </Button>
@@ -512,7 +511,7 @@ function SelectionBar({ scope, rows, onAll, selection }: { scope: SessionScope; 
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
-        title={t(`sessionsPage.bulk.delete.confirm.${pluralKey(count, locale)}`, { count })}
+        title={t(`sessionsPage.bulk.delete.confirm.${pluralOf(count, locale)}`, { count })}
         confirmLabel={t('sessionsPage.bulk.delete')}
         tone="critical"
         busy={selection.busy}

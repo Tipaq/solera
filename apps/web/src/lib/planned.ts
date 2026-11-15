@@ -18,6 +18,7 @@ import {
   type What,
 } from './automations'
 import type { ScheduleTarget } from './schedules'
+import { pluralOf } from './i18n'
 
 /**
  * La page globale des **Planifiées** (`actions.md` §1.J, AC-20) : ce qu'elle montre, ses
@@ -278,7 +279,7 @@ export function healthMotive(item: Automation, now: number, t: Translate): strin
   if (item.failStreak === 0) return null
   const failure = healthOf(item, () => null, now).lastFailure
   const reason = failure?.error ?? (failure?.code != null ? t('planned.health.code', { code: failure.code }) : t('planned.health.seeLastRun'))
-  return t(item.failStreak === 1 ? 'planned.health.failStreak.one' : 'planned.health.failStreak.other', { count: item.failStreak, reason })
+  return t(pluralOf(item.failStreak) === 'one' ? 'planned.health.failStreak.one' : 'planned.health.failStreak.other', { count: item.failStreak, reason })
 }
 
 /* ------------------------------------------------------------------ le champ Portée (PLF-10) */

@@ -51,7 +51,7 @@ Rien n'est absent. Les 17 écarts mineurs ont tous une carte :
 | #253 | `PanelHost` encore monté sur le Tableau (TIR-9) | #230 |
 | #261 | l'aperçu du mois gèle sur un cron « chaque minute » (PLA-11) | #200 |
 | #269 | `/sessions` au téléphone : deux bandes (COQ-12, SES-1) | #230 |
-| #270 | « 0 lignes » au lieu de « 0 ligne » (R-6.6) | #230 |
+| #270 | « 0 lignes » au lieu de « 0 ligne » (R-6.6) — **corrigé dans la PR de #270** | #230 |
 | #271 | échéances relatives arrondies en heures, pas en jours (JAL-3, HOR-11, FCH-3) — **corrigé dans la PR de #246**, il faisait échouer `places-ui-check` chaque après-midi | #157 |
 | #272 | axe des jalons au téléphone : mois chevauchés sous « auj. » (HOR-3, GNT-3) | #182 |
 | #273 | Gantt au téléphone : titre à gauche d'une barre sous la colonne collée (GNT-10) | #182 |
@@ -485,7 +485,7 @@ Restes signalés par #228 en dehors de la recette : #279 (la couleur de « trava
 | R-6.3 ce que lit chaque CLI | ✅ | tableau 4 CLI ; décidé (#244) : OpenCode lit le premier trouvé |
 | R-6.4 alertes ambre | ✅ | « Claude Code, Codex, Grok Build et OpenCode n'auront pas les consignes du projet. » |
 | R-6.5 partie globale, « La modifier » | ✅ | lien vu |
-| R-6.6 édition : titre, lignes · date, rendu, Modifier | 🟡 | textarea 14 lignes vu ; « 0 lignes » au lieu de « 0 ligne »  — #270 |
+| R-6.6 édition : titre, lignes · date, rendu, Modifier | ✅ | textarea 14 lignes vu ; « 0 ligne » depuis #270 : project-settings-ui-check.mjs |
 | R-7.1 phrase d'explication | ✅ | texte vu |
 | R-7.2 recherche, filtres par type avec comptes, Nouvelle note | ✅ | « Toutes 2 · Retour 1 · Projet 1 · Nouvelle note » (Docs, notes créées) |
 | R-7.3 ligne d'index | ✅ | « 1 note indexée · 1 absente de l'index · 1 ligne sans note · Réparer l'index » |

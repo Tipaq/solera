@@ -10,7 +10,7 @@ import { useActionsStatus } from '../lib/automations-query'
 import { useSessionRequests } from '../lib/session-requests'
 import { useCards } from '../lib/cards'
 import { useAllConversations } from '../lib/conversations'
-import { useTranslate } from '../lib/i18n'
+import { useTranslate, pluralOf } from '../lib/i18n'
 import { openLeafCount } from '../lib/place'
 import { PROJECT_TABS, type ProjectTabKey } from '../lib/project-tabs'
 import { useProjects } from '../lib/projects'
@@ -60,11 +60,11 @@ export function ProjectLayout() {
     travail: {
       count: asking,
       tone: 'caution',
-      countTitle: t(asking === 1 ? 'place.count.asking.one' : 'place.count.asking.many', { count: asking }),
+      countTitle: t(pluralOf(asking) === 'one' ? 'place.count.asking.one' : 'place.count.asking.many', { count: asking }),
     },
     board: {
       count: open,
-      countTitle: t(open === 1 ? 'place.count.openCards.one' : 'place.count.openCards.many', { count: open }),
+      countTitle: t(pluralOf(open) === 'one' ? 'place.count.openCards.one' : 'place.count.openCards.many', { count: open }),
     },
     ...(actions
       ? { actions: { count: actions.count, tone: actions.tone, countTitle: t(actions.countTitle, { count: actions.count }) } }

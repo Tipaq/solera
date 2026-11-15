@@ -75,6 +75,15 @@ export function locale(): Locale {
 }
 
 /**
+ * La forme d'un compte, pour les clés `….one` / `….other` : celle que la règle `Intl`
+ * de la langue choisit, et non `count === 1`. En français, 0 se met au singulier
+ * (« 0 ligne ») ; en anglais, au pluriel (« 0 lines »).
+ */
+export function pluralOf(count: number, lang: string = locale()): 'one' | 'other' {
+  return new Intl.PluralRules(lang).select(count) === 'one' ? 'one' : 'other'
+}
+
+/**
  * Charge le catalogue de la langue retenue, à attendre avant le premier rendu.
  *
  * Rendre d'abord puis traduire ferait clignoter l'interface en anglais le temps du

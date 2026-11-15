@@ -1,6 +1,5 @@
 import { cx } from '@solera/ui'
-import { pluralOf } from '../../lib/code-model'
-import { useTranslate } from '../../lib/i18n'
+import { useTranslate, pluralOf } from '../../lib/i18n'
 import type { MilestoneWaiting } from '../../lib/inbox'
 import { openInboxItem } from './AskInbox'
 

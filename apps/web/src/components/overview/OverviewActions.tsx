@@ -4,7 +4,7 @@ import { cx } from '@solera/ui'
 import type { Automation } from '../../lib/automations'
 import { useAutomations } from '../../lib/automations-query'
 import { conversationPath } from '../../lib/conversation-route'
-import { useTranslate } from '../../lib/i18n'
+import { useTranslate, pluralOf } from '../../lib/i18n'
 import { actionsTabPath, overviewActionsOf, overviewLine, type OverviewGesture } from '../../lib/overview-actions'
 import { showTerminal } from '../../lib/panel'
 import { STATE_DOT } from '../automations/ActionMarks'
@@ -61,7 +61,7 @@ export function OverviewActionsView({ projectId, items, now }: { projectId: stri
       {shown.length > 0 && idle > 0 ? (
         <p className="mt-1">
           <MoreLink to={actionsTabPath(projectId)}>
-            {t(idle === 1 ? 'project.overview.actions.idle.one' : 'project.overview.actions.idle.other', { count: idle })}
+            {t(pluralOf(idle) === 'one' ? 'project.overview.actions.idle.one' : 'project.overview.actions.idle.other', { count: idle })}
           </MoreLink>
         </p>
       ) : null}

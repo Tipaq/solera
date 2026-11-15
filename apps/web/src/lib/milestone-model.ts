@@ -1,8 +1,8 @@
 import type { CardBranchPrDto, CardDto, MilestoneRunDto } from '@solera/protocol'
 import { isOpen, loadedStatus, type StatusOf } from './card-state'
-import { pluralOf } from './code-model'
 import type { MessageKey, MessageParams } from './i18n'
 import { requestSummary, type SessionRequest } from './session-request-summary'
+import { pluralOf } from './i18n'
 
 /*
  * Le modèle des jalons (#188, spec jalons MAT-1..12) : où en est chaque jalon d'un projet

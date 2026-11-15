@@ -4,9 +4,8 @@ import { MAX_MEMORY_FILE_CHARS, MEMORY_INDEX_FILE, type ProjectMemoryDto } from 
 import { Badge, Banner, Button, Field, cx } from '@solera/ui'
 import { ApiRequestError } from '../../lib/api'
 import { relativeDate, shortAge } from '../../lib/dates'
-import { useLocale, useTranslate } from '../../lib/i18n'
+import { useLocale, useTranslate, pluralOf } from '../../lib/i18n'
 import { useDeleteMemoryFile, useProjectMemory, useWriteMemoryFile } from '../../lib/memory'
-import { pluralKey } from '../../lib/schedule-rule'
 import {
   NOTE_TYPES,
   filterNotes,
@@ -201,12 +200,12 @@ function IndexLine({ state, canEdit, busy, onRepair }: { state: MemoryState; can
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" aria-label={MEMORY_INDEX_FILE} role="group">
       <span className="font-mono text-ink-soft">{MEMORY_INDEX_FILE}</span>
-      <span className="text-ink-faint">{t(`memory.index.indexed.${pluralKey(indexed.size, locale)}`, { count: indexed.size })}</span>
+      <span className="text-ink-faint">{t(`memory.index.indexed.${pluralOf(indexed.size, locale)}`, { count: indexed.size })}</span>
       {unindexed.length > 0 ? (
-        <span className="text-caution">{t(`memory.index.unindexed.${pluralKey(unindexed.length, locale)}`, { count: unindexed.length })}</span>
+        <span className="text-caution">{t(`memory.index.unindexed.${pluralOf(unindexed.length, locale)}`, { count: unindexed.length })}</span>
       ) : null}
       {orphans.length > 0 ? (
-        <span className="text-caution">{t(`memory.index.orphans.${pluralKey(orphans.length, locale)}`, { count: orphans.length })}</span>
+        <span className="text-caution">{t(`memory.index.orphans.${pluralOf(orphans.length, locale)}`, { count: orphans.length })}</span>
       ) : null}
       {broken ? (
         canEdit ? (

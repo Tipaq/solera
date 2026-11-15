@@ -4,7 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Button, ConfirmDialog, cx } from '@solera/ui'
 import { lineGestures, statusOfLine, type LineGesture, type LineStatus, type TreeRow } from '../../lib/code-model'
 import { elapsed } from '../../lib/dates'
-import { useTranslate } from '../../lib/i18n'
+import { useTranslate, pluralOf } from '../../lib/i18n'
 import { useMergePullRequest } from '../../lib/pull-requests'
 import { useRebaseTree, useTreeDiff } from '../../lib/tree-gestures'
 import { travailStateHref } from '../../lib/travail-model'
@@ -106,7 +106,7 @@ export function CodeGraph({
           to={travailStateHref(projectId, 'cleanup')}
           className="mt-2 ml-11 self-start rounded text-xs text-ink-faint hover:text-ink focus-visible:outline-2 focus-visible:outline-accent pointer-coarse:min-h-11"
         >
-          {t(settled === 1 ? 'project.overview.code.settled.one' : 'project.overview.code.settled.other', { count: settled })}
+          {t(pluralOf(settled) === 'one' ? 'project.overview.code.settled.one' : 'project.overview.code.settled.other', { count: settled })}
         </Link>
       ) : null}
       <div role="status" aria-live="polite" className="ml-11">
