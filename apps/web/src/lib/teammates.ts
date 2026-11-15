@@ -23,6 +23,9 @@ export interface Teammate {
   worktree: string | null
 }
 
+/** La clé des coéquipiers d'une session ; sans identifiant, celle de toutes. */
+export const teammatesKey = (conversationId?: string) => (conversationId ? ['teammates', conversationId] : ['teammates'])
+
 export function teammateTone(status: ConversationStatus): StatusTone {
   if (status === 'running') return 'accent'
   if (status === 'awaiting_input') return 'caution'
@@ -34,9 +37,10 @@ export function useTeammates(conversationId: string | undefined, projectId: stri
   const { data: list } = useConversations(projectId)
   const { data: trees } = useWorktrees(projectId)
   const { data: ids } = useQuery({
-    // Sous `conversations` : le flux des listes, qui relit toutes ces clés quand une
-    // session naît ou change, relit aussi celle-ci, sans minuterie à tenir.
-    queryKey: ['conversations', 'teammates', conversationId],
+    // Le flux des listes la relit quand une session naît (`useStatusFeed`). Pas sous
+    // `conversations` : ces clés-là portent des listes de conversations, que d'autres
+    // parcourent et réécrivent.
+    queryKey: teammatesKey(conversationId),
     queryFn: () => api.get<string[]>(`/api/conversations/${conversationId}/teammates`),
     enabled: Boolean(conversationId && projectId),
     staleTime: 15_000,
