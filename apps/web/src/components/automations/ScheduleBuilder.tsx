@@ -3,7 +3,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ComponentProps, ty
 import type { ScheduleCadence } from '@solera/protocol'
 import { Menu, MenuRadioGroup, MenuRadioItem, MenuSeparator, MonthGrid, Popover, TimePicker, cx } from '@solera/ui'
 import { formatDateTime } from '../../lib/automations'
-import { useLocale, useTranslate } from '../../lib/i18n'
+import { useLocale, useTranslate, pluralOf } from '../../lib/i18n'
 import {
   EVERY_HOURS,
   FREQUENCY_GROUPS,
@@ -17,7 +17,6 @@ import {
   localMidnightOf,
   monthMarks,
   ordinalWords,
-  pluralKey,
   problemOf,
   relativeDay,
   sentenceOf,
@@ -338,7 +337,7 @@ function EveryButton({ value, onChange }: { value: number; onChange: (next: numb
       align="start"
       className="w-48 p-1.5"
       trigger={
-        <PartButton>{t(`scheduleRule.everyHours.${pluralKey(value, locale)}`, { count: value })}</PartButton>
+        <PartButton>{t(`scheduleRule.everyHours.${pluralOf(value, locale)}`, { count: value })}</PartButton>
       }
     >
       <div role="radiogroup" aria-label={t('scheduleRule.every.label')} className="grid grid-cols-4 gap-1">
@@ -531,7 +530,7 @@ function Preview({ cadence, sentence, clock }: { cadence: ScheduleCadence | null
           markedLabel={(count) =>
             count >= DAY_SHOWN
               ? t('scheduleRule.preview.passesAtLeast', { count })
-              : t(`scheduleRule.preview.passes.${pluralKey(count, locale)}`, { count })
+              : t(`scheduleRule.preview.passes.${pluralOf(count, locale)}`, { count })
           }
           today={today}
           locale={locale}

@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import type { DiffFileDto, GitStateDto } from '@solera/protocol'
 import { parseUnifiedDiff } from '../../../lib/diff'
-import { useTranslate } from '../../../lib/i18n'
+import { useTranslate, pluralOf } from '../../../lib/i18n'
 import type { WorkspaceScope } from '../../../lib/workspace-scope'
 import { Banner, Menu, MenuItem, MenuSeparator, PanelGroup, PanelNotice, PanelStatusIcon, cx, panelGestureClass, panelRowClass } from '@solera/ui'
 import { useGitActions } from './actions'
@@ -221,7 +221,7 @@ export function WorkingView({
             )}
           >
             <GitCommitHorizontal size={14} />
-            {t(staged.length === 1 ? 'git.commit.doOne' : 'git.commit.do', { count: staged.length })}
+            {t(pluralOf(staged.length) === 'one' ? 'git.commit.doOne' : 'git.commit.do', { count: staged.length })}
           </button>
 
           <button

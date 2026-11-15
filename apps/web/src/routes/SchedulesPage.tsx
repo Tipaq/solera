@@ -17,7 +17,7 @@ import type { ActionPanel } from '../lib/action-panel'
 import type { AgendaScope } from '../lib/agenda-layout'
 import { scheduleTargetOf, type What } from '../lib/automations'
 import { useAutomations } from '../lib/automations-query'
-import { useTranslate, type MessageKey } from '../lib/i18n'
+import { useTranslate, type MessageKey, pluralOf } from '../lib/i18n'
 import {
   DUE_GROUPS,
   NEXT_FILTERS,
@@ -227,9 +227,9 @@ export function SchedulesPage() {
         ))}
         extra={
           <span className="hidden text-xs whitespace-nowrap tabular-nums text-ink-faint lg:inline" data-planned-summary>
-            {t(planned.length === 1 ? 'planned.summary.tasks.one' : 'planned.summary.tasks.other', { count: planned.length })}
+            {t(`planned.summary.tasks.${pluralOf(planned.length)}`, { count: planned.length })}
             {' · '}
-            {t(scopes.length === 1 ? 'planned.summary.scopes.one' : 'planned.summary.scopes.other', { count: scopes.length })}
+            {t(`planned.summary.scopes.${pluralOf(scopes.length)}`, { count: scopes.length })}
           </span>
         }
         display={displayMenu}
