@@ -852,7 +852,8 @@ try {
   assert.deepEqual(distinct(rightColumn).length, 1, `au doigt, une colonne à droite : ${rightColumn}`)
   assert.equal(await rowMenus.first().evaluate((node) => node.offsetWidth), 44, 'le ⋯ en 44 px')
   const counterEdges = await rightsFromRight(touchColumn.getByRole('navigation', { name: 'Lieux' }).locator('.tabular-nums:not(:empty)'))
-  assert.deepEqual(distinct(counterEdges), [rightColumn[0] - 7], `les compteurs au bord des icônes : ${counterEdges}`)
+  // À 1 px près : 16 px de marge, le pas de l'échelle le plus proche des 15 qu'il faudrait.
+  assert.ok(counterEdges.every((edge) => Math.abs(edge - (rightColumn[0] - 7)) <= 1), `les compteurs au bord des icônes : ${counterEdges}`)
   assert.equal(
     await touchColumn.locator('[data-session-list]').getByRole('button', { name: 'Épingler en haut', exact: true }).count(),
     0,

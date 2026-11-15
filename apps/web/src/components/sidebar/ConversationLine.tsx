@@ -73,6 +73,8 @@ export const ConversationLine = memo(function ConversationLine({
     [status, background, loops],
   )
   const loop = signals.find((signal) => signal.kind === 'loop') ?? null
+  const togglePin = () => setPinned.mutate({ id: conversation.id, pinned: !conversation.pinned })
+  const pinLabel = t(conversation.pinned ? 'shell.conversation.unpin' : 'shell.conversation.pin')
   const commit = (draft: string) => {
     setEditing(false)
     const value = draft.trim()
@@ -144,10 +146,7 @@ export const ConversationLine = memo(function ConversationLine({
         {/* Au doigt, le ⋯ reste affiché : les points ne peuvent plus partager sa case,
             ils s'y posaient dessus. Ils passent au bout du titre. */}
         {coarse && (state || loop) ? (
-          <span className="flex shrink-0 items-center gap-1">
-            {state ? <StateDot state={state} /> : null}
-            {loop ? <SignalDot signal={loop} /> : null}
-          </span>
+          <span className="flex shrink-0 items-center gap-1"><RowDots state={state} loop={loop} /></span>
         ) : null}
       </NavLink>
 
@@ -165,10 +164,10 @@ export const ConversationLine = memo(function ConversationLine({
       {(conversation.isOwner && !coarse) || conversation.pinned ? (
         <span className="flex size-11 shrink-0 items-center justify-center md:size-7 pointer-coarse:size-11">
           <IconButton
-            label={t(conversation.pinned ? 'shell.conversation.unpin' : 'shell.conversation.pin')}
+            label={pinLabel}
             size="sm"
             disabled={!conversation.isOwner}
-            onClick={() => setPinned.mutate({ id: conversation.id, pinned: !conversation.pinned })}
+            onClick={togglePin}
             className={cx(
               'transition-opacity',
               conversation.pinned
@@ -192,9 +191,7 @@ export const ConversationLine = memo(function ConversationLine({
       <span className="relative flex size-11 shrink-0 items-center justify-center md:size-7 pointer-coarse:size-11">
         {coarse ? null : (
           <span className="pointer-events-none absolute inset-0 flex items-center justify-center gap-1 transition-opacity group-hover/row:opacity-0 group-focus-within/row:opacity-0">
-            {/* Deux points au plus : l'état, selon la charte de la colonne, et la boucle. */}
-            {state ? <StateDot state={state} /> : null}
-            {loop ? <SignalDot signal={loop} /> : null}
+            <RowDots state={state} loop={loop} />
           </span>
         )}
 
@@ -214,12 +211,8 @@ export const ConversationLine = memo(function ConversationLine({
             {t('shell.rename')}
           </MenuItem>
           {coarse ? (
-            <MenuItem
-              icon={<Pin size={14} />}
-              disabled={!conversation.isOwner}
-              onSelect={() => setPinned.mutate({ id: conversation.id, pinned: !conversation.pinned })}
-            >
-              {t(conversation.pinned ? 'shell.conversation.unpin' : 'shell.conversation.pin')}
+            <MenuItem icon={<Pin size={14} />} disabled={!conversation.isOwner} onSelect={togglePin}>
+              {pinLabel}
             </MenuItem>
           ) : null}
           {/* Carte #14 : le rangement vit ici, entre renommer et archiver, parce que
@@ -266,3 +259,16 @@ export const ConversationLine = memo(function ConversationLine({
     </li>
   )
 })
+
+/** Deux points au plus : l'état, selon la charte de la colonne, et la boucle. */
+function RowDots({ state, loop }: {
+  state: ReturnType<typeof threadState>
+  loop: ReturnType<typeof buildSidebarSignals>[number] | null
+}) {
+  return (
+    <>
+      {state ? <StateDot state={state} /> : null}
+      {loop ? <SignalDot signal={loop} /> : null}
+    </>
+  )
+}

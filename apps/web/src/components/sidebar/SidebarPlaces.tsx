@@ -93,9 +93,10 @@ export function SidebarPlaces({ places, current, onNavigate }: {
               */}
               <div className={cx(
                 // Au doigt, les boutons de la colonne font 44 px et se centrent à 30 px
-                // du bord utile (8 + 22) : 15 px de marge posent le bord droit du
-                // compteur sur celui de leurs icônes de 14 px (8 + 15 = 30 − 7).
-                'group/place relative flex h-11 items-center gap-1 rounded-md pr-2.5 transition-colors md:h-9 pointer-coarse:h-11 pointer-coarse:pr-[15px]',
+                // du bord utile (8 + 22) : 16 px de marge posent le bord droit du
+                // compteur à 1 px de celui de leurs icônes de 14 px (30 − 7 = 23),
+                // le pas le plus proche de l'échelle.
+                'group/place relative flex h-11 items-center gap-1 rounded-md pr-2.5 transition-colors md:h-9 pointer-coarse:h-11 pointer-coarse:pr-4',
                 active ? 'bg-accent-wash font-medium text-ink' : 'text-ink-soft hover:bg-surface-high hover:text-ink',
               )}>
                 <button

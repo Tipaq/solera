@@ -71,7 +71,7 @@ export function AccountMenu({ onNavigate }: { onNavigate: () => void }) {
         trigger={
           <button
             type="button"
-            className="flex h-11 w-full items-center gap-2.5 rounded-md px-2 text-left text-sm text-ink-soft transition-colors hover:bg-surface-high hover:text-ink md:h-10 pointer-coarse:h-11 pointer-coarse:pr-[15px]"
+            className="flex h-11 w-full items-center gap-2.5 rounded-md px-2 text-left text-sm text-ink-soft transition-colors hover:bg-surface-high hover:text-ink md:h-10 pointer-coarse:h-11 pointer-coarse:pr-4"
           >
             <span className="relative shrink-0">
               {/* L'initiale est un ornement : sans `aria-hidden`, le bouton s'annonce
