@@ -2415,19 +2415,23 @@ export class AgentRequests {
     if (payload.placement !== undefined && payload.placement !== null) {
       const placement = actionPlacementSchema.safeParse(payload.placement)
       if (!placement.success) {
-        throw new Refusal('`placement` vaut `follow`, `root`, `branch` ou `per-worktree`.')
+        throw new Refusal('Refusé : `placement` vaut `follow`, `root`, `branch` ou `per-worktree`.')
       }
       fields.placement = placement.data
     }
     if (payload.branch !== undefined) fields.pinnedBranch = payload.branch === '' ? null : payload.branch
     const existing = updating ? this.projectAction(requester, payload.id) : null
     refuseIncoherentPlacement(fields, existing)
-    const when = (row: ProjectActionRow) =>
-      `${describePlacement(row)}${
-        row.cadence === null
-          ? ''
-          : ` Planifiée (${describeCadence(readActionCadence(row.cadence)!)})${row.scheduleEnabled ? `, prochain tir ${row.nextRunAt ? new Date(row.nextRunAt).toLocaleString('fr-FR') : 'aucun'} (heure du serveur)` : ', en pause'}${row.onDemand ? '' : ', sans bouton'} : chaque tir part sans clic, sans terminal, à la racine du projet (et dans son sous-dossier).${row.stopCadence ? ` Arrêtée ${describeCadence(readActionCadence(row.stopCadence)!)}${row.nextStopAt ? `, prochain arrêt ${new Date(row.nextStopAt).toLocaleString('fr-FR')}` : ''}.` : ''}`
-      }`
+    const when = (row: ProjectActionRow) => {
+      if (row.cadence === null) return describePlacement(row)
+      const next = row.scheduleEnabled
+        ? `, prochain tir ${row.nextRunAt ? new Date(row.nextRunAt).toLocaleString('fr-FR') : 'aucun'} (heure du serveur)`
+        : ', en pause'
+      const stop = row.stopCadence
+        ? ` Arrêtée ${describeCadence(readActionCadence(row.stopCadence)!)}${row.nextStopAt ? `, prochain arrêt ${new Date(row.nextStopAt).toLocaleString('fr-FR')}` : ''}.`
+        : ''
+      return `${describePlacement(row)} Planifiée (${describeCadence(readActionCadence(row.cadence)!)})${next}${row.onDemand ? '' : ', sans bouton'} : chaque tir part sans clic, sans terminal, à la racine du projet (et dans son sous-dossier).${stop}`
+    }
     if (existing) {
       const row = existing
       const parsed = updateProjectActionBodySchema.safeParse(fields)
