@@ -227,9 +227,9 @@ export function SchedulesPage() {
         ))}
         extra={
           <span className="hidden text-xs whitespace-nowrap tabular-nums text-ink-faint lg:inline" data-planned-summary>
-            {t(pluralOf(planned.length) === 'one' ? 'planned.summary.tasks.one' : 'planned.summary.tasks.other', { count: planned.length })}
+            {t(`planned.summary.tasks.${pluralOf(planned.length)}`, { count: planned.length })}
             {' · '}
-            {t(pluralOf(scopes.length) === 'one' ? 'planned.summary.scopes.one' : 'planned.summary.scopes.other', { count: scopes.length })}
+            {t(`planned.summary.scopes.${pluralOf(scopes.length)}`, { count: scopes.length })}
           </span>
         }
         display={displayMenu}

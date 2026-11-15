@@ -319,7 +319,7 @@ export function ActionDetail({
 
         <ActionBlock
           title={t('actionDetail.block.runs')}
-          aside={item.runs.length ? <span className="text-xs text-ink-faint tabular-nums">{t(pluralOf(item.runs.length) === 'one' ? 'actionDetail.runs.known.one' : 'actionDetail.runs.known.other', { count: item.runs.length })}</span> : null}
+          aside={item.runs.length ? <span className="text-xs text-ink-faint tabular-nums">{t(`actionDetail.runs.known.${pluralOf(item.runs.length)}`, { count: item.runs.length })}</span> : null}
         >
           <Runs item={item} projectId={projectId} timeZone={timeZone} />
         </ActionBlock>

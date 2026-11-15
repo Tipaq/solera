@@ -61,7 +61,7 @@ export function OverviewActionsView({ projectId, items, now }: { projectId: stri
       {shown.length > 0 && idle > 0 ? (
         <p className="mt-1">
           <MoreLink to={actionsTabPath(projectId)}>
-            {t(pluralOf(idle) === 'one' ? 'project.overview.actions.idle.one' : 'project.overview.actions.idle.other', { count: idle })}
+            {t(`project.overview.actions.idle.${pluralOf(idle)}`, { count: idle })}
           </MoreLink>
         </p>
       ) : null}

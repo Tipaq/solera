@@ -319,7 +319,7 @@ export function CommandRunDetail({
         {summary && files > 0 ? (
           <Block
             title={t(summary.tool === 'tsc' ? 'panel.runs.block.types' : 'panel.runs.block.lint', {
-              summary: t(pluralOf(files) === 'one' ? 'panel.runs.block.inFiles.one' : 'panel.runs.block.inFiles.other', { count: errors, files }),
+              summary: t(`panel.runs.block.inFiles.${pluralOf(files)}`, { count: errors, files }),
             })}
           >
             <ul className="flex flex-col">

@@ -106,7 +106,7 @@ export function CodeGraph({
           to={travailStateHref(projectId, 'cleanup')}
           className="mt-2 ml-11 self-start rounded text-xs text-ink-faint hover:text-ink focus-visible:outline-2 focus-visible:outline-accent pointer-coarse:min-h-11"
         >
-          {t(pluralOf(settled) === 'one' ? 'project.overview.code.settled.one' : 'project.overview.code.settled.other', { count: settled })}
+          {t(`project.overview.code.settled.${pluralOf(settled)}`, { count: settled })}
         </Link>
       ) : null}
       <div role="status" aria-live="polite" className="ml-11">

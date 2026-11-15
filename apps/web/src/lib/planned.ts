@@ -279,7 +279,7 @@ export function healthMotive(item: Automation, now: number, t: Translate): strin
   if (item.failStreak === 0) return null
   const failure = healthOf(item, () => null, now).lastFailure
   const reason = failure?.error ?? (failure?.code != null ? t('planned.health.code', { code: failure.code }) : t('planned.health.seeLastRun'))
-  return t(pluralOf(item.failStreak) === 'one' ? 'planned.health.failStreak.one' : 'planned.health.failStreak.other', { count: item.failStreak, reason })
+  return t(`planned.health.failStreak.${pluralOf(item.failStreak)}`, { count: item.failStreak, reason })
 }
 
 /* ------------------------------------------------------------------ le champ Portée (PLF-10) */

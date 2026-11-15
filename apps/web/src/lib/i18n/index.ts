@@ -74,13 +74,18 @@ export function locale(): Locale {
   return current
 }
 
+/** Une règle par langue : `pluralOf` tourne dans des listes. */
+const pluralRules = new Map<string, Intl.PluralRules>()
+
 /**
  * La forme d'un compte, pour les clés `….one` / `….other` : celle que la règle `Intl`
  * de la langue choisit, et non `count === 1`. En français, 0 se met au singulier
  * (« 0 ligne ») ; en anglais, au pluriel (« 0 lines »).
  */
 export function pluralOf(count: number, lang: string = locale()): 'one' | 'other' {
-  return new Intl.PluralRules(lang).select(count) === 'one' ? 'one' : 'other'
+  let rules = pluralRules.get(lang)
+  if (!rules) pluralRules.set(lang, (rules = new Intl.PluralRules(lang)))
+  return rules.select(count) === 'one' ? 'one' : 'other'
 }
 
 /**
