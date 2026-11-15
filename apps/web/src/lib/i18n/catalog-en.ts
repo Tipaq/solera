@@ -4828,6 +4828,7 @@ export const en = {
   'scheduleRule.preview.timeZone': "Server time zone: {zone}",
   'scheduleRule.preview.passes.one': "{count} run",
   'scheduleRule.preview.passes.other': "{count} runs",
+  'scheduleRule.preview.passesAtLeast': '{count} runs or more',
   'scheduleRule.sentence.once': "Once, on {date} at {time}",
   'scheduleRule.sentence.hours.one': "Every hour",
   'scheduleRule.sentence.hours.other': "Every {count} hours",

@@ -4821,6 +4821,7 @@ export const fr: Catalog = {
   "scheduleRule.preview.timeZone": "Fuseau du serveur : {zone}",
   "scheduleRule.preview.passes.one": "{count} passage",
   "scheduleRule.preview.passes.other": "{count} passages",
+  "scheduleRule.preview.passesAtLeast": "{count} passages ou plus",
   "scheduleRule.sentence.once": "Une seule fois, le {date} à {time}",
   "scheduleRule.sentence.hours.one": "Toutes les heures",
   "scheduleRule.sentence.hours.other": "Toutes les {count} heures",
