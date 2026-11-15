@@ -17,6 +17,7 @@ import {
   writeTransaction,
   type AgentRequestRow,
   type ConversationRow,
+  type ProjectActionRow,
   type ProjectRow,
 } from '@solera/db'
 import {
@@ -54,6 +55,7 @@ import {
   type SoleraEvent,
   type WorktreeState,
   type ActionSchedulePatch,
+  actionPlacementSchema,
   type ProjectActionRunResult,
   allowsRequest,
   type AgentRequestPolicy,
@@ -2410,12 +2412,28 @@ export class AgentRequests {
     }
     if (payload.schedule !== undefined) fields.schedule = parseActionSchedule(payload.schedule, !updating)
     if (payload.on_demand !== undefined && payload.on_demand !== null) fields.onDemand = payload.on_demand
-    const when = (row: { cadence: string | null; onDemand: boolean; scheduleEnabled: boolean; nextRunAt: number | null }) =>
-      row.cadence === null
-        ? ''
-        : ` Planifiée (${describeCadence(readActionCadence(row.cadence)!)})${row.scheduleEnabled ? `, prochain tir ${row.nextRunAt ? new Date(row.nextRunAt).toLocaleString('fr-FR') : 'aucun'} (heure du serveur)` : ', en pause'}${row.onDemand ? '' : ', sans bouton'} : chaque tir part sans clic, sans terminal, à la racine du projet (et dans son sous-dossier).`
-    if (updating) {
-      const row = this.projectAction(requester, payload.id)
+    if (payload.placement !== undefined && payload.placement !== null) {
+      const placement = actionPlacementSchema.safeParse(payload.placement)
+      if (!placement.success) {
+        throw new Refusal('Refusé : `placement` vaut `follow`, `root`, `branch` ou `per-worktree`.')
+      }
+      fields.placement = placement.data
+    }
+    if (payload.branch !== undefined) fields.pinnedBranch = payload.branch === '' ? null : payload.branch
+    const existing = updating ? this.projectAction(requester, payload.id) : null
+    refuseIncoherentPlacement(fields, existing)
+    const when = (row: ProjectActionRow) => {
+      if (row.cadence === null) return describePlacement(row)
+      const next = row.scheduleEnabled
+        ? `, prochain tir ${row.nextRunAt ? new Date(row.nextRunAt).toLocaleString('fr-FR') : 'aucun'} (heure du serveur)`
+        : ', en pause'
+      const stop = row.stopCadence
+        ? ` Arrêtée ${describeCadence(readActionCadence(row.stopCadence)!)}${row.nextStopAt ? `, prochain arrêt ${new Date(row.nextStopAt).toLocaleString('fr-FR')}` : ''}.`
+        : ''
+      return `${describePlacement(row)} Planifiée (${describeCadence(readActionCadence(row.cadence)!)})${next}${row.onDemand ? '' : ', sans bouton'} : chaque tir part sans clic, sans terminal, à la racine du projet (et dans son sous-dossier).${stop}`
+    }
+    if (existing) {
+      const row = existing
       const parsed = updateProjectActionBodySchema.safeParse(fields)
       if (!parsed.success) throw new Refusal(describeZod(parsed.error))
       const next = updateAction(this.ctx.db, row, parsed.data, requester.id)
@@ -2595,7 +2613,57 @@ function parseActionSchedule(raw: unknown, requireCadence: boolean): ActionSched
     if (typeof given.enabled !== 'boolean') throw new Refusal('`schedule.enabled` vaut true ou false.')
     schedule.enabled = given.enabled
   }
+  // L'arrêt d'un service planifié : une cadence de la même forme, ou null pour le retirer.
+  if (given.stop !== undefined) {
+    if (given.stop === null) schedule.stopCadence = null
+    else if (typeof given.stop !== 'object' || Array.isArray(given.stop)) {
+      throw new Refusal('`schedule.stop` est un objet : `every_minutes`, `cron` ou `at`, comme la cadence. Null retire l’arrêt.')
+    } else {
+      const stop = parseAgentCadence(given.stop as Record<string, unknown>)
+      if (!stop) throw new Refusal('`schedule.stop` demande une cadence : `every_minutes`, `cron` ou `at`.')
+      schedule.stopCadence = stop
+    }
+  }
   return schedule
+}
+
+/**
+ * Les refus du placement et de l'arrêt, dits à l'agent avant d'écrire : le serveur
+ * refuserait aussi, mais d'un code d'API qui ne lui dit pas quoi corriger (#260).
+ * `existing` : l'action modifiée, dont les champs non donnés restent.
+ */
+function refuseIncoherentPlacement(fields: Record<string, unknown>, existing: ProjectActionRow | null): void {
+  const kind = (fields.kind ?? existing?.kind) as ProjectActionRow['kind'] | undefined
+  const placement = (fields.placement ?? existing?.placement ?? 'follow') as ProjectActionRow['placement']
+  const branch = fields.pinnedBranch !== undefined ? fields.pinnedBranch : (existing?.pinnedBranch ?? null)
+  const url = (fields.url ?? existing?.url ?? null) as string | null
+  const schedule = fields.schedule as ActionSchedulePatch | null | undefined
+  if (kind === 'task' && fields.placement !== undefined && placement !== 'follow') {
+    throw new Refusal('Refusé : une `task` tourne toujours là où on la lance. `placement` ne vaut que pour un `service`.')
+  }
+  if (fields.pinnedBranch && placement !== 'branch') {
+    throw new Refusal('Refusé : `branch` ne vaut qu’avec `placement: "branch"`.')
+  }
+  if (placement === 'branch' && (typeof branch !== 'string' || !branch.trim())) {
+    throw new Refusal('Refusé : `placement: "branch"` demande `branch`, la branche sur laquelle le service tourne toujours.')
+  }
+  if (placement === 'per-worktree' && url && !url.includes('{port}')) {
+    throw new Refusal('Refusé : une instance par worktree écoute sur son propre port, que sa commande reçoit dans `PORT`. Son `url` doit contenir `{port}`.')
+  }
+  if (schedule?.stopCadence) {
+    if (kind === 'task') throw new Refusal('Refusé : seul un `service` s’arrête à heure fixe. Une `task` finit seule.')
+    if (!schedule.cadence && !existing?.cadence) {
+      throw new Refusal('Refusé : `schedule.stop` arrête un service planifié. Donne aussi sa cadence de démarrage (`every_minutes`, `cron` ou `at`).')
+    }
+  }
+}
+
+/** Où tourne un service, dit à l'agent après l'écriture ; rien pour une tâche, qui suit. */
+function describePlacement(row: Pick<ProjectActionRow, 'kind' | 'placement' | 'pinnedBranch'>): string {
+  if (row.kind === 'task' || row.placement === 'follow') return ''
+  if (row.placement === 'root') return ' Il tourne toujours à la racine du projet.'
+  if (row.placement === 'branch') return ` Il tourne toujours sur la branche \`${row.pinnedBranch}\`.`
+  return ' Une instance par worktree, chacune sur son port (`PORT`).'
 }
 
 function describeCadence(cadence: ScheduleCadence): string {

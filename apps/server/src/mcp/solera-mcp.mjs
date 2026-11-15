@@ -806,7 +806,7 @@ const ALL_TOOLS = [
   {
     name: 'register_action',
     description:
-      `Crée ou modifie une action du projet : un bouton que l'utilisateur lance d'un clic depuis Solera, dans le worktree de la conversation où il clique. Sert quand l'utilisateur le demande (« ajoute un bouton pour lancer le serveur »), ou de ta propre initiative quand tu mets en place une commande qu'il relancera souvent : serveur de dev, suite de tests, script de debug, seed de base. Pas pour une commande d'un seul usage. Deux natures : \`service\` pour ce qui tourne en continu (porté par une unité systemd solera-app-*, visible dans la page Services, qui survit à cette session) ; \`task\` pour ce qui se termine (joué dans un terminal du panneau, avec son code de sortie). Rien n'est écrit dans le dépôt. Une \`task\` peut aussi être planifiée (\`schedule\`) : elle part seule à sa cadence, sans terminal, à la racine du projet (plus son \`subdir\`), et sa sortie finit dans ses passages ; avec \`on_demand: false\`, elle n'a plus de bouton. Une action créée, ou dont tu changes la commande, la nature, le dossier ou la cadence, attend que l'utilisateur la valide avant son premier lancement, d'un clic comme à sa cadence. Avec \`id\`, modifie l'action existante (seuls les champs donnés changent).`,
+      `Crée ou modifie une action du projet : un bouton que l'utilisateur lance d'un clic depuis Solera, dans le worktree de la conversation où il clique. Sert quand l'utilisateur le demande (« ajoute un bouton pour lancer le serveur »), ou de ta propre initiative quand tu mets en place une commande qu'il relancera souvent : serveur de dev, suite de tests, script de debug, seed de base. Pas pour une commande d'un seul usage. Deux natures : \`service\` pour ce qui tourne en continu (porté par une unité systemd solera-app-*, visible dans la page Services, qui survit à cette session) ; \`task\` pour ce qui se termine (joué dans un terminal du panneau, avec son code de sortie). Rien n'est écrit dans le dépôt. Une \`task\` peut aussi être planifiée (\`schedule\`) : elle part seule à sa cadence, sans terminal, à la racine du projet (plus son \`subdir\`), et sa sortie finit dans ses passages ; avec \`on_demand: false\`, elle n'a plus de bouton. Un \`service\` planifié démarre à sa cadence, et s'arrête à \`schedule.stop\` s'il en a un. Un \`service\` tourne là où on le lance, ou ailleurs selon \`placement\`. Une action créée, ou dont tu changes la commande, la nature, le dossier, la cadence, le placement ou l'arrêt, attend que l'utilisateur la valide avant son premier lancement, d'un clic comme à sa cadence. Avec \`id\`, modifie l'action existante (seuls les champs donnés changent).`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -824,15 +824,29 @@ const ALL_TOOLS = [
           description:
             "Pour un `service` : l'adresse où l'ouvrir, affichée en lien quand il tourne. `{port}` y est remplacé par le port sur lequel il écoute (ex. `http://mon-hote:{port}`). Elle doit être joignable depuis le navigateur de l'utilisateur : pas `localhost` si Solera tourne sur une autre machine que la sienne ; reprends l'adresse que donnent tes consignes s'il y en a une.",
         },
+        placement: {
+          type: 'string',
+          enum: ['follow', 'root', 'branch', 'per-worktree'],
+          description:
+            "Pour un `service` seulement : où il tourne. `follow` (défaut) : là où on le lance, une seule instance qu'on bascule d'un worktree à l'autre. `root` : toujours à la racine du projet. `branch` : toujours sur la branche `branch`. `per-worktree` : une instance par worktree, chacune sur un port libre reçu dans `PORT` ; son `url` doit alors contenir `{port}`. Une `task` tourne toujours là où on la lance.",
+        },
+        branch: {
+          type: 'string',
+          description: 'Avec `placement: "branch"` : la branche sur laquelle le service tourne toujours.',
+        },
         schedule: {
           type: 'object',
-          description: `Pour une \`task\` seulement : la planifier. Exactement une cadence, comme schedule_task : \`every_minutes\` (${MIN_AGENT_SCHEDULE_MINUTES} au moins), \`cron\` (cinq champs, heure du serveur) ou \`at\` (date ISO 8601). En plus, au besoin : \`max_duration_minutes\` (coupée au-delà, ${DEFAULT_SCHEDULE_DURATION_MINUTES} par défaut) et \`enabled\` (false met en pause ; seul, en modification, garde la cadence). \`null\` retire la planification.`,
+          description: `La planifier. Exactement une cadence, comme schedule_task : \`every_minutes\` (${MIN_AGENT_SCHEDULE_MINUTES} au moins), \`cron\` (cinq champs, heure du serveur) ou \`at\` (date ISO 8601). En plus, au besoin : \`max_duration_minutes\` (coupée au-delà, ${DEFAULT_SCHEDULE_DURATION_MINUTES} par défaut) et \`enabled\` (false met en pause ; seul, en modification, garde la cadence). Pour un \`service\`, \`stop\` : l'heure où l'arrêter, une cadence de la même forme (\`{ cron: '0 20 * * 1-5' }\`), null pour la retirer ; sans elle, il tourne jusqu'à ce qu'on l'arrête. \`null\` retire la planification.`,
           properties: {
             every_minutes: { type: 'integer' },
             cron: { type: 'string' },
             at: { type: 'string' },
             max_duration_minutes: { type: 'integer' },
             enabled: { type: 'boolean' },
+            stop: {
+              type: 'object',
+              properties: { every_minutes: { type: 'integer' }, cron: { type: 'string' }, at: { type: 'string' } },
+            },
           },
         },
         on_demand: {
@@ -2289,7 +2303,8 @@ function listActions() {
     .prepare(
       `SELECT id, label, description, kind, command, subdir, url,
               approved_at AS approvedAt, on_demand AS onDemand, cadence,
-              schedule_enabled AS scheduleEnabled, next_run_at AS nextRunAt
+              schedule_enabled AS scheduleEnabled, next_run_at AS nextRunAt,
+              stop_cadence AS stopCadence, placement, pinned_branch AS pinnedBranch
        FROM project_actions
        WHERE project_id = ?
        ORDER BY created_at`,
@@ -2308,31 +2323,45 @@ function renderActions(actions) {
       const about = action.description ? `\n  ${action.description}` : ''
       const link = action.url ? `\n  ouvre ${action.url}` : ''
       const when = action.cadence ? `\n  ${describeActionSchedule(action)}` : ''
-      return `- « ${action.label} » (${action.kind}, ${status}, id \`${action.id}\`)${where}${about}${link}${when}\n  \`${action.command.replace(/\n/g, ' ⏎ ')}\``
+      const placed = action.kind === 'service' && action.placement !== 'follow' ? `\n  ${describeActionPlacement(action)}` : ''
+      return `- « ${action.label} » (${action.kind}, ${status}, id \`${action.id}\`)${where}${about}${link}${when}${placed}\n  \`${action.command.replace(/\n/g, ' ⏎ ')}\``
     })
     .join('\n')
 }
 
-/** La cadence d'une commande planifiée, dite comme `schedule_task` la dit. */
-function describeActionSchedule(action) {
+/** Où tourne un service qui ne suit pas, dit comme `register_action` le règle. */
+function describeActionPlacement(action) {
+  if (action.placement === 'root') return 'placement `root` : toujours à la racine du projet'
+  if (action.placement === 'branch') return `placement \`branch\` : toujours sur \`${action.pinnedBranch}\``
+  return 'placement `per-worktree` : une instance par worktree, chacune sur son port'
+}
+
+/** Une cadence lue en base, dite comme `schedule_task` la dit ; null si illisible. */
+function describeCadenceText(raw) {
   let cadence
   try {
-    cadence = JSON.parse(action.cadence)
+    cadence = JSON.parse(raw)
   } catch {
-    return 'planifiée (cadence illisible)'
+    return null
   }
-  const rule =
-    cadence.kind === 'interval'
-      ? `toutes les ${cadence.minutes} minutes`
-      : cadence.kind === 'cron'
-        ? `motif cron \`${cadence.expression}\``
-        : `une seule fois, le ${new Date(cadence.at).toLocaleString('fr-FR')}`
+  return cadence.kind === 'interval'
+    ? `toutes les ${cadence.minutes} minutes`
+    : cadence.kind === 'cron'
+      ? `motif cron \`${cadence.expression}\``
+      : `une seule fois, le ${new Date(cadence.at).toLocaleString('fr-FR')}`
+}
+
+/** La cadence d'une commande planifiée, et l'arrêt d'un service planifié. */
+function describeActionSchedule(action) {
+  const rule = describeCadenceText(action.cadence)
+  if (rule === null) return 'planifiée (cadence illisible)'
   const next = action.scheduleEnabled
     ? action.nextRunAt
       ? `, prochain tir ${new Date(action.nextRunAt).toLocaleString('fr-FR')}`
       : ''
     : ', en pause'
-  return `planifiée : ${rule}${next}${action.onDemand ? '' : ', sans bouton (à sa cadence seulement)'}`
+  const stop = action.stopCadence ? describeCadenceText(action.stopCadence) : null
+  return `planifiée : ${rule}${next}${action.onDemand ? '' : ', sans bouton (à sa cadence seulement)'}${stop ? `, arrêtée ${stop}` : ''}`
 }
 
 function readCard(number) {
