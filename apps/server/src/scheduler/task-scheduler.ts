@@ -25,7 +25,8 @@ import { placeDirectory } from '../workspace.js'
 import { directoryGone } from '../worktrees/gone.js'
 import { defaultBase } from '../worktrees/assess.js'
 import { createWorktree } from '../worktrees/create.js'
-import { discardWorktree, retireWorktree, worktreeUntouched } from '../worktrees/retire.js'
+import type { WorktreeCleanup } from '../worktrees/cleanup.js'
+import { discardWorktree, worktreeUntouched } from '../worktrees/retire.js'
 import type { CommandScheduler } from '../actions/scheduled.js'
 import { checkStateDir, firstLine, runCheck } from './check.js'
 import { readCadence } from './tasks.js'
@@ -60,6 +61,7 @@ export class TaskScheduler {
   private readonly firing = new Set<string>()
   /** Les commandes planifiées, tirées dans la même passe (AC-03). */
   private commands: Pick<CommandScheduler, 'tick'> | null = null
+  private cleanup: Pick<WorktreeCleanup, 'run'> | null = null
 
   constructor(
     private readonly ctx: AppContext,
@@ -88,6 +90,11 @@ export class TaskScheduler {
 
   setCommands(commands: Pick<CommandScheduler, 'tick'>): void {
     this.commands = commands
+  }
+
+  /** Le nettoyage du chantier, par lequel un tir rend l'arbre qu'il n'a pas utilisé (#249). */
+  setCleanup(cleanup: Pick<WorktreeCleanup, 'run'>): void {
+    this.cleanup = cleanup
   }
 
   async tick(now = Date.now()): Promise<void> {
@@ -598,28 +605,28 @@ export class TaskScheduler {
    * résiste reste au nettoyage du chantier, et le tir est clos quoi qu'il arrive.
    */
   private async retireRunTree(conversationId: string): Promise<void> {
+    if (!this.cleanup) return
     try {
-      const tree = this.ctx.db
-        .select({ tree: worktrees })
+      const found = this.ctx.db
+        .select({ tree: worktrees, project: projects })
         .from(conversations)
         .innerJoin(worktrees, eq(worktrees.id, conversations.worktreeId))
+        .innerJoin(projects, eq(projects.id, worktrees.projectId))
         .where(eq(conversations.id, conversationId))
-        .get()?.tree
-      if (!tree?.name.startsWith(RUN_BRANCH_PREFIX)) return
+        .get()
+      if (!found?.tree.name.startsWith(RUN_BRANCH_PREFIX)) return
       // Une autre session ouverte depuis dans l'arbre le garde : on ne le retire pas sous elle.
       const residents = this.ctx.db
         .select({ id: conversations.id })
         .from(conversations)
-        .where(and(eq(conversations.worktreeId, tree.id), isNull(conversations.archivedAt)))
+        .where(and(eq(conversations.worktreeId, found.tree.id), isNull(conversations.archivedAt)))
         .all()
       if (residents.some((entry) => entry.id !== conversationId)) return
-      const repo = this.projectPathOf(tree)
-      if (!repo || !(await worktreeUntouched(tree))) return
-      // Le CLI resté chaud a son cwd dans l'arbre, et les captures de tour vivent dans
-      // le dépôt : les deux partent avant le dossier.
-      if (!(await this.sessions.releaseRunner(conversationId))) return
-      await this.sessions.dropCheckpoints(conversationId)
-      await retireWorktree(this.ctx.db, repo, tree)
+      if (!(await worktreeUntouched(found.tree))) return
+      // Le nettoyage du chantier, comme d'un clic : il arrête ce qui tourne dans l'arbre,
+      // range le fil du tir (archivé, toujours lisible depuis sa tâche), libère son CLI
+      // et ses captures, puis retire le dossier et la branche.
+      await this.cleanup.run(found.project, { path: found.tree.path, deleteBranch: true, stopServices: true })
     } catch (err) {
       this.logger?.warn({ err, conversationId }, 'arbre du tir planifié non retiré')
     }

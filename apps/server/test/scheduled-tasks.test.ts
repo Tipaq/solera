@@ -45,6 +45,9 @@ import { agentCwd } from '../src/workspace.js'
 import { AgentRequests } from '../src/sessions/agent-requests.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import { Environments } from '../src/environments/environments.js'
+import type { TerminalManager } from '../src/terminals/terminal-manager.js'
+import { WorktreeCleanup } from '../src/worktrees/cleanup.js'
+import { WorktreeStatusService } from '../src/worktrees/status-service.js'
 
 const MINUTE = 60_000
 
@@ -100,6 +103,9 @@ async function harness(t: TestContext) {
   } as unknown as Config
   const log = new EventLog(db)
   const scheduler = new TaskScheduler({ db, config }, sessions, registry, log)
+  // Le vrai nettoyage du chantier, sans terminal ouvert : c'est par lui qu'un tir rend son arbre (#249).
+  const noTerminals = { underCwd: () => [], close: () => undefined } as unknown as TerminalManager
+  scheduler.setCleanup(new WorktreeCleanup(db, join(dir, 'data'), new WorktreeStatusService(db, log, async () => []), noTerminals, sessions))
 
   const task = (cadence: ScheduleCadence, overlapPolicy: ScheduleOverlapPolicy = 'skip', maxDurationMinutes = 30) =>
     createScheduledTask(
@@ -784,8 +790,8 @@ test('a « new worktree » run that produced nothing gives its worktree and bran
   assert.equal(await stat(tree.path).then(() => true, () => false), false, 'dossier retiré')
   assert.equal(branchExists(dir, tree.name), false, 'branche retirée')
   assert.ok(db.select().from(worktrees).where(eq(worktrees.id, tree.id)).get()!.removedAt, 'arbre marqué retiré')
-  // Le fil du tir reste lisible : c'est lui qui dit ce que le tir a fait.
-  assert.ok(db.select().from(conversations).where(eq(conversations.id, thread.id)).get())
+  // Le fil du tir reste lisible, rangé : c'est lui qui dit ce que le tir a fait.
+  assert.ok(db.select().from(conversations).where(eq(conversations.id, thread.id)).get()!.archivedAt)
 })
 
 test('a « new worktree » run keeps its worktree when it committed or left files (#249)', async (t) => {
