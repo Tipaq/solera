@@ -3,8 +3,7 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { LibrarySkillDto } from '@solera/protocol'
 import { Banner, FoldLine } from '@solera/ui'
-import { useLocale, useTranslate } from '../../lib/i18n'
-import { pluralKey } from '../../lib/schedule-rule'
+import { useLocale, useTranslate, pluralOf } from '../../lib/i18n'
 import { openSettings } from '../../lib/settings-dialog'
 import { useSkillLibrary } from '../../lib/skill-library'
 import { AddSkillMenu } from './AddSkillMenu'
@@ -77,7 +76,7 @@ export function ProjectSkillList({
         </ul>
       )}
       <p className="text-xs text-ink-faint">
-        {t(`projectSettings.skills.instance.${pluralKey(instanceCount, locale)}`, { count: instanceCount })}{' '}
+        {t(`projectSettings.skills.instance.${pluralOf(instanceCount, locale)}`, { count: instanceCount })}{' '}
         <button type="button" onClick={() => openSettings('skills')} className="text-accent hover:underline">
           {t('skills.project.globals.link')}
         </button>

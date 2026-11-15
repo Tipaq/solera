@@ -2,7 +2,7 @@ import { ArrowLeft, Bot, Loader, MessagesSquare, MoreHorizontal, X } from 'lucid
 import { useMemo, type ReactNode } from 'react'
 import { parseUnifiedDiff } from '../../../lib/diff'
 import { relativeDate } from '../../../lib/dates'
-import { locale, useTranslate } from '../../../lib/i18n'
+import { pluralOf, locale, useTranslate } from '../../../lib/i18n'
 import type { WorkspaceScope } from '../../../lib/workspace-scope'
 import { Banner, IconButton, cx } from '@solera/ui'
 import { FileDiff, SectionTitle } from '../diff-parts'
@@ -162,7 +162,7 @@ export function CommitDetail({
 
       {data ? (
         <SectionTitle>
-          {t(data.files.length > 1 ? 'git.commit.files' : 'git.commit.filesOne', {
+          {t(pluralOf(data.files.length) === 'one' ? 'git.commit.filesOne' : 'git.commit.files', {
             count: data.files.length,
             added,
             removed,
