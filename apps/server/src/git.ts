@@ -307,6 +307,16 @@ async function worktreeLock(repo: string, path: string): Promise<string | null> 
   return null
 }
 
+/** Les commits de `HEAD` absents de `base`, lus dans `cwd` ; null si git ne sait pas le dire. */
+export async function countCommitsSince(cwd: string, base: string): Promise<number | null> {
+  try {
+    const count = Number((await git(cwd, ['rev-list', '--count', `${base}..HEAD`])).trim())
+    return Number.isInteger(count) ? count : null
+  } catch {
+    return null
+  }
+}
+
 /**
  * Supprime une branche locale, par `-D` : une branche fusionnée par squash n'est pas un
  * ancêtre de la base, et `-d` la refuserait. À l'appelant de s'être assuré qu'elle ne

@@ -25,6 +25,7 @@ import { placeDirectory } from '../workspace.js'
 import { directoryGone } from '../worktrees/gone.js'
 import { defaultBase } from '../worktrees/assess.js'
 import { createWorktree } from '../worktrees/create.js'
+import { discardWorktree, retireWorktree, worktreeUntouched } from '../worktrees/retire.js'
 import type { CommandScheduler } from '../actions/scheduled.js'
 import { checkStateDir, firstLine, runCheck } from './check.js'
 import { readCadence } from './tasks.js'
@@ -44,6 +45,9 @@ const TICK_MS = 5000
 
 /** Résumé du tir précédent recopié dans le prompt du suivant. */
 const SUMMARY_MAX_CHARS = 2000
+
+/** Les branches qu'ouvre un tir en « Nouveau worktree » : les seules qu'il range seul (#249). */
+const RUN_BRANCH_PREFIX = 'planifiee/'
 
 export class TaskScheduler {
   private timer: NodeJS.Timeout | null = null
@@ -383,37 +387,44 @@ export class TaskScheduler {
     this.placeDirectoryOf(task)
     const config = await this.registry.adapter(task.agent).resolveDefaults(parseAgentConfig(task.config))
     const tree = task.worktreeMode === 'new' ? await this.openWorktree(task, startedAt) : null
-    const row = await createConversation(this.ctx.db, this.sessions, {
-      projectId: task.projectId,
-      place: schedulePlaceOf(task.scope),
-      userId: task.userId,
-      agent: task.agent,
-      config,
-      worktreeId: tree?.id ?? null,
-      cardId: null,
-      // Le nom de la tâche et l'heure : sous sa tâche, c'est la date qui distingue
-      // un tir du précédent, et ailleurs (recherche, favoris) c'est le nom.
-      title: `${task.name} · ${stamp(startedAt)}`,
-      origin: null,
-      scheduleId: task.id,
-      autonomous: { confined: task.confined },
-      firstMessage: {
-        clientMessageId: randomUUID(),
-        text: buildRunPrompt({
-          task,
-          trigger,
-          firedAt: startedAt,
-          previous: this.previousRun(task.id),
-          publicUrl: this.ctx.config.server.publicUrl,
-          checkOutput,
-          worktree: tree && { branch: tree.name, base: tree.baseRef },
-        }),
-        attachments: [],
-        mentions: [],
-        skills: [],
-      },
-    })
-    return row.id
+    try {
+      const row = await createConversation(this.ctx.db, this.sessions, {
+        projectId: task.projectId,
+        place: schedulePlaceOf(task.scope),
+        userId: task.userId,
+        agent: task.agent,
+        config,
+        worktreeId: tree?.id ?? null,
+        cardId: null,
+        // Le nom de la tâche et l'heure : sous sa tâche, c'est la date qui distingue
+        // un tir du précédent, et ailleurs (recherche, favoris) c'est le nom.
+        title: `${task.name} · ${stamp(startedAt)}`,
+        origin: null,
+        scheduleId: task.id,
+        autonomous: { confined: task.confined },
+        firstMessage: {
+          clientMessageId: randomUUID(),
+          text: buildRunPrompt({
+            task,
+            trigger,
+            firedAt: startedAt,
+            previous: this.previousRun(task.id),
+            publicUrl: this.ctx.config.server.publicUrl,
+            checkOutput,
+            worktree: tree && { branch: tree.name, base: tree.baseRef },
+          }),
+          attachments: [],
+          mentions: [],
+          skills: [],
+        },
+      })
+      return row.id
+    } catch (err) {
+      // Le fil n'a pas pu naître : son arbre resterait là sans personne pour le citer.
+      const repo = tree && this.projectPathOf(tree)
+      if (tree && repo) await discardWorktree(this.ctx.db, repo, tree)
+      throw err
+    }
   }
 
   /**
@@ -430,7 +441,7 @@ export class TaskScheduler {
       : undefined
     if (!project) throw new Error("La tâche n'a pas de projet où ouvrir un worktree.")
 
-    const stem = `planifiee/${slugifyProjectName(task.name).slice(0, 40).replace(/-+$/, '') || 'tache'}-${branchStamp(startedAt)}`
+    const stem = `${RUN_BRANCH_PREFIX}${slugifyProjectName(task.name).slice(0, 40).replace(/-+$/, '') || 'tache'}-${branchStamp(startedAt)}`
     // Hors dépôt, la liste est vide et `createWorktree` dira pourquoi il refuse.
     const branches = new Set(await listBranches(project.workspacePath).catch(() => []))
     const trees = new Set(
@@ -522,7 +533,7 @@ export class TaskScheduler {
         : undefined
 
       if (!run.conversationId || !thread) {
-        this.close(run, 'failed', now, 'Le fil du tir a été supprimé avant sa fin.')
+        await this.close(run, 'failed', now, 'Le fil du tir a été supprimé avant sa fin.')
         continue
       }
 
@@ -547,27 +558,27 @@ export class TaskScheduler {
           recoverable: true,
         })
         await this.sessions.terminate(run.conversationId)
-        this.close(run, 'timed_out', now, reason)
+        await this.close(run, 'timed_out', now, reason)
         continue
       }
 
       if (thread.status === 'interrupted') {
-        this.close(run, 'failed', now, 'Tir interrompu avant sa fin (arrêt manuel ou redémarrage de Solera).')
+        await this.close(run, 'failed', now, 'Tir interrompu avant sa fin (arrêt manuel ou redémarrage de Solera).')
       } else if (thread.status === 'error' || verdict?.event.type === 'error') {
         const message = verdict?.event.type === 'error' ? verdict.event.message : 'Le CLI a terminé en erreur.'
-        this.close(run, 'failed', now, message)
+        await this.close(run, 'failed', now, message)
       } else {
-        this.close(run, 'succeeded', now, null)
+        await this.close(run, 'succeeded', now, null)
       }
     }
   }
 
-  private close(
+  private async close(
     run: ScheduledRunRow,
     status: 'succeeded' | 'failed' | 'timed_out',
     now: number,
     error: string | null,
-  ): void {
+  ): Promise<void> {
     const reply = run.conversationId ? this.log.lastAssistantText(run.conversationId) : null
     this.ctx.db
       .update(scheduledRuns)
@@ -579,6 +590,44 @@ export class TaskScheduler {
       })
       .where(eq(scheduledRuns.id, run.id))
       .run()
+    if (run.conversationId) await this.retireRunTree(run.conversationId)
+  }
+
+  /**
+   * Retire l'arbre d'un tir clos s'il n'a rien produit (#249). Au mieux : un arbre qui
+   * résiste reste au nettoyage du chantier, et le tir est clos quoi qu'il arrive.
+   */
+  private async retireRunTree(conversationId: string): Promise<void> {
+    try {
+      const tree = this.ctx.db
+        .select({ tree: worktrees })
+        .from(conversations)
+        .innerJoin(worktrees, eq(worktrees.id, conversations.worktreeId))
+        .where(eq(conversations.id, conversationId))
+        .get()?.tree
+      if (!tree?.name.startsWith(RUN_BRANCH_PREFIX)) return
+      // Une autre session ouverte depuis dans l'arbre le garde : on ne le retire pas sous elle.
+      const residents = this.ctx.db
+        .select({ id: conversations.id })
+        .from(conversations)
+        .where(and(eq(conversations.worktreeId, tree.id), isNull(conversations.archivedAt)))
+        .all()
+      if (residents.some((entry) => entry.id !== conversationId)) return
+      const repo = this.projectPathOf(tree)
+      if (!repo || !(await worktreeUntouched(tree))) return
+      // Le CLI resté chaud a son cwd dans l'arbre, et les captures de tour vivent dans
+      // le dépôt : les deux partent avant le dossier.
+      if (!(await this.sessions.releaseRunner(conversationId))) return
+      await this.sessions.dropCheckpoints(conversationId)
+      await retireWorktree(this.ctx.db, repo, tree)
+    } catch (err) {
+      this.logger?.warn({ err, conversationId }, 'arbre du tir planifié non retiré')
+    }
+  }
+
+  /** Le dépôt d'un arbre : le dossier de son projet. */
+  private projectPathOf(tree: WorktreeRow): string | null {
+    return this.ctx.db.select({ path: projects.workspacePath }).from(projects).where(eq(projects.id, tree.projectId)).get()?.path ?? null
   }
 }
 

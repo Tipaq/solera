@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { mkdir, mkdtemp, realpath, rm, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
@@ -75,6 +75,13 @@ async function harness(t: TestContext) {
     },
     // Le daemon y annonce les listes qu'une demande a changées.
     statusBus: new EventEmitter(),
+    // Le rangement de l'arbre d'un tir (#249) libère le CLI et ses captures avant lui.
+    released: [] as string[],
+    async releaseRunner(id: string) {
+      this.released.push(id)
+      return true
+    },
+    async dropCheckpoints() {},
     // La création d'un fil résout les défauts du CLI (#120) : rien à résoudre ici.
     resolveDefaults: async (config: AgentConfig) => config,
     // La session prend l'environnement du projet, l'hôte ici.
@@ -723,6 +730,10 @@ test('a task neither on demand nor scheduled is refused, at creation as at updat
   assert.ok(rescheduled.nextRunAt)
 })
 
+function branchExists(dir: string, name: string): boolean {
+  return execFileSync('git', ['branch', '--list', name], { cwd: dir, encoding: 'utf8' }).trim() !== ''
+}
+
 /** Fait du dossier du projet un dépôt git sur `main`, avec un commit. */
 function initRepository(dir: string): void {
   const git = (...args: string[]) =>
@@ -757,6 +768,62 @@ test('a run in « new worktree » mode opens its session in a fresh worktree nam
   const secondTree = db.select().from(worktrees).where(eq(worktrees.id, secondThread.worktreeId!)).get()!
   assert.notEqual(secondTree.name, tree.name)
   assert.ok(secondTree.name.startsWith(tree.name))
+})
+
+test('a « new worktree » run that produced nothing gives its worktree and branch back (#249)', async (t) => {
+  const { db, dir, scheduler, finish } = await harness(t)
+  initRepository(dir)
+  const created = createScheduledTask(db, { projectId: 'project', userId: 'owner' }, onDemandInput({ worktreeMode: 'new' }))
+  const run = await scheduler.runNow(created.id)
+  const thread = db.select().from(conversations).where(eq(conversations.id, run.conversationId!)).get()!
+  const tree = db.select().from(worktrees).where(eq(worktrees.id, thread.worktreeId!)).get()!
+
+  finish(run.conversationId!, 'Rien à signaler.')
+  await scheduler.tick(Date.now())
+  assert.equal(db.select().from(scheduledRuns).where(eq(scheduledRuns.id, run.id)).get()!.status, 'succeeded')
+  assert.equal(await stat(tree.path).then(() => true, () => false), false, 'dossier retiré')
+  assert.equal(branchExists(dir, tree.name), false, 'branche retirée')
+  assert.ok(db.select().from(worktrees).where(eq(worktrees.id, tree.id)).get()!.removedAt, 'arbre marqué retiré')
+  // Le fil du tir reste lisible : c'est lui qui dit ce que le tir a fait.
+  assert.ok(db.select().from(conversations).where(eq(conversations.id, thread.id)).get())
+})
+
+test('a « new worktree » run keeps its worktree when it committed or left files (#249)', async (t) => {
+  const { db, dir, scheduler, finish } = await harness(t)
+  initRepository(dir)
+  const created = createScheduledTask(db, { projectId: 'project', userId: 'owner' }, onDemandInput({ worktreeMode: 'new' }))
+  const treeOf = (conversationId: string) => {
+    const thread = db.select().from(conversations).where(eq(conversations.id, conversationId)).get()!
+    return db.select().from(worktrees).where(eq(worktrees.id, thread.worktreeId!)).get()!
+  }
+
+  const committed = await scheduler.runNow(created.id)
+  const committedTree = treeOf(committed.conversationId!)
+  execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-q', '--allow-empty', '-m', 'travail'], { cwd: committedTree.path })
+  finish(committed.conversationId!, 'Un commit.')
+  await scheduler.tick(Date.now())
+  assert.ok((await stat(committedTree.path)).isDirectory())
+  assert.equal(treeOf(committed.conversationId!).removedAt, null)
+
+  const dirty = await scheduler.runNow(created.id)
+  const dirtyTree = treeOf(dirty.conversationId!)
+  await writeFile(join(dirtyTree.path, 'notes.md'), 'à garder')
+  finish(dirty.conversationId!, 'Un fichier.')
+  await scheduler.tick(Date.now())
+  assert.ok((await stat(dirtyTree.path)).isDirectory())
+  assert.ok(branchExists(dir, dirtyTree.name))
+})
+
+test('a « new worktree » run that cannot start its session leaves no worktree behind (#249)', async (t) => {
+  const { db, dir, scheduler, failNextSends } = await harness(t)
+  initRepository(dir)
+  const created = createScheduledTask(db, { projectId: 'project', userId: 'owner' }, onDemandInput({ worktreeMode: 'new' }))
+  failNextSends()
+  const run = await scheduler.runNow(created.id)
+  assert.equal(run.status, 'failed')
+  assert.equal(db.select().from(worktrees).all().length, 0)
+  assert.equal(execFileSync('git', ['branch', '--list', 'planifiee/*'], { cwd: dir, encoding: 'utf8' }).trim(), '')
+  assert.equal(execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: dir, encoding: 'utf8' }).match(/^worktree /gm)!.length, 1)
 })
 
 test('a run at the root keeps opening its session without a worktree', async (t) => {
