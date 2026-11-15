@@ -8,10 +8,10 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
-import { writeFakeClaude } from './checks/fake-claude.mjs'
+import { writeFakeClaude } from './checks/fake-clis.mjs'
 
 // Vrais composants et vraie API, dans une base temporaire : la tâche créée ici tire pour
-// de bon, à la minute. Le CLI Claude est un faux (`checks/fake-claude.mjs`) qui joue un
+// de bon, à la minute. Le CLI Claude est un faux (`checks/fake-clis.mjs`) qui joue un
 // tour court : la suite tourne en CI, sans compte ni quota.
 // Les captures vont dans SCHEDULE_SHOTS, ou dans un dossier temporaire annoncé à la fin.
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -54,7 +54,7 @@ try {
   const webPort = await freePort()
   const config = join(data, 'config.toml')
   const fakeClaude = await writeFakeClaude(data)
-  const sent = join(data, 'claude-stdin.jsonl')
+  const claudeStdinLog = join(data, 'claude-stdin.jsonl')
   await writeFile(config, `[agents.claude]\nbinary = "${fakeClaude}"\n[agents.codex]\nenabled = false\n[agents.opencode]\nenabled = false\n`)
   const env = {
     ...process.env,
@@ -63,7 +63,7 @@ try {
     SOLERA_CONFIG: config,
     SOLERA_DATA_DIR: join(data, 'data'),
     SOLERA_WEB_ROOT: join(data, 'web'),
-    FAKE_CLAUDE_LOG: sent,
+    FAKE_CLAUDE_LOG: claudeStdinLog,
   }
   const server = run(['--import', 'tsx', 'src/main.ts'], serverDir, env)
   const vite = run([join(webDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webDir, env)
@@ -209,8 +209,8 @@ try {
   // le serveur le lui a dit dans le premier message envoyé au CLI.
   await runLink.click()
   await page.getByText(/personne n'est au clavier/).first().waitFor()
-  const prompts = (await readFile(sent, 'utf8')).split('\n').filter(Boolean).map((line) => JSON.parse(line)).filter((message) => message.type === 'user')
-  assert.ok(prompts.some((message) => JSON.stringify(message.message.content).includes("personne n'est au clavier")), 'Le tir dit au CLI que personne n’est au clavier')
+  const [firstPrompt] = (await readFile(claudeStdinLog, 'utf8')).split('\n').filter(Boolean).map((line) => JSON.parse(line)).filter((message) => message.type === 'user')
+  assert.ok(JSON.stringify(firstPrompt?.message.content).includes("personne n'est au clavier"), 'Le premier message du tir dit au CLI que personne n’est au clavier')
   await page.screenshot({ animations: 'disabled', path: join(shots, 'run-desktop.png') })
 
   // --- Lancer maintenant, depuis le téléphone ------------------------------------

@@ -8,10 +8,10 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
-import { writeFakeClaude } from './checks/fake-claude.mjs'
+import { writeFakeClaude } from './checks/fake-clis.mjs'
 
 // Vrais composants et vraie API, dans une base temporaire : la tâche créée ici tire pour
-// de bon. Le CLI Claude est un faux (`checks/fake-claude.mjs`) qui joue un tour court :
+// de bon. Le CLI Claude est un faux (`checks/fake-clis.mjs`) qui joue un tour court :
 // la suite tourne en CI, sans compte ni quota.
 // Les captures vont dans SCHEDULE_SHOTS, ou dans un dossier temporaire annoncé à la fin.
 const root = fileURLToPath(new URL('../', import.meta.url))

@@ -8,11 +8,10 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
-import { writeFakeClaude } from './checks/fake-claude.mjs'
-import { writeFakeCodex } from './checks/fake-codex.mjs'
+import { writeFakeClaude, writeFakeCodex } from './checks/fake-clis.mjs'
 
 // Choix du compte sur la page de nouvelle session, avec l'usage de chaque compte sous son
-// nom. Vrais composants, vraie API, base temporaire ; de faux CLI (`checks/fake-*.mjs`)
+// nom. Vrais composants, vraie API, base temporaire ; de faux CLI (`checks/fake-clis.mjs`)
 // répondent aux sondes, pour que la suite tourne en CI sans CLI installé.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')

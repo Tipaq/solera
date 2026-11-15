@@ -8,11 +8,11 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
-import { writeFakeCodex } from './checks/fake-codex.mjs'
+import { writeFakeCodex } from './checks/fake-clis.mjs'
 
 // Comptes Codex supplémentaires : création, connexion par clé API et par code d'appareil,
 // sélecteur de compte dans les défauts du CLI. Vrais composants, vraie API, base temporaire ;
-// un faux `codex app-server` (`checks/fake-codex.mjs`) joue les connexions, dans un home
+// un faux `codex app-server` (`checks/fake-clis.mjs`) joue les connexions, dans un home
 // jetable : la suite tourne en CI, sans CLI ni appel à OpenAI.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
