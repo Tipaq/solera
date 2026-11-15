@@ -15,7 +15,7 @@ import {
   hourWords,
   localDayOf,
   localMidnightOf,
-  marksOf,
+  monthMarks,
   ordinalWords,
   problemOf,
   relativeDay,
@@ -25,7 +25,6 @@ import {
   weekdayName,
   withFrequency,
   withRange,
-  zonedTime,
   type BuilderState,
   type CalendarDay,
   type Clock,
@@ -500,8 +499,8 @@ function DateButton({ date, today, onChange }: { date: CalendarDay; today: numbe
 
 /* ------------------------------------------------------------------ l'aperçu */
 
-/** Le compte d'un jour s'arrête là : un motif à la minute en ferait 1 440. */
-const DAY_RUNS = 99
+/** Ce que la pastille d'un jour montre au plus, sur deux chiffres. */
+const DAY_SHOWN = 99
 
 function Preview({ cadence, sentence, clock }: { cadence: ScheduleCadence | null; sentence: string | null; clock: Clock }) {
   const t = useTranslate()
@@ -511,15 +510,10 @@ function Preview({ cadence, sentence, clock }: { cadence: ScheduleCadence | null
   const [month, setMonth] = useState(today)
 
   // Les passages du mois affiché, comptés jour par jour du calendrier du serveur.
+  // La pastille d'un jour s'arrête à `DAY_SHOWN` : « chaque minute » en ferait 1 440.
   const marked = useMemo(() => {
-    const { year, month: shown } = calendarDayOfLocal(month)
-    const length = new Date(year, shown, 0).getDate()
-    const runs = Array.from({ length }, (_, index) => {
-      const start = zonedTime({ year, month: shown, day: index + 1 }, 0, 0, timeZone)
-      const end = zonedTime({ year, month: shown, day: index + 2 }, 0, 0, timeZone)
-      return upcoming(cadence, DAY_RUNS, { after: Math.max(now, start - 1), horizon: end - 1, timeZone })
-    })
-    return marksOf(runs.flat(), timeZone)
+    const marks = monthMarks(cadence, calendarDayOfLocal(month), { now, timeZone })
+    return new Map([...marks].map(([day, count]) => [day, Math.min(count, DAY_SHOWN)]))
   }, [cadence, month, now, timeZone])
   const next = useMemo(() => upcoming(cadence, 5, { after: now, timeZone }), [cadence, now, timeZone])
 
@@ -533,7 +527,11 @@ function Preview({ cadence, sentence, clock }: { cadence: ScheduleCadence | null
           month={month}
           onMonth={setMonth}
           marked={marked}
-          markedLabel={(count) => t(`scheduleRule.preview.passes.${pluralOf(count, locale)}`, { count })}
+          markedLabel={(count) =>
+            count >= DAY_SHOWN
+              ? t('scheduleRule.preview.passesAtLeast', { count })
+              : t(`scheduleRule.preview.passes.${pluralOf(count, locale)}`, { count })
+          }
           today={today}
           locale={locale}
         />

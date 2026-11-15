@@ -12,7 +12,6 @@ import { NewCardDialog } from '../components/board/NewCardDialog'
 import { columnLabel } from '../components/board/columns'
 import { tintDot } from '../components/board/tints'
 import { CardSheetHost } from '../components/cards/CardSheetHost'
-import { PanelHost } from '../components/shell/PanelHost'
 import { FilterChip, OneLineToolbar, ToolbarSearch } from '../components/toolbar/OneLineToolbar'
 import { DisplayMenu, FilterMenu, MenuCheck, MenuHeading, MenuSegment, type ViewOption } from '../components/toolbar/ToolbarMenus'
 import { useBoardData } from '../lib/board-data'
@@ -360,10 +359,6 @@ export function BoardPage() {
         </CardRefContext.Provider>
       ) : null}
       <CardSheetHost projectId={projectId} />
-      {/* Le panneau à portée projet, sans bouton : la palette l'appelle pour ouvrir un
-          fichier ou lancer une action hors d'une conversation, tant que Travail n'en
-          monte pas. */}
-      <PanelHost projectId={projectId} />
     </div>
   )
 }

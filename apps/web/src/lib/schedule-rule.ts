@@ -1,4 +1,4 @@
-import { Cron } from 'croner'
+import { Cron, CronPattern } from 'croner'
 import { cronScheduleSchema, nextScheduleRun, type ScheduleCadence } from '@solera/protocol'
 import { cadenceWords, type Translate } from './automations'
 import { cronToHuman } from './cron'
@@ -395,6 +395,92 @@ export function upcoming(
     cursor = next
   }
   return runs
+}
+
+/** Au-delà, un jour de changement d'heure se compte comme un autre, à une heure près. */
+const DST_EXACT_RUNS = 96
+
+/**
+ * Les passages de chaque jour d'un mois du fuseau à venir après `now`, en clés de
+ * `MonthGrid`. Sans les énumérer : un motif « chaque minute » en a 44 640 par mois, et
+ * croner les rend un à un, fuseau compris (#261). Un motif cron lit son jour par un seul
+ * `nextRun`, puis compte ses heures, minutes et secondes ; un jour de changement d'heure
+ * n'est énuméré que pour un motif d'au plus `DST_EXACT_RUNS` passages par jour. Un intervalle se compte depuis `now`, comme « Prochains passages ».
+ */
+export function monthMarks(
+  cadence: ScheduleCadence | null,
+  { year, month }: { year: number; month: number },
+  { now, timeZone }: { now: number; timeZone: string },
+): Map<number, number> {
+  const marks = new Map<number, number>()
+  if (!cadence) return marks
+  const length = new Date(year, month, 0).getDate()
+  const dayBounds = (day: number) => [
+    zonedTime({ year, month, day }, 0, 0, timeZone),
+    zonedTime({ year, month, day: day + 1 }, 0, 0, timeZone),
+  ] as const
+
+  if (cadence.kind === 'once') {
+    const [start] = dayBounds(1)
+    const [, end] = dayBounds(length)
+    return marksOf(upcoming(cadence, 1, { after: Math.max(now, start - 1), horizon: end - 1, timeZone }), timeZone)
+  }
+
+  if (cadence.kind === 'interval') {
+    const step = cadence.minutes * MIN
+    // Les passages `now + k·step` (k ≥ 1) tombés avant `at`.
+    const before = (at: number) => Math.max(0, Math.ceil((at - now) / step) - 1)
+    for (let day = 1; day <= length; day++) {
+      const [start, end] = dayBounds(day)
+      const count = before(end) - before(start)
+      if (count > 0) marks.set(localDayOf(start, timeZone), count)
+    }
+    return marks
+  }
+
+  let pattern: Cron
+  let fields: CronPattern
+  try {
+    pattern = new Cron(cadence.expression, { paused: true, timezone: timeZone })
+    fields = new CronPattern(cadence.expression, timeZone)
+  } catch {
+    return marks
+  }
+  const ringing = (flags: number[]) => flags.flatMap((flag, index) => (flag ? [index] : []))
+  const seconds = ringing(fields.second)
+  const minutes = ringing(fields.minute)
+  const hours = ringing(fields.hour)
+  // Les instants du jour (en secondes depuis minuit) que le motif sonne à partir de `second`.
+  const countFrom = (second: number) => {
+    let count = 0
+    for (const h of hours) {
+      if ((h + 1) * 3600 <= second) continue
+      for (const m of minutes) {
+        const minute = h * 3600 + m * 60
+        if (minute + 60 <= second) continue
+        count += minute >= second ? seconds.length : seconds.filter((s) => minute + s >= second).length
+      }
+    }
+    return count
+  }
+  const perDay = hours.length * minutes.length * seconds.length
+  for (let day = 1; day <= length; day++) {
+    const [start, end] = dayBounds(day)
+    if (end <= now) continue
+    const after = Math.max(now, start - 1)
+    const first = pattern.nextRun(new Date(after))?.getTime()
+    if (first === undefined || first >= end) continue
+    const key = localDayOf(first, timeZone)
+    // Un jour de changement d'heure n'a pas 24 h : croner y saute ou y décale des heures,
+    // qu'on ne recompte qu'en énumérant. Un motif dense y reste compté sur 24 h.
+    if (end - start !== DAY && perDay <= DST_EXACT_RUNS) {
+      marks.set(key, upcoming(cadence, DST_EXACT_RUNS + 1, { after, horizon: end - 1, timeZone }).length)
+      continue
+    }
+    const wall = zonedParts(first, timeZone)
+    marks.set(key, Math.max(1, countFrom(wall.hour * 3600 + wall.minute * 60 + Math.floor((first % MIN) / 1000))))
+  }
+  return marks
 }
 
 /** Les passages par jour du fuseau, en clés de `MonthGrid` (`localDayOf`). */
