@@ -42,6 +42,7 @@ const BATCHES = [
     'services', // 16
     'panel-project', // 16
     'decisions', // 16
+    'onboarding', // ~10 en local, à mesurer
     'worktree-status', // 16
     'palette', // 16
     'api-mcp', // 15
@@ -83,7 +84,6 @@ const BATCHES = [
 const OUTSIDE = {
   desktop: "l'app empaquetée, éprouvée par le job desktop sur main",
   actions: 'instable, lignes en double (#259)',
-  onboarding: 'page.goto bloque par intermittence (#263)',
   'codex-accounts': 'lance le vrai codex, qui joint OpenAI (#264)',
   'draft-account': 'sonde les vrais codex et claude (#264)',
   schedule: 'un vrai tour du CLI Claude du poste (#267)',

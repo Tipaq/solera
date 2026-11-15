@@ -88,6 +88,29 @@ try {
       throw error
     }
   }
+  // Ce que le navigateur attend encore, et ce qu'il a perdu : un `goto` qui bloque sur
+  // `load` (#263) dit lui-même quels modules restent en vol et lesquels ont échoué, avec
+  // l'erreur réseau de Chromium. Sans quoi on ne voit qu'un délai dépassé.
+  const inFlight = new Map()
+  const failed = []
+  page.on('request', (request) => inFlight.set(request, Date.now()))
+  page.on('requestfinished', (request) => inFlight.delete(request))
+  page.on('requestfailed', (request) => {
+    inFlight.delete(request)
+    failed.push(`${request.failure()?.errorText} ${request.url()}`)
+  })
+  const open = async (url) => {
+    try {
+      await page.goto(url)
+    } catch (error) {
+      const now = Date.now()
+      const pending = [...inFlight].sort((a, b) => a[1] - b[1]).map(([request, since]) => `${Math.round((now - since) / 1000)} s ${request.url()}`)
+      console.error(`goto ${url} : ${pending.length} requêtes en vol, ${failed.length} en échec`)
+      console.error([...pending.slice(0, 20), ...failed.slice(-20)].join('\n'))
+      await page.screenshot({ path: join(shots, 'echec-goto.png') }).catch(() => {})
+      throw error
+    }
+  }
   const button = (name) => page.getByRole('button', { name, exact: true })
   const settings = async () => (await context.request.get(`${base}/api/me/settings`)).json()
   /** Les réglages s'écrivent au clic, sans « Continuer » : on attend que la route l'ait pris. */
@@ -103,7 +126,7 @@ try {
   // Une base sans compte : pas de page de connexion, la visite commence par le créer.
   const instance = await (await context.request.get(`${base}/api/system/instance`)).json()
   assert.equal(instance.needsSetup, true)
-  await page.goto(base + '/')
+  await open(base + '/')
   await heading('Créer le premier compte')
   assert.equal(await page.getByRole('button', { name: 'Se connecter', exact: true }).count(), 0)
   assert.ok(await button('Créer le compte').isDisabled(), 'pas de compte sans les trois champs')
@@ -202,7 +225,7 @@ try {
   // Rejouée, elle rouvre à sa première étape ; « Passer la visite » mène au récapitulatif.
   const replay = await context.request.patch(`${base}/api/me/settings`, { data: { onboarding: { pending: true } } })
   assert.ok(replay.ok())
-  await page.goto(base + '/')
+  await open(base + '/')
   await page.waitForURL(/\/bienvenue$/)
   await heading('Bienvenue, Tim')
   await button('Passer la visite').click()
@@ -213,7 +236,7 @@ try {
   // Au téléphone : la progression en tête, et rien ne déborde.
   await context.request.patch(`${base}/api/me/settings`, { data: { onboarding: { pending: true, step: 4 } } })
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto(base + '/')
+  await open(base + '/')
   await page.getByText(/^Étape 5 sur 9/).waitFor()
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   assert.ok(overflow <= 0, `débordement horizontal de ${overflow} px`)
