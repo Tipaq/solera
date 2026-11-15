@@ -173,25 +173,6 @@ export const promoteSubtaskBodySchema = z.object({
   blocks: z.boolean().default(true),
 })
 
-/**
- * Ordre des cartes, colonne par colonne, du haut vers le bas.
- *
- * Un déplacement touche une colonne quand il monte ou descend une carte, deux quand il
- * la change de colonne. Les deux sont donc écrites d'un seul geste : les envoyer
- * séparément laisserait une carte dupliquée ou absente entre les deux requêtes.
- */
-export const reorderCardsBodySchema = z.object({
-  columns: z
-    .array(
-      z.object({
-        column: cardColumnSchema,
-        ids: z.array(z.string().uuid()),
-      }),
-    )
-    .min(1)
-    .max(CARD_COLUMNS.length),
-})
-
 /** Une carte vue depuis une autre : de quoi rendre une puce `#12` sans second appel. */
 export interface CardLinkDto {
   id: string

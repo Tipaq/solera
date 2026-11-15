@@ -17,7 +17,7 @@ import { commandRunsOf, runMeta, runSentence, type CommandRun } from '../../lib/
 import { relativeDate } from '../../lib/dates'
 import { openTab } from '../../lib/editor-tabs'
 import { revealLine } from '../../lib/editor-reveal'
-import { useTranslate } from '../../lib/i18n'
+import { useTranslate, pluralOf } from '../../lib/i18n'
 import { useNow } from '../../lib/now'
 import { setPanelTab, showTerminal } from '../../lib/panel'
 import { useTerminalOutput } from '../../lib/terminal-output'
@@ -319,7 +319,7 @@ export function CommandRunDetail({
         {summary && files > 0 ? (
           <Block
             title={t(summary.tool === 'tsc' ? 'panel.runs.block.types' : 'panel.runs.block.lint', {
-              summary: t(files === 1 ? 'panel.runs.block.inFiles.one' : 'panel.runs.block.inFiles.other', { count: errors, files }),
+              summary: t(`panel.runs.block.inFiles.${pluralOf(files)}`, { count: errors, files }),
             })}
           >
             <ul className="flex flex-col">

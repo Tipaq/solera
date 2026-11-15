@@ -54,7 +54,7 @@ import {
 } from '../../lib/automations'
 import { conversationPath } from '../../lib/conversation-route'
 import { useEscapeLayer } from '../../lib/escape-layers'
-import { locale, useTranslate } from '../../lib/i18n'
+import { locale, useTranslate, pluralOf } from '../../lib/i18n'
 import { upcoming } from '../../lib/schedule-rule'
 import { useServerTimeZone } from '../../lib/schedules'
 import { actionInTree, servedInstances, switchTargets, unlessElsewhere, type TreeRef } from '../../lib/served'
@@ -319,7 +319,7 @@ export function ActionDetail({
 
         <ActionBlock
           title={t('actionDetail.block.runs')}
-          aside={item.runs.length ? <span className="text-xs text-ink-faint tabular-nums">{t(item.runs.length === 1 ? 'actionDetail.runs.known.one' : 'actionDetail.runs.known.other', { count: item.runs.length })}</span> : null}
+          aside={item.runs.length ? <span className="text-xs text-ink-faint tabular-nums">{t(`actionDetail.runs.known.${pluralOf(item.runs.length)}`, { count: item.runs.length })}</span> : null}
         >
           <Runs item={item} projectId={projectId} timeZone={timeZone} />
         </ActionBlock>

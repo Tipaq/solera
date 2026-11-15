@@ -1,6 +1,6 @@
 import { GitCommitHorizontal, Loader, MessagesSquare } from 'lucide-react'
 import type { BlameLineDto, DiffFileDto } from '@solera/protocol'
-import { useTranslate } from '../../../lib/i18n'
+import { useTranslate, pluralOf } from '../../../lib/i18n'
 import { relativeDate, shortAge } from '../../../lib/dates'
 import type { WorkspaceScope } from '../../../lib/workspace-scope'
 import { Banner, cx } from '@solera/ui'
@@ -92,7 +92,7 @@ export function HistoryView({
 
             {history.data?.commits ? (
               <p className="px-2.5 pt-2 pb-1 text-micro font-semibold tracking-wide text-ink-soft uppercase">
-                {t(history.data.threads === 1 ? 'git.history.countOne' : 'git.history.count', {
+                {t(pluralOf(history.data.threads) === 'one' ? 'git.history.countOne' : 'git.history.count', {
                   commits: history.data.commits.length,
                   threads: history.data.threads,
                 })}

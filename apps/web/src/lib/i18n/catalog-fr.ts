@@ -5720,6 +5720,7 @@ export const fr: Catalog = {
   "attachments.size.bytes": "{value} o",
   "attachments.size.kb": "{value} Ko",
   "attachments.size.mb": "{value} Mo",
+  "attachments.size.gb": "{value} Go",
   "brief.announce.empty": "Écris une phrase, ou colle ton brief.",
   "brief.announce.phrase": "Une phrase : l’agent lira le projet, puis te posera d’abord quelques questions.",
   "brief.announce.brief": "Brief détaillé : l’agent proposera directement un découpage.",

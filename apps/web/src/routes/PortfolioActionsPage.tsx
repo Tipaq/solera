@@ -16,8 +16,7 @@ import { ACTIONS_VIEWS, WHAT_FILTERS, WHAT_LABEL, WHEN_FILTERS, WHEN_LABEL, filt
 import type { AgendaScope } from '../lib/agenda-layout'
 import type { Automation } from '../lib/automations'
 import { useAutomations } from '../lib/automations-query'
-import { pluralOf } from '../lib/code-model'
-import { useTranslate } from '../lib/i18n'
+import { useTranslate, pluralOf } from '../lib/i18n'
 import {
   NO_PORTFOLIO_ACTION_FILTERS,
   actionHref,

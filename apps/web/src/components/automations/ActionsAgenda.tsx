@@ -29,8 +29,7 @@ import {
   type LauncherGroup,
   type VerdictTone,
 } from '../../lib/automations'
-import { useLocale, useTranslate, type MessageKey } from '../../lib/i18n'
-import { pluralKey } from '../../lib/schedule-rule'
+import { useLocale, useTranslate, type MessageKey, pluralOf } from '../../lib/i18n'
 import { useServerTimeZone } from '../../lib/schedules'
 import { NatureIcon } from './ActionMarks'
 
@@ -132,7 +131,7 @@ export function ActionsAgenda({
         {clashes > 0 ? (
           <span className="inline-flex items-center gap-1 text-xs text-caution">
             <TriangleAlert size={12} aria-hidden />
-            {t(`agenda.overlaps.${pluralKey(clashes, locale)}`, { count: clashes })}
+            {t(`agenda.overlaps.${pluralOf(clashes, locale)}`, { count: clashes })}
           </span>
         ) : null}
         <Legend />

@@ -1,6 +1,6 @@
 import { actionRunStatusOf, type ProjectActionDto, type TerminalDto } from '@solera/protocol'
 import { actionRoot, type OutputSummary } from './command-output'
-import type { MessageKey, MessageParams } from './i18n'
+import { pluralOf, type MessageKey, type MessageParams } from './i18n'
 
 /**
  * **Les commandes lancées ici** : les terminaux qu'une action a ouverts depuis cette
@@ -88,7 +88,7 @@ function tookMs(run: CommandRun, now: number): number | null {
 function failureCount(summary: OutputSummary | null, t: Translate): string | null {
   if (!summary) return null
   const plural = (count: number, base: 'panel.runs.testsFailed' | 'panel.runs.errors' | 'panel.runs.warnings') =>
-    t(`${base}.${count === 1 ? 'one' : 'other'}`, { count })
+    t(`${base}.${pluralOf(count)}`, { count })
   if (summary.tests.length > 0) return plural(summary.tests.length, 'panel.runs.testsFailed')
   const issues = summary.lint.flatMap((file) => file.issues)
   const errors = issues.filter((issue) => issue.severity === 'error').length

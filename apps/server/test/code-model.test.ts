@@ -28,8 +28,8 @@ const {
   formatBytes,
   codeDataOf,
   branchInfosOf,
-  pluralOf,
 } = await import('../../web/src/lib/code-model.js')
+const { pluralIn } = await import('../../web/src/lib/i18n/plural.js')
 
 const DAY = 86_400_000
 const NOW = 1_800_000_000_000
@@ -385,8 +385,9 @@ test('nom court, numéro de carte du nom', () => {
   assert.equal(cardNumberOfBranch('153-titre'), null)
 })
 
-test('pluriel : un seul, sinon plusieurs (zéro compris)', () => {
-  assert.deepEqual([0, 1, 2, 40].map(pluralOf), ['other', 'one', 'other', 'other'])
+test('pluriel : la règle de la langue, 0 au singulier en français (#270)', () => {
+  assert.deepEqual([0, 1, 1.5, 2, 40].map((count) => pluralIn('fr', count)), ['one', 'one', 'one', 'other', 'other'])
+  assert.deepEqual([0, 1, 2, 40].map((count) => pluralIn('en', count)), ['other', 'one', 'other', 'other'])
 })
 
 test('formatBytes en français et en anglais', () => {

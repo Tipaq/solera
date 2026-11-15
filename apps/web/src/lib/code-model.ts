@@ -37,11 +37,6 @@ export const STALE_DAYS = 14
  */
 export const BEHIND_ALERT = { line: 2, tree: 20 } as const
 
-/** La catégorie de pluriel d'un compte, pour les clés `….one` / `….other`. */
-export function pluralOf(count: number): 'one' | 'other' {
-  return count === 1 ? 'one' : 'other'
-}
-
 /* ------------------------------------------------------------------ les arbres */
 
 /** Ce qu'on vient lire d'un arbre : faut-il y toucher, et que perdrait-on. */
