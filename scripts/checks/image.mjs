@@ -21,7 +21,7 @@ export async function checkImage({ page, base, project }) {
   await writeFile(join(dir, 'large.png'), png(WIDTH, HEIGHT))
 
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.goto(`${base}/p/${project.id}/board`)
+  await page.goto(`${base}/p/${project.id}/travail`)
   await page.evaluate(() => localStorage.setItem('solera.panelTree', '1'))
   await openProjectPanel(page, base, project)
   const panel = page.locator('[data-panel="workspace"]')
