@@ -157,12 +157,12 @@ try {
   await page.locator('[data-panel="workspace"] [data-editor-file="src/lib/forecast-cache.ts"]').waitFor()
   assert.equal(new URL(page.url()).pathname, `/p/${nimbus.id}/c/${hero.id}`)
 
-  // Un fichier d'un autre projet : son board, panneau ouvert sur le fichier.
+  // Un fichier d'un autre projet : sa page Travail, panneau ouvert sur le fichier.
   await open()
   await search('/atlas readme')
   await page.keyboard.press('Enter')
   await page.locator('[data-panel="workspace"] [data-editor-file="README.md"]').waitFor()
-  assert.equal(new URL(page.url()).pathname, `/p/${atlas.id}/board`)
+  assert.equal(new URL(page.url()).pathname, `/p/${atlas.id}/travail`)
 
   // Un skill ouvre sa page.
   await open()
