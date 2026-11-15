@@ -34,12 +34,38 @@ export interface SubAgent {
   totalTokens: number
   /** L'appel de spawn du sous-agent parent, pour les imbrications. */
   parentId: string | null
+  /**
+   * Le modèle et l'effort que l'appel a demandés, nuls quand il n'en dit rien : le
+   * sous-agent tient alors ceux de sa définition, ou ceux de la session, et le flux du
+   * CLI ne les répète pas.
+   */
+  model: string | null
+  effort: string | null
+  /**
+   * Ce que l'agent principal donne à `SendMessage` pour lui écrire : l'`agentId` que Claude
+   * Code annonce dans le résultat de l'appel, sinon le nom que l'appel lui a donné — un nom
+   * ne joint l'agent que tant qu'il tourne, l'identifiant le reprend aussi une fois fini.
+   * Nul tant que ni l'un ni l'autre n'est connu.
+   */
+  address: string | null
 }
 
 function field(input: unknown, key: string): string {
   if (typeof input !== 'object' || input === null) return ''
   const value = (input as Record<string, unknown>)[key]
   return typeof value === 'string' ? value : ''
+}
+
+/** Le texte d'une sortie d'outil, qu'elle arrive en chaîne ou en blocs de contenu. */
+function outputText(output: unknown): string {
+  if (typeof output === 'string') return output
+  if (!Array.isArray(output)) return ''
+  return output.map((block) => field(block, 'text')).join('\n')
+}
+
+/** L'`agentId` que Claude Code écrit dans le résultat d'un appel `Agent`, pour le reprendre. */
+export function agentIdIn(output: unknown): string | null {
+  return /\bagentId:\s*([\w-]+)/.exec(outputText(output))?.[1] ?? null
 }
 
 /**
@@ -87,6 +113,10 @@ export function buildSubAgents(items: ChatItem[], tasks: ChatState['tasks']): Su
       toolCount: 0,
       totalTokens: task?.totalTokens ?? 0,
       parentId: item.parentToolCallId,
+      // `effort` pour Claude Code, `reasoning_effort` pour les CLI qui suivent l'API d'OpenAI.
+      model: field(item.input, 'model') || null,
+      effort: field(item.input, 'effort') || field(item.input, 'reasoning_effort') || null,
+      address: agentIdIn(item.output) ?? (field(item.input, 'name') || null),
     })
   }
 

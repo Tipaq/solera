@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import {
   agentRequests,
@@ -731,6 +731,24 @@ export function registerConversationRoutes(
       readConversationLinks(ctx, conversation),
       worktree.gone,
     )
+  })
+
+  /**
+   * Ses coéquipiers : les sessions que celle-ci a lancées avec `start_session`, de la plus
+   * ancienne à la plus récente. Les identifiants seuls : le client les a déjà dans la liste
+   * du projet, avec leur état en direct, et n'y montre que celles que son compte voit.
+   */
+  app.get('/api/conversations/:id/teammates', async (request): Promise<string[]> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    await loadReadable(id, user.id)
+    return ctx.db
+      .select({ id: agentRequests.launchedConversationId })
+      .from(agentRequests)
+      .where(and(eq(agentRequests.conversationId, id), eq(agentRequests.kind, 'start_session'), isNotNull(agentRequests.launchedConversationId)))
+      .orderBy(agentRequests.createdAt)
+      .all()
+      .flatMap((row) => (row.id ? [row.id] : []))
   })
 
   /**
