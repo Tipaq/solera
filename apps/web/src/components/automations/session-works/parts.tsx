@@ -1,7 +1,7 @@
-import { ArrowUpRight, Bot, Radio, SquareTerminal, Waves } from 'lucide-react'
+import { ArrowUpRight, Bot, Radio, SquareTerminal, TriangleAlert, Waves } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { cx } from '@solera/ui'
-import type { EditorSeed } from '../../../lib/action-editor'
+import { linkIsLocalOnly, type EditorSeed } from '../../../lib/action-editor'
 import { conversationPath } from '../../../lib/conversation-route'
 import { ago } from '../../../lib/automations'
 import { useTranslate } from '../../../lib/i18n'
@@ -77,15 +77,40 @@ export function SessionPill({ work, href, narrow = false, className: extra }: {
   )
 }
 
+/** Vrai quand `localhost` désignerait la machine du lecteur : Solera ouvert d'ailleurs. */
+export function isLocalOnly(href: string): boolean {
+  return linkIsLocalOnly(href, location.hostname)
+}
+
+/**
+ * La flèche d'un lien sortant, plus une alerte quand `localhost` y désigne la machine du
+ * lecteur (#278) : la vue Web le relaie, un onglet du navigateur non.
+ */
+export function OutboundMark({ href, size }: { href: string; size: number }) {
+  return (
+    <>
+      <ArrowUpRight size={size} aria-hidden />
+      {isLocalOnly(href) ? <TriangleAlert size={size} className="text-caution" aria-hidden data-link-remote /> : null}
+    </>
+  )
+}
+
 /**
  * Le port en lien, `localhost` comme les liens d'action : dans une conversation, il
  * s'ouvre dans la vue *Web* du panneau, qui le relaie quand Solera est ouvert à distance.
+ * Hors d'elle (⌘/Ctrl-clic, clic du milieu, onglet Actions du projet), `localhost`
+ * désigne la machine du navigateur : le lien le dit, comme l'éditeur d'action (#278).
  */
 export function PortLink({ port, className, label }: { port: number; className: string; label?: string }) {
   const t = useTranslate()
+  const href = `http://localhost:${port}`
   return (
-    <WebLink href={`http://localhost:${port}`} title={t('sessionWorks.gesture.openTitle', { port })} className={className}>
-      {label ?? `:${port}`} <ArrowUpRight size={11} aria-hidden />
+    <WebLink
+      href={href}
+      title={t(isLocalOnly(href) ? 'sessionWorks.gesture.openRemoteTitle' : 'sessionWorks.gesture.openTitle', { port })}
+      className={className}
+    >
+      {label ?? `:${port}`} <OutboundMark href={href} size={11} />
     </WebLink>
   )
 }
