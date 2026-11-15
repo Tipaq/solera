@@ -4750,6 +4750,7 @@ export const en = {
   'sessionWorks.origin.by': "Launched by “{title}”",
   'sessionWorks.gesture.open': "Open :{port}",
   'sessionWorks.gesture.openTitle': "Open localhost:{port}",
+  'sessionWorks.gesture.openRemoteTitle': "Open localhost:{port}. Solera is open from another machine: outside the Web view, this link points to yours, not to the server.",
   'sessionWorks.gesture.stop': "Stop",
   'sessionWorks.gesture.stopNamed': "Stop “{name}”",
   'sessionWorks.gesture.makeAction': "Make it an action",

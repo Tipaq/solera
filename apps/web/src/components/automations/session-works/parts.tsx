@@ -1,7 +1,7 @@
-import { ArrowUpRight, Bot, Radio, SquareTerminal, Waves } from 'lucide-react'
+import { ArrowUpRight, Bot, Radio, SquareTerminal, TriangleAlert, Waves } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { cx } from '@solera/ui'
-import type { EditorSeed } from '../../../lib/action-editor'
+import { linkIsLocalOnly, type EditorSeed } from '../../../lib/action-editor'
 import { conversationPath } from '../../../lib/conversation-route'
 import { elapsed } from '../../../lib/dates'
 import { useTranslate } from '../../../lib/i18n'
@@ -79,12 +79,25 @@ export function SessionPill({ work, href, narrow = false, className: extra }: {
 /**
  * Le port en lien, `localhost` comme les liens d'action : dans une conversation, il
  * s'ouvre dans la vue *Web* du panneau, qui le relaie quand Solera est ouvert à distance.
+ * Hors d'elle (⌘/Ctrl-clic, clic du milieu, onglet Actions du projet), `localhost`
+ * désigne la machine du navigateur : le lien le dit, comme l'éditeur d'action (#278).
  */
 export function PortLink({ port, className, label }: { port: number; className: string; label?: string }) {
   const t = useTranslate()
+  const href = `http://localhost:${port}`
+  const remote = linkIsLocalOnly(href, location.hostname)
   return (
-    <WebLink href={`http://localhost:${port}`} title={t('sessionWorks.gesture.openTitle', { port })} className={className}>
-      {label ?? `:${port}`} <ArrowUpRight size={11} aria-hidden />
+    <WebLink
+      href={href}
+      title={t(remote ? 'sessionWorks.gesture.openRemoteTitle' : 'sessionWorks.gesture.openTitle', { port })}
+      className={className}
+    >
+      {label ?? `:${port}`}{' '}
+      {remote ? (
+        <TriangleAlert size={11} className="text-caution" aria-hidden data-link-remote />
+      ) : (
+        <ArrowUpRight size={11} aria-hidden />
+      )}
     </WebLink>
   )
 }
