@@ -89,7 +89,7 @@ export async function checkDownloads({ page, context, base, project, hero, data 
     assert.equal(download.suggestedFilename(), name)
     assert.equal(await download.failure(), null)
     assert.deepEqual(await readFile(await download.path()), fixtures.get(name))
-    assert.equal(page.url(), `${base}/p/${project.id}/board`, 'Downloading must keep the IDE open')
+    assert.equal(page.url(), `${base}/p/${project.id}/travail`, 'Downloading must keep the IDE open')
   }
 
   await openFile('ui-downloads/note.txt')
