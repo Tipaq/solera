@@ -161,8 +161,11 @@ export function linkPiece(url: string): LinkPiece {
 }
 
 /** La taille d'un fichier en unité lisible ; le composant la met en forme dans sa langue. */
-export function sizeParts(bytes: number): { unit: 'bytes' | 'kb' | 'mb'; value: number } {
+export function sizeParts(bytes: number): { unit: 'bytes' | 'kb' | 'mb' | 'gb'; value: number } {
   if (bytes < 1024) return { unit: 'bytes', value: bytes }
   if (bytes < 1024 * 1024) return { unit: 'kb', value: Math.round(bytes / 1024) }
-  return { unit: 'mb', value: Math.round((bytes / 1024 / 1024) * 10) / 10 }
+  // Les gigaoctets ne servent pas aux pièces jointes, plafonnées à 20 Mo, mais aux
+  // fichiers déposés dans l'explorateur : « 4300,5 Mo » ne se lit pas.
+  if (bytes < 1024 * 1024 * 1024) return { unit: 'mb', value: Math.round((bytes / 1024 / 1024) * 10) / 10 }
+  return { unit: 'gb', value: Math.round((bytes / 1024 / 1024 / 1024) * 10) / 10 }
 }
