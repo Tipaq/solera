@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { useQueryClient } from '@tanstack/react-query'
 import type { ConversationDto, ConversationMetrics, ConversationStatus } from '@solera/protocol'
 import { projectBackgroundKey } from './conversations'
+import { teammatesKey } from './teammates'
 import { wsClient } from './ws-client'
 
 /**
@@ -260,6 +261,7 @@ export function useStatusFeed(): void {
           void queryClient.invalidateQueries({ queryKey: ['schedules'] })
           void queryClient.invalidateQueries({ queryKey: ['worktree-status'] })
           void queryClient.invalidateQueries({ queryKey: ['actions'] })
+          void queryClient.invalidateQueries({ queryKey: teammatesKey() })
           // L'en-tête du fil ouvert aussi : renommé ou supprimé ailleurs, il doit le
           // montrer sans attendre qu'on en sorte.
           void queryClient.invalidateQueries({ queryKey: ['conversation'] })

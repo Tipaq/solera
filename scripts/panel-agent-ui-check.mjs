@@ -14,6 +14,8 @@ import { viteDependency } from './checks/vite-deps.mjs'
 // en 1280 et 390 px.
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))
 const captures = fileURLToPath(new URL('../docs/audits/2026-11-page-projet-v2/228-agent/', import.meta.url))
+// L'arbre, le modèle, les coéquipiers et « Écrire à l'agent » (#74), à part de ceux de #228.
+const captures74 = fileURLToPath(new URL('../docs/audits/2026-11-onglet-agent-74/', import.meta.url))
 const socket = createServer().listen(0, '127.0.0.1')
 await once(socket, 'listening')
 const port = socket.address().port
@@ -39,7 +41,7 @@ const said = (id, parent, text) => ({
 })
 const subAgent = (id, description, status, items, extra = {}) => ({
   id, type: 'Explore', description, status, startedAt: now - 2 * MIN, durationMs: null, activity: null, items,
-  toolCount: items.filter((item) => item.kind === 'tool').length, totalTokens: 0, parentId: null, ...extra,
+  toolCount: items.filter((item) => item.kind === 'tool').length, totalTokens: 0, parentId: null, model: null, effort: null, address: null, ...extra,
 })
 
 const RESULT = [
@@ -66,6 +68,16 @@ const AGENTS = [reviewer, explorer, cut, late]
 const DEV = { id: 'k1', kind: 'local_bash', description: 'Serveur de dev', command: 'pnpm exec vite --port 5418', activity: null, lastTool: null, toolUses: 0, totalTokens: 0 }
 const FLOW = { id: 'k2', kind: 'workflow', description: 'Revue des PR', command: null, activity: 'lit la PR #211', lastTool: 'Read', toolUses: 4, totalTokens: 12_000 }
 const BACKGROUND = [DEV, FLOW]
+
+// #74 : un arbre de trois niveaux, le modèle et l'effort demandés, des coéquipiers.
+const lead = subAgent('t1', 'Cartographier le panneau', 'running', [], { startedAt: now - 4 * MIN, model: 'sonnet', effort: 'high', address: 'cartographe' })
+const reader = subAgent('t2', 'Lire SidePanel', 'running', [], { startedAt: now - 3 * MIN, parentId: 't1', model: 'haiku', effort: 'low' })
+const deep = subAgent('t3', 'Lire panel.ts', 'running', [], { startedAt: now - 2 * MIN, parentId: 't2' })
+const TREE = [lead, reader, deep]
+const TEAMMATES = [
+  { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', projectId: 'p1', title: 'Coéquipiers dans l’onglet Agent', status: 'running', card: { number: 74, title: 'Revoir l’onglet Agents' }, worktree: 'feat/onglet-agents-v2' },
+  { id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', projectId: 'p1', title: 'Relire la PR #212', status: 'awaiting_input', card: null, worktree: null },
+]
 
 const TURNS = [
   { id: 't1', ts: now - 9 * MIN, label: 'Réécrire le panneau', files: [
@@ -134,7 +146,7 @@ async function routeApi(page, state) {
     const request = route.request()
     const path = new URL(request.url()).pathname
     if (request.method() !== 'GET') {
-      state.sent.push({ method: request.method(), path })
+      state.sent.push({ method: request.method(), path, body: request.postData() })
       return route.fulfill({ json: { ok: true } })
     }
     return route.fulfill({ json: {} })
@@ -150,6 +162,7 @@ try {
   }
   assert.ok(up, diagnostics)
   await mkdir(captures, { recursive: true })
+  await mkdir(captures74, { recursive: true })
   browser = await launchBrowser()
 
   for (const width of [1280, 390]) {
@@ -167,6 +180,7 @@ try {
       return { page, state, pane: page.getByRole('complementary', { name: 'Panneau' }) }
     }
     const shot = (locator, name) => locator.screenshot({ path: `${captures}impl-${width}-${name}.png` })
+    const shot74 = (locator, name) => locator.screenshot({ path: `${captures74}impl-${width}-${name}.png` })
     const click = (locator) => (phone ? locator.tap() : locator.click())
     const back = (pane) => pane.getByRole('button', { name: 'Agent', exact: true })
 
@@ -339,7 +353,76 @@ try {
       await page.close()
     }
 
-    console.log(`OK ${width} : PAG-1 à PAG-7, PAG-12`)
+    /* ------------------------------- #74 : l'arbre, le modèle, les coéquipiers */
+    {
+      const { page, state, pane } = await open({ agents: TREE, background: [], editTurns: [], teammates: TEAMMATES })
+      const running = pane.getByRole('region', { name: 'En cours' })
+      await running.waitFor()
+      const lines = running.getByRole('listitem')
+      assert.equal(await lines.count(), 3)
+      // Le modèle et l'effort demandés, sur la ligne ; le parent porte le compte de sa descendance.
+      assert.match(await lines.nth(0).textContent(), /Cartographier le panneau.*sonnet · high.*4 min.*\(\+2\)/)
+      assert.match(await lines.nth(1).textContent(), /Lire SidePanel.*haiku · low.*3 min.*\(\+1\)/)
+      assert.match(await lines.nth(2).textContent(), /Lire panel\.ts.*2 min/)
+      // En retrait selon la profondeur.
+      const left = async (index) => (await lines.nth(index).getByRole('button').first().locator('span').first().boundingBox()).x
+      assert.ok((await left(1)) > (await left(0)) && (await left(2)) > (await left(1)), 'les imbriqués sont en retrait')
+      await shot74(running, 'arbre')
+      // Replier le parent cache toute sa descendance, le compte reste.
+      const fold = pane.getByRole('button', { name: 'Replier ce qu’a lancé Cartographier le panneau (2)' })
+      assert.equal(await fold.getAttribute('aria-expanded'), 'true')
+      await click(fold)
+      assert.equal(await lines.count(), 1)
+      const unfold = pane.getByRole('button', { name: 'Déplier ce qu’a lancé Cartographier le panneau (2)' })
+      assert.equal(await unfold.getAttribute('aria-expanded'), 'false')
+      await shot74(running, 'arbre-replie')
+      await click(unfold)
+      assert.equal(await lines.count(), 3)
+
+      // Les coéquipiers : carte, worktree, état ; un clic ouvre leur fil.
+      const team = pane.getByRole('region', { name: 'Coéquipiers' })
+      const mates = team.getByRole('listitem')
+      assert.equal(await mates.count(), 2)
+      assert.match(await mates.nth(0).textContent(), /Coéquipiers dans l’onglet Agent.*#74.*feat\/onglet-agents-v2.*travaille/)
+      assert.match(await mates.nth(1).textContent(), /Relire la PR #212.*attend/)
+      assert.equal(await mates.nth(0).getByRole('link').getAttribute('href'), `/p/p1/c/${TEAMMATES[0].id}`)
+      await shot74(team, 'coequipiers')
+      await noOverflow(pane)
+
+      // Écrire à l'agent : le message part dans le fil, adressé à l'agent principal qui relaie.
+      await click(lines.nth(0).getByRole('button').first())
+      await pane.getByText('Explore · sonnet · high · travaille depuis 4 min').waitFor()
+      await click(pane.getByRole('button', { name: 'Écrire à l’agent' }))
+      const box = pane.getByRole('textbox', { name: /L’agent principal transmet ton message à « Cartographier le panneau »/ })
+      // Échap ferme le formulaire, pas le détail.
+      await box.fill('brouillon')
+      await box.press('Escape')
+      assert.equal(await box.count(), 0)
+      await back(pane).waitFor()
+      await click(pane.getByRole('button', { name: 'Écrire à l’agent' }))
+      await box.fill('Regarde aussi le rail vertical.')
+      await shot74(pane, 'ecrire')
+      await click(pane.getByRole('button', { name: 'Envoyer' }))
+      await assertSent(state, { method: 'POST', path: `/api/conversations/${HERE}/messages` })
+      const sent = JSON.parse(state.sent.find((entry) => entry.path.endsWith('/messages')).body)
+      assert.match(sent.text, /SendMessage \(to: « cartographe »\)/)
+      assert.match(sent.text, /Regarde aussi le rail vertical\.$/)
+      await pane.getByRole('status').filter({ hasText: 'Message confié à l’agent principal' }).waitFor()
+      assert.equal(await box.count(), 0)
+      assert.deepEqual(state.errors, [])
+      await page.close()
+    }
+
+    /* ------------------------- #74 : un CLI qui ne relaie pas, un agent sans nom */
+    for (const [agents, agent, why] of [[[lead], 'codex', 'un CLI sans relais'], [[deep], 'claude', 'un agent sans nom ni agentId']]) {
+      const { page, pane } = await open({ agents, background: [], editTurns: [], agent })
+      await click(pane.getByRole('button', { name: new RegExp(agents[0].description) }))
+      await back(pane).waitFor()
+      assert.equal(await pane.getByRole('button', { name: 'Écrire à l’agent' }).count(), 0, `pas de geste qui ne ferait rien : ${why}`)
+      await page.close()
+    }
+
+    console.log(`OK ${width} : PAG-1 à PAG-7, PAG-12, #74`)
     await context.close()
   }
 } finally {

@@ -5,8 +5,9 @@ import type { BackgroundWork } from '../../web/src/lib/background.js'
 import type { MessageKey, MessageParams } from '../../web/src/lib/i18n/index.js'
 import type { SubAgent } from '../../web/src/lib/subagents.js'
 
-const { agentGroups, agentMeta, filesOf, resultOf, sessionFiles, workSeed } = await import('../../web/src/lib/agent-files.js')
+const { agentGroups, agentMeta, agentTree, filesOf, modelLabel, resultOf, sessionFiles, treeRows, workSeed } = await import('../../web/src/lib/agent-files.js')
 const { buildBackground } = await import('../../web/src/lib/background.js')
+const { agentIdIn, buildSubAgents } = await import('../../web/src/lib/subagents.js')
 const { emptyChatState } = await import('../../web/src/lib/chat-fold.js')
 const { fr } = await import('../../web/src/lib/i18n/catalog-fr.js')
 const { en } = await import('../../web/src/lib/i18n/catalog-en.js')
@@ -27,7 +28,7 @@ const said = (id: string, parent: string | null, ...blocks: ({ type: 'text'; tex
 
 const agent = (id: string, items: ChatItem[], over: Partial<SubAgent> = {}): SubAgent => ({
   id, type: 'general-purpose', description: `Agent ${id}`, status: 'done', startedAt: 0, durationMs: null, activity: null,
-  items, toolCount: items.filter((item) => item.kind === 'tool').length, totalTokens: 0, parentId: null, ...over,
+  items, toolCount: items.filter((item) => item.kind === 'tool').length, totalTokens: 0, parentId: null, model: null, effort: null, address: null, ...over,
 })
 
 const work = (id: string, over: Partial<BackgroundWork> = {}): BackgroundWork => ({
@@ -141,8 +142,80 @@ test('agentGroups : En cours mêle sous-agents (du plus ancien) et travaux de fo
   const groups = agentGroups([late, finished, early, stopped, failed], [w1])
   assert.deepEqual(groups.running.map((entry) => entry.key), ['early', 'late', 'w1'])
   assert.deepEqual(groups.running.map((entry) => entry.kind), ['agent', 'agent', 'work'])
-  assert.deepEqual(groups.done.map((entry) => entry.id), ['stop', 'fail', 'fin'])
+  assert.deepEqual(groups.done.map((entry) => entry.agent.id), ['stop', 'fail', 'fin'])
   assert.deepEqual(agentGroups([], []), { running: [], done: [] })
+})
+
+test('agentTree : chacun sous son plus proche ancêtre de la liste, avec le compte de sa descendance', () => {
+  const root = agent('root', [], { startedAt: 1 })
+  const child = agent('child', [], { startedAt: 2, parentId: 'root' })
+  const grandchild = agent('grand', [], { startedAt: 3, parentId: 'child' })
+  const sibling = agent('sib', [], { startedAt: 4, parentId: 'root' })
+  const all = [root, child, grandchild, sibling]
+  const [top, ...rest] = agentTree(all, all)
+  assert.equal(rest.length, 0)
+  assert.equal(top!.agent.id, 'root')
+  assert.equal(top!.descendants, 3)
+  assert.deepEqual(top!.children.map((node) => [node.agent.id, node.descendants]), [['child', 1], ['sib', 0]])
+
+  // Le parent absent de la liste : l'enfant remonte au grand-parent, sinon à la racine.
+  assert.deepEqual(agentTree([root, grandchild], all).map((node) => [node.agent.id, node.descendants]), [['root', 1]])
+  assert.deepEqual(agentTree([grandchild, sibling], all).map((node) => node.agent.id), ['grand', 'sib'])
+
+  // Un journal qui boucle ne fait pas tourner l'onglet.
+  const a = agent('a', [], { parentId: 'b' })
+  const b = agent('b', [], { parentId: 'a' })
+  assert.deepEqual(agentTree([a], [a, b]).map((node) => node.agent.id), ['a'])
+  // Ni quand la boucle est entière dans la liste : les deux restent visibles.
+  assert.deepEqual(agentTree([a, b], [a, b]).map((node) => node.agent.id), ['a', 'b'])
+})
+
+test('treeRows : la profondeur de chaque ligne, et un nœud replié cache sa descendance', () => {
+  const all = [agent('r', []), agent('c', [], { parentId: 'r' }), agent('g', [], { parentId: 'c' })]
+  const tree = agentTree(all, all)
+  assert.deepEqual(treeRows(tree, new Set()).map(({ node, depth }) => [node.agent.id, depth]), [['r', 0], ['c', 1], ['g', 2]])
+  assert.deepEqual(treeRows(tree, new Set(['c'])).map(({ node }) => node.agent.id), ['r', 'c'])
+  assert.deepEqual(treeRows(tree, new Set(['r'])).map(({ node }) => node.agent.id), ['r'])
+})
+
+test('agentGroups : un sous-agent qui travaille se range sous son parent qui travaille', () => {
+  const parent = agent('p', [], { status: 'running', startedAt: 1 })
+  const child = agent('c', [], { status: 'running', startedAt: 2, parentId: 'p' })
+  const finishedChild = agent('f', [], { status: 'done', startedAt: 3, parentId: 'p' })
+  const groups = agentGroups([parent, child, finishedChild], [])
+  assert.deepEqual(groups.running.map((entry) => entry.key), ['p'])
+  const [entry] = groups.running
+  assert.ok(entry?.kind === 'agent')
+  assert.deepEqual(entry.node.children.map((node) => node.agent.id), ['c'])
+  assert.deepEqual(groups.done.map((node) => node.agent.id), ['f'])
+})
+
+test('modelLabel : le modèle et l’effort demandés, rien sinon', () => {
+  assert.equal(modelLabel({ model: 'sonnet', effort: 'high' }), 'sonnet · high')
+  assert.equal(modelLabel({ model: 'haiku', effort: null }), 'haiku')
+  assert.equal(modelLabel({ model: null, effort: 'low' }), 'low')
+  assert.equal(modelLabel({ model: null, effort: null }), null)
+})
+
+test('buildSubAgents : le modèle, l’effort et le nom que l’appel demande, sinon l’agentId de son résultat', () => {
+  const tasks = emptyChatState().tasks
+  const [named, anonymous, bare] = buildSubAgents([
+    tool('s1', 'Agent', { description: 'Relire', subagent_type: 'Explore', model: 'haiku', effort: 'low', name: 'relecteur' }, null),
+    tool('s2', 'Agent', { description: 'Chercher', reasoning_effort: 'high' }, null, {
+      output: [{ type: 'text', text: 'Fini.\nagentId: a3f9c2e1 (use SendMessage with to: \'a3f9c2e1\' to continue this agent)' }],
+    } as Partial<ChatItem>),
+    tool('s3', 'Task', { description: 'Rien' }, null),
+  ], tasks)
+  // Nommé et terminé : le nom ne le joint plus, l'agentId le reprend.
+  const [finished] = buildSubAgents([
+    tool('s4', 'Agent', { description: 'Fini', name: 'relecteur' }, null, { output: 'Fait.\nagentId: b7d4' } as Partial<ChatItem>),
+  ], tasks)
+  assert.equal(finished!.address, 'b7d4')
+  assert.deepEqual([named!.model, named!.effort, named!.address], ['haiku', 'low', 'relecteur'])
+  assert.deepEqual([anonymous!.model, anonymous!.effort, anonymous!.address], [null, 'high', 'a3f9c2e1'])
+  assert.deepEqual([bare!.model, bare!.effort, bare!.address], [null, null, null])
+  assert.equal(agentIdIn('agentId: x-1'), 'x-1')
+  assert.equal(agentIdIn(null), null)
 })
 
 /* ------------------------------------------------------------------ agentMeta */
