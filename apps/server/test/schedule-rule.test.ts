@@ -10,6 +10,7 @@ const {
   edit,
   localDayOf,
   marksOf,
+  monthMarks,
   problemOf,
   relativeDay,
   sentenceOf,
@@ -284,6 +285,40 @@ test('les jours marqués comptent les passages par jour du fuseau', () => {
   assert.equal(marks.get(new Date(2026, 10, 11).getTime()), 2)
   assert.equal(marks.get(new Date(2026, 10, 12).getTime()), 3)
   assert.equal(marks.get(new Date(2026, 10, 13).getTime()), 1)
+})
+
+test('le mois se compte comme ses passages, sans les énumérer', () => {
+  // Novembre 2026 depuis NOW (le 11, 10:00 à Paris) : le mois entier, énuméré, sert de témoin.
+  const NOVEMBER = { year: 2026, month: 11 }
+  const end = Date.UTC(2026, 11, 1) - HOUR
+  for (const cadence of [cron('0 3 * * *'), cron('*/15 9-17 * * 1-5'), cron('0 8-20/6 * * *'), cron('0 3 L * *'), cron('0,30 0 9-10 * * *'), { kind: 'interval' as const, minutes: 90 }]) {
+    const witness = marksOf(upcoming(cadence, 100_000, { after: NOW, horizon: end - 1, timeZone: PARIS }), PARIS)
+    assert.deepEqual(monthMarks(cadence, NOVEMBER, { now: NOW, timeZone: PARIS }), witness, JSON.stringify(cadence))
+  }
+  assert.equal(monthMarks({ kind: 'once', at: NOW + HOUR }, NOVEMBER, { now: NOW, timeZone: PARIS }).size, 1)
+  assert.equal(monthMarks(null, NOVEMBER, { now: NOW, timeZone: PARIS }).size, 0)
+  assert.equal(monthMarks(cron('pas un motif'), NOVEMBER, { now: NOW, timeZone: PARIS }).size, 0)
+})
+
+test('un jour de changement d’heure se compte comme croner le joue', () => {
+  // Paris passe à l'heure d'été le 29 mars 2026 (02:00 → 03:00), à l'heure d'hiver le 25 octobre.
+  for (const [month, expression] of [[3, '30 2 * * *'], [3, '0 * * * *'], [10, '0 * * * *'], [10, '30 2 * * *']] as const) {
+    const now = zonedTime({ year: 2026, month, day: 1 }, 0, 0, PARIS) - 1
+    const end = zonedTime({ year: 2026, month: month + 1, day: 1 }, 0, 0, PARIS)
+    const witness = marksOf(upcoming(cron(expression), 100_000, { after: now, horizon: end - 1, timeZone: PARIS }), PARIS)
+    assert.deepEqual(monthMarks(cron(expression), { year: 2026, month }, { now, timeZone: PARIS }), witness, `${expression} en ${month}`)
+  }
+})
+
+test('« chaque minute » ne gèle pas l’aperçu du mois (#261)', () => {
+  const started = performance.now()
+  const marks = monthMarks(cron('* * * * *'), { year: 2026, month: 12 }, { now: NOW, timeZone: PARIS })
+  // Quelques ms au repos ; la borne laisse de la marge à une CI chargée.
+  assert.ok(performance.now() - started < 2000, `${performance.now() - started} ms`)
+  assert.equal(marks.size, 31)
+  assert.equal(marks.get(new Date(2026, 11, 24).getTime()), 1440)
+  // Aujourd'hui ne compte que ce qui reste après NOW (10:00 à Paris).
+  assert.equal(monthMarks(cron('* * * * *'), { year: 2026, month: 11 }, { now: NOW, timeZone: PARIS }).get(new Date(2026, 10, 11).getTime()), 14 * 60 - 1)
 })
 
 test('l’écart d’un passage : minutes, heures le jour même, demain, puis en jours', () => {
