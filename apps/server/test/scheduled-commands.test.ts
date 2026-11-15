@@ -659,3 +659,97 @@ test('a scheduled service whose folder is gone fails, said in the passage', asyn
   assert.match(run!.excerpt!, /^Service planifié non démarré : le dossier .*absent n’existe pas\.$/)
   assert.equal(notified.length, 1)
 })
+
+// --- le placement et l'arrêt, quand un agent les règle (#260) --------------------
+
+test('register_action sets where a service runs and when it stops, then waits for review', async (t) => {
+  const { db, mcp } = await harness(t)
+  const created = await mcp('register_action', {
+    label: 'Aperçu',
+    kind: 'service',
+    command: 'pnpm dev --port $PORT',
+    url: 'http://hote:{port}',
+    placement: 'per-worktree',
+    schedule: { cron: '0 8 * * 1-5', stop: { cron: '0 20 * * 1-5' } },
+  })
+  assert.equal(created.isError, undefined, created.content[0]?.text)
+  assert.match(created.content[0]!.text, /Une instance par worktree/)
+  assert.match(created.content[0]!.text, /Arrêtée motif cron `0 20 \* \* 1-5`/)
+  const row = db.select().from(projectActions).get()!
+  assert.equal(row.placement, 'per-worktree')
+  assert.deepEqual(JSON.parse(row.stopCadence!), { kind: 'cron', expression: '0 20 * * 1-5' })
+  assert.equal(row.approvedAt, null)
+
+  const listed = (await mcp('list_actions', {})).content[0]!.text
+  assert.match(listed, /per-worktree/)
+  assert.match(listed, /arrêtée motif cron `0 20 \* \* 1-5`/)
+})
+
+test('an agent changing a reviewed service’s placement or stop asks for review again', async (t) => {
+  const { db, mcp } = await harness(t)
+  const row = createAction(db, 'project', { label: 'Serveur', kind: 'service', command: 'pnpm dev', schedule: { cadence: HOURLY } }, null)
+  assert.ok(row.approvedAt)
+
+  const pinned = await mcp('register_action', { id: row.id, placement: 'branch', branch: 'main' })
+  assert.equal(pinned.isError, undefined, pinned.content[0]?.text)
+  assert.match(pinned.content[0]!.text, /toujours sur la branche `main`/)
+  const moved = loadAction(db, row.id)
+  assert.equal(moved.placement, 'branch')
+  assert.equal(moved.pinnedBranch, 'main')
+  assert.equal(moved.approvedAt, null)
+
+  approveAction(db, moved)
+  const stopped = await mcp('register_action', { id: row.id, schedule: { stop: { cron: '0 22 * * *' } } })
+  assert.equal(stopped.isError, undefined, stopped.content[0]?.text)
+  assert.equal(loadAction(db, row.id).approvedAt, null)
+  assert.ok(JSON.parse(loadAction(db, row.id).stopCadence!))
+
+  // Retirer l'arrêt d'un service qui reste planifié le laisse tourner : relu aussi.
+  approveAction(db, loadAction(db, row.id))
+  await mcp('register_action', { id: row.id, schedule: { stop: null } })
+  assert.equal(loadAction(db, row.id).stopCadence, null)
+  assert.equal(loadAction(db, row.id).approvedAt, null)
+  // Renommer ne touche à rien de ce qui part : la validation tient.
+  approveAction(db, loadAction(db, row.id))
+  await mcp('register_action', { id: row.id, label: 'Serveur de dev' })
+  assert.ok(loadAction(db, row.id).approvedAt)
+})
+
+test('register_action refuses an incoherent placement or stop, and says what to fix', async (t) => {
+  const { db, mcp } = await harness(t)
+  const refusals: [Record<string, unknown>, RegExp][] = [
+    [{ label: 'T', kind: 'task', command: 'true', placement: 'root' }, /`placement` ne vaut que pour un `service`/],
+    [{ label: 'S', kind: 'service', command: 'true', placement: 'branch' }, /demande `branch`/],
+    [{ label: 'S', kind: 'service', command: 'true', branch: 'main' }, /`branch` ne vaut qu’avec/],
+    [{ label: 'S', kind: 'service', command: 'true', placement: 'per-worktree', url: 'http://hote:5173' }, /doit contenir `\{port\}`/],
+    [{ label: 'S', kind: 'service', command: 'true', placement: 'ailleurs' }, /`placement` vaut/],
+    [{ label: 'T', kind: 'task', command: 'true', schedule: { every_minutes: 60, stop: { cron: '0 20 * * *' } } }, /seul un `service` s’arrête/],
+    [{ label: 'S', kind: 'service', command: 'true', schedule: { every_minutes: 60, stop: {} } }, /`schedule.stop` demande une cadence/],
+  ]
+  for (const [payload, message] of refusals) {
+    const refused = await mcp('register_action', payload)
+    assert.equal(refused.isError, true, JSON.stringify(payload))
+    assert.match(refused.content[0]!.text, message)
+  }
+  assert.equal(db.select().from(projectActions).all().length, 0)
+
+  const service = createAction(db, 'project', { label: 'Serveur', kind: 'service', command: 'pnpm dev' }, null)
+  const unscheduled = await mcp('register_action', { id: service.id, schedule: { stop: { cron: '0 20 * * *' } } })
+  assert.equal(unscheduled.isError, true)
+  assert.match(unscheduled.content[0]!.text, /Donne aussi sa cadence de démarrage/)
+})
+
+test('rejecting what an agent set brings back the reviewed placement and stop (#260)', async (t) => {
+  const { db, mcp } = await harness(t)
+  const row = createAction(db, 'project', { label: 'Serveur', kind: 'service', command: 'pnpm dev', schedule: { cadence: HOURLY } }, null)
+  await mcp('register_action', { id: row.id, placement: 'root', schedule: { stop: { cron: '0 22 * * *' } } })
+  const proposed = loadAction(db, row.id)
+  assert.equal(proposed.placement, 'root')
+  assert.ok(proposed.nextStopAt)
+
+  const back = rejectAction(db, proposed)!
+  assert.equal(back.placement, 'follow')
+  assert.equal(back.stopCadence, null)
+  assert.equal(back.nextStopAt, null)
+  assert.ok(back.approvedAt)
+})

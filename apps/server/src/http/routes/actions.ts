@@ -150,7 +150,12 @@ export function registerActionRoutes(
     const { id } = request.params as { id: string }
     const { action } = guardAction(id, user.id)
     const restored = rejectAction(ctx.db, action)
-    if (restored) return reply.send(await runner.toDto(restored))
+    if (restored) {
+      // Un agent a pu lancer ce qu'il proposait : revenu à la version relue (une autre
+      // nature, un autre placement), ses unités tourneraient sans plus de bouton.
+      if (unitsOrphanedBy(action, restored)) await runner.forget(action).catch(() => undefined)
+      return reply.send(await runner.toDto(restored))
+    }
     await runner.forget(action)
     deleteAction(ctx.db, id)
     return reply.status(204).send()

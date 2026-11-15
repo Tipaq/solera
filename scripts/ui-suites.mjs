@@ -30,6 +30,8 @@ const BATCHES = [
     'shell', // 15
     'skills', // 11
     'viewport', // 10
+    'schedule-check', // ~90 en local, à mesurer
+    'draft-account', // ~20 en local, à mesurer
   ],
   [
     'milestones', // 108
@@ -47,6 +49,7 @@ const BATCHES = [
     'api-mcp', // 15
     'card-draft', // 12
     'brief-field', // 12
+    'onboarding', // ~10 en local, à mesurer
     'planned', // ~25, à mesurer
   ],
   [
@@ -76,6 +79,8 @@ const BATCHES = [
     'grok', // 4
     'opencode', // 4
     'panel-agent', // ~15, à mesurer
+    'schedule', // ~130 en local (attend un tir à la minute), à mesurer
+    'codex-accounts', // ~20 en local, à mesurer
   ],
 ]
 
@@ -83,11 +88,6 @@ const BATCHES = [
 const OUTSIDE = {
   desktop: "l'app empaquetée, éprouvée par le job desktop sur main",
   actions: 'instable, lignes en double (#259)',
-  onboarding: 'page.goto bloque par intermittence (#263)',
-  'codex-accounts': 'lance le vrai codex, qui joint OpenAI (#264)',
-  'draft-account': 'sonde les vrais codex et claude (#264)',
-  schedule: 'un vrai tour du CLI Claude du poste (#267)',
-  'schedule-check': 'un vrai tour du CLI Claude du poste (#267)',
 }
 
 const onDisk = readdirSync(join(root, 'scripts'))

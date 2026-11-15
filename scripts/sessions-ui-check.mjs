@@ -312,6 +312,8 @@ try {
   await line('Refactor settings storage').waitFor()
   assert.equal(await toolbar.getByRole('radiogroup', { name: 'Actives ou archivées' }).isVisible(), false, 'Pas de place dans la barre')
   assert.equal(Math.round((await toolbar.boundingBox()).height), 48, 'La barre tient sur une ligne')
+  // Une seule bande, comme /schedules et /p/:id : pas de barre « ☰ Solera » au-dessus (#269).
+  assert.equal(await page.getByRole('button', { name: 'Ouvrir la navigation', exact: true }).count(), 1, 'Un seul bouton de navigation')
   await shot('390-liste')
   await toolbar.getByRole('button', { name: 'Filtrer' }).click()
   const phoneMenu = page.getByRole('dialog', { name: 'Filtrer' })
