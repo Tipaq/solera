@@ -53,6 +53,9 @@ export function PlaceBand({ icon, title, actions }: {
   )
 }
 
+/** Réglages réduit à son icône au téléphone : 44 px de large tout de même, pas 23. */
+const SETTINGS_TAB = 'shrink-0 min-w-11 justify-center sm:min-w-0'
+
 /**
  * La rangée des vues d'un lieu, sous la bande, et Réglages au bout.
  *
@@ -84,7 +87,7 @@ export function PlaceTabs({ label, tabs, settings }: {
     <>
       <Settings size={15} className="shrink-0 text-ink-faint" />
       {/* Au doigt l'icône suffit : le libellé ferait sortir l'onglet de l'écran, et le
-          nom reste porté par `aria-label`. */}
+          nom reste porté par `aria-label`. L'onglet garde 44 px de large (`SETTINGS_TAB`). */}
       <span className="hidden sm:inline">{t('place.settings')}</span>
     </>
   )
@@ -114,7 +117,7 @@ export function PlaceTabs({ label, tabs, settings }: {
             to={settings.to}
             aria-label={settings.label}
             title={settings.label}
-            className={({ isActive }) => cx(tabItemClass(isActive), 'shrink-0')}
+            className={({ isActive }) => cx(tabItemClass(isActive), SETTINGS_TAB)}
           >
             {settingsContent}
           </NavLink>
@@ -124,7 +127,7 @@ export function PlaceTabs({ label, tabs, settings }: {
             onClick={settings.onOpen}
             aria-label={settings.label}
             title={settings.label}
-            className={cx(tabItemClass(false), 'shrink-0')}
+            className={cx(tabItemClass(false), SETTINGS_TAB)}
           >
             {settingsContent}
           </button>

@@ -104,14 +104,15 @@ export function DraftAgentPicker({
                       : job?.status === 'failed' ? t('draft.agent.installFailed') : t('draft.agent.installShort')}
                   </span>
                 </button>
-                {/* Pour qui n'en veut pas : la carte disparaît tant qu'il manque. */}
+                {/* Pour qui n'en veut pas : la carte disparaît tant qu'il manque. Petite à
+                    l'œil, elle prend ses 44 px au doigt par un calque invisible. */}
                 {running ? null : (
                   <button
                     type="button"
                     aria-label={t('agent.install.dismiss')}
                     title={t('agent.install.dismiss')}
                     onClick={() => onHide(kind)}
-                    className="absolute top-1 right-1 flex size-6 items-center justify-center rounded text-ink-faint hover:bg-surface-high hover:text-ink"
+                    className="absolute top-1 right-1 flex size-6 items-center justify-center rounded text-ink-faint hover:bg-surface-high hover:text-ink pointer-coarse:after:absolute pointer-coarse:after:-inset-2.5"
                   >
                     <X size={12} />
                   </button>

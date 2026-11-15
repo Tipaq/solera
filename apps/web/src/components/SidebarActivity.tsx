@@ -130,7 +130,7 @@ export function SidebarActivity({
           type="button"
           onClick={() => show()}
           aria-haspopup="dialog"
-          className="flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left transition-colors hover:bg-surface-high pointer-coarse:h-11"
+          className="flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left transition-colors hover:bg-surface-high pointer-coarse:h-11 pointer-coarse:pr-[15px]"
         >
           <span className="flex w-4 shrink-0 justify-center"><Activity size={14} className="text-ink-faint" /></span>
           <span className="flex-1 text-meta font-semibold uppercase tracking-wider text-ink-faint">
