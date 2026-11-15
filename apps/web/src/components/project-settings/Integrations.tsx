@@ -4,10 +4,9 @@ import type { IssueSourceDto, PrototypeCandidateDto } from '@solera/protocol'
 import { Banner, Button, Field } from '@solera/ui'
 import { ApiRequestError } from '../../lib/api'
 import { relativeDate } from '../../lib/dates'
-import { useLocale, useTranslate } from '../../lib/i18n'
+import { useLocale, useTranslate, pluralOf } from '../../lib/i18n'
 import { useIssueSource, usePollIssueSource, useSetIssueSource } from '../../lib/issues'
 import { useUpdateProject } from '../../lib/projects'
-import { pluralKey } from '../../lib/schedule-rule'
 import { PathField } from '../PathField'
 
 /*
@@ -94,7 +93,7 @@ export function IssueSourceStatus({ source }: { source: IssueSourceDto }) {
   const t = useTranslate()
   const locale = useLocale()
   if (source.error) return <span className="text-xs text-critical">{t('project.issues.pollError', { error: source.error })}</span>
-  const cards = t(`projectSettings.issues.cards.${pluralKey(source.cardCount, locale)}`, { count: source.cardCount })
+  const cards = t(`projectSettings.issues.cards.${pluralOf(source.cardCount, locale)}`, { count: source.cardCount })
   return (
     <span className="text-xs text-ink-faint">
       {source.polledAt ? `${cards} · ${t('projectSettings.issues.read', { when: relativeDate(source.polledAt) })}` : t('project.issues.waiting')}

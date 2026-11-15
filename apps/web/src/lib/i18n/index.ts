@@ -1,6 +1,7 @@
 import { useCallback, useSyncExternalStore } from 'react'
 import { catalogFor, isCatalogLoaded, loadCatalog, LOCALES, type Locale } from './catalogs'
 import type { MessageKey } from './catalog-en'
+import { pluralIn } from './plural'
 
 export { LOCALES, LOCALE_LABELS, type Locale } from './catalogs'
 export type { MessageKey } from './catalog-en'
@@ -72,6 +73,13 @@ function apply(next: Locale): void {
  */
 export function locale(): Locale {
   return current
+}
+
+/**
+ * La forme d'un compte dans la langue courante, ou dans `lang` : voir `plural.ts`.
+ */
+export function pluralOf(count: number, lang: string = locale()): 'one' | 'other' {
+  return pluralIn(lang, count)
 }
 
 /**

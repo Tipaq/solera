@@ -16,7 +16,7 @@ import type { ContentFileDto } from '@solera/protocol'
 import { ApiRequestError } from '../../lib/api'
 import { revealLine } from '../../lib/editor-reveal'
 import { fileIconUrl } from '../../lib/file-icons'
-import { useTranslate } from '../../lib/i18n'
+import { useTranslate, pluralOf } from '../../lib/i18n'
 import { useDebounced } from '../../lib/search'
 import { useFileSearch } from '../../lib/tree'
 import { iconToolClass, toolbarFieldClass } from '../toolbar/OneLineToolbar'
@@ -224,11 +224,11 @@ export const SearchPane = memo(function SearchPane({ scope, onOpenFile }: {
                 gabarit. La section des noms disparaît du compte quand elle est vide. */}
             <p role="status" className="px-3 pt-1.5 pb-1 text-xs text-ink-faint">
               {[
-                t(matchCount === 1 ? 'panel.search.count.one' : 'panel.search.count.many', { count: matchCount }),
-                t(files.length === 1 ? 'panel.search.files.one' : 'panel.search.files.many', { count: files.length }),
+                t(pluralOf(matchCount) === 'one' ? 'panel.search.count.one' : 'panel.search.count.many', { count: matchCount }),
+                t(pluralOf(files.length) === 'one' ? 'panel.search.files.one' : 'panel.search.files.many', { count: files.length }),
               ].join(' ')}
               {nameEntries.length > 0
-                ? ` · ${t(nameEntries.length === 1 ? 'panel.search.names.one' : 'panel.search.names.many', { count: nameEntries.length })}`
+                ? ` · ${t(pluralOf(nameEntries.length) === 'one' ? 'panel.search.names.one' : 'panel.search.names.many', { count: nameEntries.length })}`
                 : null}
               {content.data?.truncated || names.data?.truncated
                 ? ` · ${t('panel.search.truncated')}`

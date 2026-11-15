@@ -1,8 +1,7 @@
 import { Link } from 'react-router-dom'
 import { cx } from '@solera/ui'
-import { pluralOf } from '../../lib/code-model'
 import { elapsed, relativeDate } from '../../lib/dates'
-import { useTranslate } from '../../lib/i18n'
+import { useTranslate, pluralOf } from '../../lib/i18n'
 import type { ProjectSummary } from '../../lib/portfolio-overview'
 import { ProjectAvatar } from '../ProjectAvatar'
 
@@ -60,7 +59,7 @@ export function ProjectSummaryCard({ summary }: { summary: ProjectSummary }) {
         <span className="text-xs text-ink-faint">{t('portfolio.card.noMilestone')}</span>
       )}
       <span className="mt-auto flex items-center gap-3 text-xs text-ink-faint tabular-nums">
-        <span>{t(open === 1 ? 'place.count.openCards.one' : 'place.count.openCards.many', { count: open })}</span>
+        <span>{t(pluralOf(open) === 'one' ? 'place.count.openCards.one' : 'place.count.openCards.many', { count: open })}</span>
         {live > 0 ? (
           <span className="inline-flex items-center gap-1">
             <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-accent" />

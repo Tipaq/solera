@@ -2,6 +2,7 @@ import { Cron, CronPattern } from 'croner'
 import { cronScheduleSchema, nextScheduleRun, type ScheduleCadence } from '@solera/protocol'
 import { cadenceWords, type Translate } from './automations'
 import { cronToHuman } from './cron'
+import { pluralOf } from './i18n'
 
 /**
  * La planification pour un humain, à la place du cron brut (`actions.md` §1.F) : une
@@ -326,10 +327,6 @@ export function dayWords(day: CalendarDay, locale: string, style: 'long' | 'shor
   )
 }
 
-export function pluralKey(count: number, locale: string): 'one' | 'other' {
-  return new Intl.PluralRules(locale).select(count) === 'one' ? 'one' : 'other'
-}
-
 /** La phrase en clair de la règle ; null quand elle n'a pas de cadence. */
 export function sentenceOf(state: BuilderState, cadence: ScheduleCadence | null, t: Translate, locale: string): string | null {
   if (!cadence) return null
@@ -339,7 +336,7 @@ export function sentenceOf(state: BuilderState, cadence: ScheduleCadence | null,
     case 'once':
       return t('scheduleRule.sentence.once', { date: dayWords(state.date, locale), time })
     case 'hours': {
-      const count = pluralKey(state.every, locale)
+      const count = pluralOf(state.every, locale)
       return state.rangeOn
         ? t(`scheduleRule.sentence.hoursRange.${count}`, {
             count: state.every,
