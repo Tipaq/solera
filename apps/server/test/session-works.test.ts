@@ -79,7 +79,7 @@ test('familyOf range les familles du CLI', () => {
 
 test('loadText : la charge et la mémoire, seulement ce qui est connu', () => {
   assert.equal(loadText(work({ cpu: 0.034, memoryBytes: 120 * 1024 * 1024 }), t), '3 % · 120 MB')
-  assert.equal(loadText(work({ cpu: null, memoryBytes: 2048 }), t), '2 kB')
+  assert.equal(loadText(work({ cpu: null, memoryBytes: 2048 }), t), '2 KB')
   assert.equal(loadText(work({}), t), null)
 })
 
@@ -171,4 +171,21 @@ test("mergeWorks : sans session courante, l'ordre des départs", () => {
     conversations: [],
   })
   assert.deepEqual(works.map((entry) => entry.id), ['a', 'b'])
+})
+
+test('la mémoire s’écrit dans la langue de l’interface : « 21,5 Mo » (#274)', async () => {
+  // `setLocale` range son choix et pose `lang` : de quoi le faire hors navigateur.
+  const store = new Map<string, string>()
+  Object.assign(globalThis, {
+    localStorage: { getItem: (key: string) => store.get(key) ?? null, setItem: (key: string, value: string) => store.set(key, value) },
+    document: { documentElement: {} },
+  })
+  const { setLocale } = await import('../../web/src/lib/i18n/index.js')
+  const { formatBytes } = await import('../../web/src/lib/attachments.js')
+  await setLocale('fr')
+  assert.equal(loadText(work({ cpu: 0.03, memoryBytes: 21.5 * 1024 * 1024 }), t), '3 % · 21,5 Mo')
+  assert.equal(formatBytes(512), '512 o')
+  assert.equal(formatBytes(4.25 * 1024 ** 3), '4,3 Go')
+  await setLocale('en')
+  assert.equal(formatBytes(21.5 * 1024 * 1024), '21.5 MB')
 })

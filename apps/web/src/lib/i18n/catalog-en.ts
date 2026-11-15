@@ -5723,6 +5723,7 @@ export const en = {
   "attachments.size.bytes": "{value} B",
   "attachments.size.kb": "{value} KB",
   "attachments.size.mb": "{value} MB",
+  "attachments.size.gb": "{value} GB",
   "brief.announce.empty": "Write a sentence, or paste your brief.",
   "brief.announce.phrase": "A sentence: the agent will read the project, then ask you a few questions first.",
   "brief.announce.brief": "Detailed brief: the agent will propose a breakdown right away.",
