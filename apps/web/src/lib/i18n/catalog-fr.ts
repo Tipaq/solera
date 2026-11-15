@@ -4744,6 +4744,7 @@ export const fr: Catalog = {
   "sessionWorks.gesture.open": "Ouvrir :{port}",
   "sessionWorks.gesture.openTitle": "Ouvrir localhost:{port}",
   "sessionWorks.gesture.openRemoteTitle": "Ouvrir localhost:{port}. Solera est ouvert depuis une autre machine : hors de la vue Web, ce lien désigne la tienne, pas le serveur.",
+  "automation.link.remoteTitle": "Solera est ouvert depuis une autre machine : hors de la vue Web, ce lien localhost désigne la tienne, pas le serveur.",
   "sessionWorks.gesture.stop": "Arrêter",
   "sessionWorks.gesture.stopNamed": "Arrêter « {name} »",
   "sessionWorks.gesture.makeAction": "En faire une action",

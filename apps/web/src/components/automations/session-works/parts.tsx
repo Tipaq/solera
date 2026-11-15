@@ -76,6 +76,24 @@ export function SessionPill({ work, href, narrow = false, className: extra }: {
   )
 }
 
+/** Vrai quand `localhost` désignerait la machine du lecteur : Solera ouvert d'ailleurs. */
+export function isLocalOnly(href: string): boolean {
+  return linkIsLocalOnly(href, location.hostname)
+}
+
+/**
+ * La flèche d'un lien sortant, plus une alerte quand `localhost` y désigne la machine du
+ * lecteur (#278) : la vue Web le relaie, un onglet du navigateur non.
+ */
+export function OutboundMark({ href, size }: { href: string; size: number }) {
+  return (
+    <>
+      <ArrowUpRight size={size} aria-hidden />
+      {isLocalOnly(href) ? <TriangleAlert size={size} className="text-caution" aria-hidden data-link-remote /> : null}
+    </>
+  )
+}
+
 /**
  * Le port en lien, `localhost` comme les liens d'action : dans une conversation, il
  * s'ouvre dans la vue *Web* du panneau, qui le relaie quand Solera est ouvert à distance.
@@ -85,19 +103,13 @@ export function SessionPill({ work, href, narrow = false, className: extra }: {
 export function PortLink({ port, className, label }: { port: number; className: string; label?: string }) {
   const t = useTranslate()
   const href = `http://localhost:${port}`
-  const remote = linkIsLocalOnly(href, location.hostname)
   return (
     <WebLink
       href={href}
-      title={t(remote ? 'sessionWorks.gesture.openRemoteTitle' : 'sessionWorks.gesture.openTitle', { port })}
+      title={t(isLocalOnly(href) ? 'sessionWorks.gesture.openRemoteTitle' : 'sessionWorks.gesture.openTitle', { port })}
       className={className}
     >
-      {label ?? `:${port}`}{' '}
-      {remote ? (
-        <TriangleAlert size={11} className="text-caution" aria-hidden data-link-remote />
-      ) : (
-        <ArrowUpRight size={11} aria-hidden />
-      )}
+      {label ?? `:${port}`} <OutboundMark href={href} size={11} />
     </WebLink>
   )
 }
