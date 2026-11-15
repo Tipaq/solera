@@ -78,8 +78,8 @@ test('familyOf range les familles du CLI', () => {
 })
 
 test('loadText : la charge et la mémoire, seulement ce qui est connu', () => {
-  assert.equal(loadText(work({ cpu: 0.034, memoryBytes: 120 * 1024 * 1024 }), t), '3 % · 120.0 Mo')
-  assert.equal(loadText(work({ cpu: null, memoryBytes: 2048 }), t), '2 ko')
+  assert.equal(loadText(work({ cpu: 0.034, memoryBytes: 120 * 1024 * 1024 }), t), '3 % · 120 MB')
+  assert.equal(loadText(work({ cpu: null, memoryBytes: 2048 }), t), '2 kB')
   assert.equal(loadText(work({}), t), null)
 })
 

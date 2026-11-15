@@ -1,6 +1,6 @@
 import { MAX_ATTACHMENT_BYTES, type AttachmentDto } from '@solera/protocol'
 import { ApiRequestError, api } from './api'
-import { translate } from './i18n'
+import { locale, translate } from './i18n'
 
 /**
  * Téléverse un fichier et retourne sa fiche.
@@ -50,10 +50,14 @@ export function discardAttachment(id: string): Promise<void> {
 }
 
 export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} o`
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} ko`
+  // Dans la langue de l'interface : « 21,5 Mo » en français, « 21.5 MB » en anglais (#274).
+  const format = (value: number, unit: 'kilobyte' | 'megabyte' | 'gigabyte', digits: number) =>
+    new Intl.NumberFormat(locale(), { style: 'unit', unit, unitDisplay: 'short', maximumFractionDigits: digits }).format(value)
+  // L'octet n'a pas d'abrégé dans `Intl` anglais (« 512 byte ») : celui des pièces jointes.
+  if (bytes < 1024) return translate('attachments.size.bytes', { value: new Intl.NumberFormat(locale()).format(bytes) })
+  if (bytes < 1024 * 1024) return format(Math.round(bytes / 1024), 'kilobyte', 0)
   // Les gigaoctets ne servent pas aux pièces jointes, plafonnées à 20 Mo, mais aux
-  // fichiers déposés dans l'explorateur : « 4300.5 Mo » ne se lit pas.
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} Mo`
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} Go`
+  // fichiers déposés dans l'explorateur : « 4300,5 Mo » ne se lit pas.
+  if (bytes < 1024 * 1024 * 1024) return format(bytes / 1024 / 1024, 'megabyte', 1)
+  return format(bytes / 1024 / 1024 / 1024, 'gigabyte', 1)
 }
