@@ -41,7 +41,7 @@ import { NEW_PARAM } from '../lib/place'
 import { useCurrentUser } from '../lib/session'
 import { openSettings } from '../lib/settings-dialog'
 import { openTab } from '../lib/editor-tabs'
-import { openPanelOnArrival, setPanelOpen, setPanelTab, showTerminal } from '../lib/panel'
+import { openPanelOnArrival, setPanelOpen, setPanelTab, showTerminal, type PanelTab } from '../lib/panel'
 import { projectScope } from '../lib/workspace-scope'
 import { visibleSections } from './settings/sections'
 import { AgentIcon } from './AgentIcon'
@@ -295,6 +295,19 @@ export function CommandPalette({
   }, [close, go, onPanelView, projectId, projectNames, t])
 
   /**
+   * Rejoindre Travail d'un projet, panneau ouvert sur `tab`. L'arrivée rend au panneau
+   * l'état de sa nouvelle page : c'est celui-là qu'on écrit.
+   */
+  const goToPanelOf = useCallback(
+    (target: string, tab: PanelTab) => {
+      const travailPath = `/p/${target}/travail`
+      openPanelOnArrival(travailPath, tab)
+      navigate(travailPath)
+    },
+    [navigate],
+  )
+
+  /**
    * Ouvrir un fichier dans le panneau de son projet. Celui d'un autre projet, ou vu
    * depuis une page sans panneau, fait d'abord aller à Travail de ce projet : c'est la
    * vue de projet qui monte le panneau sans qu'il faille choisir une conversation.
@@ -309,12 +322,9 @@ export function CommandPalette({
         setPanelOpen(true)
         return
       }
-      // L'arrivée rend au panneau l'état de sa nouvelle page : c'est celui-là qu'on écrit.
-      const travail = `/p/${fileProject}/travail`
-      openPanelOnArrival(travail, 'files')
-      navigate(travail)
+      goToPanelOf(fileProject, 'files')
     },
-    [close, conversationId, navigate, panelHere, projectId],
+    [close, conversationId, goToPanelOf, panelHere, projectId],
   )
 
   /**
@@ -333,9 +343,7 @@ export function CommandPalette({
       }
       const here = action.projectId === projectId && panelHere
       if (!here) {
-        const travail = `/p/${action.projectId}/travail`
-        openPanelOnArrival(travail, op === 'output' ? 'terminals' : 'actions')
-        navigate(travail)
+        goToPanelOf(action.projectId, op === 'output' ? 'terminals' : 'actions')
       }
       if (op === 'review') {
         setPanelTab('actions')
@@ -346,7 +354,7 @@ export function CommandPalette({
         startAction({ action, op, conversationId: here ? (conversationId ?? undefined) : undefined })
       }
     },
-    [close, conversationId, navigate, panelHere, projectId, startAction],
+    [close, conversationId, goToPanelOf, panelHere, projectId, startAction],
   )
 
   const groups = useMemo((): Group[] => {
