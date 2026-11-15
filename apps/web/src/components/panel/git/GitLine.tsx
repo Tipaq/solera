@@ -19,7 +19,7 @@ import {
 } from 'lucide-react'
 import type { GitStateDto } from '@solera/protocol'
 import { Menu, MenuItem, MenuSeparator, PanelToolbar, Popover, cx, panelToolClass } from '@solera/ui'
-import { useTranslate, type MessageKey } from '../../../lib/i18n'
+import { useTranslate, type MessageKey, pluralOf } from '../../../lib/i18n'
 import { useGitActions } from './actions'
 import { NameDialog } from './menus'
 
@@ -113,7 +113,7 @@ export function GitLine({
       : (DESTINATIONS.find((entry) => entry.id === destination) ?? DESTINATIONS[0]!)
   const CurrentIcon = current.icon
   const viewLabel = t('git.view.current', { view: t(current.label) })
-  const conflictsLabel = t(conflicted === 1 ? 'git.view.conflicts.one' : 'git.view.conflicts.many', { count: conflicted })
+  const conflictsLabel = t(pluralOf(conflicted) === 'one' ? 'git.view.conflicts.one' : 'git.view.conflicts.many', { count: conflicted })
 
   /** Les gestes que la ligne peut replier : chacun sur la ligne, et dans « ⋯ ». */
   const fetching = { label: t('git.toolbar.fetch'), disabled: frozen, onClick: () => run({ kind: 'fetch' }) }

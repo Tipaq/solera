@@ -119,7 +119,10 @@ export function loadAction(db: Db, actionId: string): ProjectActionRow {
 const SERVICE_RUNNING = ['active', 'activating', 'reloading']
 
 /** Ce qu'une personne vient de relire : la relecture suivante s'y comparera. */
-function reviewed(row: Pick<ProjectActionRow, 'kind' | 'command' | 'subdir' | 'url' | 'cadence'>, at: number) {
+function reviewed(
+  row: Pick<ProjectActionRow, 'kind' | 'command' | 'subdir' | 'url' | 'cadence' | 'placement' | 'pinnedBranch' | 'stopCadence'>,
+  at: number,
+) {
   return {
     approvedAt: at,
     approvedKind: row.kind,
@@ -127,6 +130,9 @@ function reviewed(row: Pick<ProjectActionRow, 'kind' | 'command' | 'subdir' | 'u
     approvedSubdir: row.subdir,
     approvedUrl: row.url,
     approvedCadence: row.cadence,
+    approvedPlacement: row.placement,
+    approvedPinnedBranch: row.pinnedBranch,
+    approvedStopCadence: row.stopCadence,
   }
 }
 
@@ -157,6 +163,9 @@ const neverReviewed = {
   approvedSubdir: null,
   approvedUrl: null,
   approvedCadence: null,
+  approvedPlacement: null,
+  approvedPinnedBranch: null,
+  approvedStopCadence: null,
 }
 
 export function readActionCadence(raw: string | null): ScheduleCadence | null {
@@ -220,20 +229,22 @@ export function createAction(
   }
   const stopCadence = schedule?.stopCadence ?? null
   const scheduleEnabled = schedule ? (schedule.enabled ?? true) : false
+  const where = placed(body.kind, body.placement ?? 'follow', body.pinnedBranch, fields.url)
+  const stop = stopCadence ? JSON.stringify(stopCadence) : null
   const row: ProjectActionRow = {
     id: randomUUID(),
     projectId,
     label: body.label,
     description: body.description || null,
     ...fields,
-    ...placed(body.kind, body.placement ?? 'follow', body.pinnedBranch, fields.url),
-    ...(agentConversationId ? neverReviewed : reviewed(fields, now)),
+    ...where,
+    ...(agentConversationId ? neverReviewed : reviewed({ ...fields, ...where, stopCadence: stop }, now)),
     onDemand: body.onDemand ?? true,
     scheduleEnabled,
     scheduleMaxMinutes: schedule?.maxDurationMinutes ?? DEFAULT_ACTION_SCHEDULE_DURATION_MINUTES,
     lastScheduledAt: null,
     nextRunAt: armedAt(schedule?.cadence ?? null, scheduleEnabled, null),
-    stopCadence: stopCadence ? JSON.stringify(stopCadence) : null,
+    stopCadence: stop,
     nextStopAt: stopArmedAt(stopCadence, scheduleEnabled, now),
     agentConversationId,
     createdAt: now,
@@ -252,7 +263,8 @@ export function createAction(
  *
  * La cadence compte avec ce qui s'exécute : une commande planifiée part sans clic, et
  * un agent qui en planifie une, ou en reprend une en pause, la ferait tourner sans que
- * personne l'ait vue. La pause, elle, ne lance rien.
+ * personne l'ait vue. La pause, elle, ne lance rien. Le placement d'un service et son
+ * arrêt aussi (#260), posé, changé ou retiré tant que la cadence reste.
  */
 export function updateAction(
   db: Db,
@@ -310,7 +322,13 @@ export function updateAction(
     next.subdir !== row.subdir ||
     next.url !== row.url ||
     (next.cadence !== null && next.cadence !== row.cadence) ||
-    (next.scheduleEnabled && !row.scheduleEnabled)
+    (next.scheduleEnabled && !row.scheduleEnabled) ||
+    // Où tourne un service et quand il s'arrête : un agent qui les règle (#260) choisit
+    // l'arbre dont le code part, et ce qui tourne sans personne pour le couper.
+    next.placement !== row.placement ||
+    next.pinnedBranch !== row.pinnedBranch ||
+    // Retirer l'arrêt d'un service qui reste planifié le laisse tourner : ça compte aussi.
+    (next.cadence !== null && next.stopCadence !== row.stopCadence)
   if (agentConversationId) {
     next.agentConversationId = agentConversationId
     if (executionChanged) next.approvedAt = null
@@ -376,6 +394,9 @@ export function rejectAction(db: Db, row: ProjectActionRow): ProjectActionRow | 
     subdir: row.approvedSubdir,
     url: row.approvedUrl,
     cadence: row.approvedCadence,
+    placement: row.approvedPlacement ?? 'follow',
+    pinnedBranch: row.approvedPinnedBranch,
+    stopCadence: row.approvedStopCadence,
     approvedAt: now,
     updatedAt: now,
   }
@@ -392,6 +413,9 @@ export function rejectAction(db: Db, row: ProjectActionRow): ProjectActionRow | 
       next.cadence === null || !next.scheduleEnabled
         ? null
         : nextScheduleRun(readActionCadence(next.cadence)!, now, row.lastScheduledAt)
+  }
+  if (next.stopCadence !== row.stopCadence) {
+    next.nextStopAt = stopArmedAt(readActionCadence(next.stopCadence), next.scheduleEnabled, now)
   }
   const written = db.update(projectActions)
     .set(next)

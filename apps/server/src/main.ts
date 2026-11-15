@@ -149,6 +149,7 @@ async function main(): Promise<void> {
   // vue Chantiers : une fusion ne le propose plus dans « À décider », réservé à ce qu'un
   // agent demande à une personne, et les propositions d'avant sont retirées ici.
   const worktreeCleanup = new WorktreeCleanup(db, config.paths.data, worktreeStatus, terminals, sessions)
+  tasks.setCleanup(worktreeCleanup)
   decisions.retireWorktreeProposals()
   // Une fusion détectée passe en « Terminé » les cartes des sessions qui vivaient dans l'arbre.
   watchMergedCards(db, worktreeStatus)

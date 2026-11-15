@@ -8,9 +8,9 @@ import {
   type ProjectEnvironmentsDto,
 } from '@solera/protocol'
 import { liveSessions, loadedStatus, type StatusOf } from './card-state'
-import { pluralOf } from './code-model'
 import type { MessageKey, MessageParams } from './i18n'
 import type { MilestoneEntry } from './milestone-model'
+import { pluralOf } from './i18n'
 
 /*
  * Le panneau Lancer d'un jalon, avant son lancement (#197, spec jalons LCH-1..12) : ce

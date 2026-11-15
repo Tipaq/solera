@@ -11,7 +11,7 @@ import {
 import { Banner, Button, ChoiceCards, ConfirmDialog, FoldLine, cx } from '@solera/ui'
 import { ApiRequestError } from '../../lib/api'
 import { relativeDate } from '../../lib/dates'
-import { locale, useTranslate, type MessageKey } from '../../lib/i18n'
+import { locale, useTranslate, type MessageKey, pluralOf } from '../../lib/i18n'
 import {
   mergedForImport,
   useGlobalInstructions,
@@ -214,7 +214,7 @@ export function InstructionsView({
 }
 
 function linesLabel(t: ReturnType<typeof useTranslate>, count: number): string {
-  return t(count === 1 ? 'instructions.panel.file.lines.one' : 'instructions.panel.file.lines.other', { count: String(count) })
+  return t(`instructions.panel.file.lines.${pluralOf(count)}`, { count: String(count) })
 }
 
 /** `AGENTS.md` et `CLAUDE.md`, présents ou non, dépliables sur leur contenu brut. */

@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Archive } from 'lucide-react'
 import type { GitAction, GitImpactDto, GitLockDto, GitLossDto } from '@solera/protocol'
 import { api } from '../../../lib/api'
-import { useTranslate } from '../../../lib/i18n'
+import { useTranslate, pluralOf } from '../../../lib/i18n'
 import { workspaceApiBase, type WorkspaceScope } from '../../../lib/workspace-scope'
 import { Button, cx } from '@solera/ui'
 
@@ -349,13 +349,13 @@ function guardConfirm(t: Translate, action: GitAction): string {
 function lossLine(t: Translate, loss: GitLossDto): string {
   switch (loss.kind) {
     case 'working':
-      return t(loss.count === 1 ? 'git.guard.loss.workingOne' : 'git.guard.loss.working', {
+      return t(pluralOf(loss.count) === 'one' ? 'git.guard.loss.workingOne' : 'git.guard.loss.working', {
         count: loss.count,
         added: loss.added ?? 0,
         removed: loss.removed ?? 0,
       })
     case 'staged':
-      return t(loss.count === 1 ? 'git.guard.loss.stagedOne' : 'git.guard.loss.staged', {
+      return t(pluralOf(loss.count) === 'one' ? 'git.guard.loss.stagedOne' : 'git.guard.loss.staged', {
         count: loss.count,
       })
     case 'stash':
@@ -367,11 +367,11 @@ function lossLine(t: Translate, loss: GitLossDto): string {
       // fait douter de tout ce qu'il annonce par ailleurs.
       if (loss.byAgent) {
         return t(
-          loss.count === 1 ? 'git.guard.loss.commitsAgentOne' : 'git.guard.loss.commitsAgent',
+          pluralOf(loss.count) === 'one' ? 'git.guard.loss.commitsAgentOne' : 'git.guard.loss.commitsAgent',
           { count: loss.count, agent: loss.byAgent },
         )
       }
-      return t(loss.count === 1 ? 'git.guard.loss.commitsOne' : 'git.guard.loss.commits', {
+      return t(pluralOf(loss.count) === 'one' ? 'git.guard.loss.commitsOne' : 'git.guard.loss.commits', {
         count: loss.count,
       })
   }

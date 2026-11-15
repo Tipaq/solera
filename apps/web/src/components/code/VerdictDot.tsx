@@ -1,6 +1,6 @@
 import { cx } from '@solera/ui'
-import { pluralOf, type BranchKind, type TreeVerdict, type VerdictReason } from '../../lib/code-model'
-import type { MessageKey, MessageParams } from '../../lib/i18n'
+import type { BranchKind, TreeVerdict, VerdictReason } from '../../lib/code-model'
+import { pluralOf, type MessageKey, type MessageParams } from '../../lib/i18n'
 
 /**
  * La couleur d'un verdict (T-10.2), dans l'ordre d'affichage : gris, ambre, accent

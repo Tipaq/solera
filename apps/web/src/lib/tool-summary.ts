@@ -1,5 +1,5 @@
 import type { ToolItem } from './chat-fold'
-import { locale, translate } from './i18n'
+import { locale, translate, pluralOf } from './i18n'
 import { isSoleraTool } from './solera-tools'
 import { toolEdits, type EditPresentation } from './tool-edits'
 import { fields, scalar, text } from './tool-payload'
@@ -98,7 +98,7 @@ export function toolSummary(tool: ToolItem, edits: EditPresentation | null = too
   if (tool.presentation?.paths?.length) return { text: tool.presentation.paths.join(' · '), mono: true }
   if (Array.isArray(input?.todos)) {
     const count = input.todos.length
-    return { text: translate(count === 1 ? 'tool.todo.count.one' : 'tool.todo.count.many', { count }), mono: false }
+    return { text: translate(pluralOf(count) === 'one' ? 'tool.todo.count.one' : 'tool.todo.count.many', { count }), mono: false }
   }
   return null
 }

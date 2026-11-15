@@ -1,7 +1,7 @@
 import { Filter, SlidersHorizontal } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Button, Popover, SegmentedControl, TooltipButton, cx, type Segment } from '@solera/ui'
-import { useTranslate } from '../../lib/i18n'
+import { useTranslate, pluralOf } from '../../lib/i18n'
 import { CheckBox } from '../CheckBox'
 import { toolbarButtonClass } from './OneLineToolbar'
 
@@ -36,7 +36,7 @@ export function FilterMenu({ active, onClearAll, compact = false, children }: {
   const t = useTranslate()
   const [open, setOpen] = useState(false)
   const label = t('toolbar.filter')
-  const activeLabel = active > 0 ? t(active === 1 ? 'toolbar.filter.active.one' : 'toolbar.filter.active.many', { count: active }) : undefined
+  const activeLabel = active > 0 ? t(pluralOf(active) === 'one' ? 'toolbar.filter.active.one' : 'toolbar.filter.active.many', { count: active }) : undefined
   return (
     <Popover
       open={open}

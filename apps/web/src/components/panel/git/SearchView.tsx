@@ -1,6 +1,6 @@
 import { Check, Plus, Search, X } from 'lucide-react'
 import { useState } from 'react'
-import { useTranslate } from '../../../lib/i18n'
+import { pluralOf, useTranslate } from '../../../lib/i18n'
 import { decodeScope, type WorkspaceScope } from '../../../lib/workspace-scope'
 import { cx } from '@solera/ui'
 import { GraphView } from './GraphView'
@@ -93,7 +93,7 @@ export function SearchView({
               className="min-w-0 flex-1 bg-transparent text-xs text-ink outline-none placeholder:text-ink-faint"
             />
             <span className="shrink-0 text-micro text-ink-faint tabular-nums">
-              {t(count > 1 ? 'git.search.count' : 'git.search.countOne', { count })}
+              {t(pluralOf(count) === 'one' ? 'git.search.countOne' : 'git.search.count', { count })}
             </span>
           </div>
 

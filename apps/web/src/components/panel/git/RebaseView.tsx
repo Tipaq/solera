@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ChevronDown, GripVertical, Loader, Lock, Play } from 'lucide-react'
 import type { GitStateDto, RebaseCommitDto, RebaseStep, RebaseVerb } from '@solera/protocol'
-import { useTranslate, type MessageKey } from '../../../lib/i18n'
+import { useTranslate, type MessageKey, pluralOf } from '../../../lib/i18n'
 import type { WorkspaceScope } from '../../../lib/workspace-scope'
 import { Button, Menu, MenuItem, cx } from '@solera/ui'
 import { useGitActions } from './actions'
@@ -163,7 +163,7 @@ export function RebaseView({
       <Header
         title={
           plan.data?.onto
-            ? t(commits.length === 1 ? 'git.rebase.titleOne' : 'git.rebase.title', {
+            ? t(pluralOf(commits.length) === 'one' ? 'git.rebase.titleOne' : 'git.rebase.title', {
                 count: commits.length,
                 onto: ontoLabel(plan.data.onto),
               })
