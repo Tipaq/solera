@@ -1422,7 +1422,14 @@ try {
     const moved = (await api('/api/actions')).find((entry) => entry.id === service.id)
     assert.equal(moved.service.served.worktreeId, offline.id)
     assert.equal(moved.service.cwd, offline.path)
-    assert.equal(await fetch(`http://127.0.0.1:${httpPort}/`).then((response) => response.status), 200)
+    // Le service redémarre dans l'autre arbre : son port se rouvre un instant après que
+    // l'API l'a déclaré servi. Un seul essai tombait parfois sur ECONNREFUSED en CI (#268).
+    let servedStatus = null
+    for (let i = 0; i < 100 && servedStatus !== 200; i++) {
+      servedStatus = await fetch(`http://127.0.0.1:${httpPort}/`).then((response) => response.status, () => null)
+      if (servedStatus !== 200) await delay(150)
+    }
+    assert.equal(servedStatus, 200)
     await page.screenshot({ path: join(shots, 'served-switched.png') })
 
     // « Servir une autre branche… » depuis son détail : retour à la racine.
