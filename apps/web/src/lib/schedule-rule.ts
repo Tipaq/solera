@@ -1,4 +1,4 @@
-import { Cron } from 'croner'
+import { Cron, CronPattern } from 'croner'
 import { cronScheduleSchema, nextScheduleRun, type ScheduleCadence } from '@solera/protocol'
 import { cadenceWords, type Translate } from './automations'
 import { cronToHuman } from './cron'
@@ -398,6 +398,79 @@ export function upcoming(
     cursor = next
   }
   return runs
+}
+
+/**
+ * Les passages de chaque jour d'un mois du fuseau à venir après `now`, en clés de
+ * `MonthGrid`. Sans les énumérer : un motif « chaque minute » en a 44 640 par mois, et
+ * croner les rend un à un, fuseau compris (#261). Un motif cron lit son jour par un seul
+ * `nextRun`, puis compte ses heures, minutes et secondes ; un jour de changement d'heure
+ * reste compté sur 24 h. Un intervalle se compte depuis `now`, comme « Prochains passages ».
+ */
+export function monthMarks(
+  cadence: ScheduleCadence | null,
+  { year, month }: { year: number; month: number },
+  { now, timeZone }: { now: number; timeZone: string },
+): Map<number, number> {
+  const marks = new Map<number, number>()
+  if (!cadence) return marks
+  const length = new Date(year, month, 0).getDate()
+  const dayBounds = (day: number) => [
+    zonedTime({ year, month, day }, 0, 0, timeZone),
+    zonedTime({ year, month, day: day + 1 }, 0, 0, timeZone),
+  ] as const
+
+  if (cadence.kind === 'once') {
+    const [start] = dayBounds(1)
+    const [, end] = dayBounds(length)
+    return marksOf(upcoming(cadence, 1, { after: Math.max(now, start - 1), horizon: end - 1, timeZone }), timeZone)
+  }
+
+  if (cadence.kind === 'interval') {
+    const step = cadence.minutes * MIN
+    // Les passages `now + k·step` (k ≥ 1) tombés avant `at`.
+    const before = (at: number) => Math.max(0, Math.ceil((at - now) / step) - 1)
+    for (let day = 1; day <= length; day++) {
+      const [start, end] = dayBounds(day)
+      const count = before(end) - before(start)
+      if (count > 0) marks.set(localDayOf(start, timeZone), count)
+    }
+    return marks
+  }
+
+  let pattern: Cron
+  let fields: CronPattern
+  try {
+    pattern = new Cron(cadence.expression, { paused: true, timezone: timeZone })
+    fields = new CronPattern(cadence.expression, timeZone)
+  } catch {
+    return marks
+  }
+  const on = (flags: number[]) => flags.flatMap((flag, index) => (flag ? [index] : []))
+  const seconds = on(fields.second)
+  const minutes = on(fields.minute)
+  const hours = on(fields.hour)
+  // Les instants du jour (en secondes depuis minuit) que le motif sonne à partir de `from`.
+  const from = (second: number) => {
+    let count = 0
+    for (const h of hours) {
+      if ((h + 1) * 3600 <= second) continue
+      for (const m of minutes) {
+        if (h * 3600 + (m + 1) * 60 <= second) continue
+        count += seconds.filter((s) => h * 3600 + m * 60 + s >= second).length
+      }
+    }
+    return count
+  }
+  for (let day = 1; day <= length; day++) {
+    const [start, end] = dayBounds(day)
+    if (end <= now) continue
+    const first = pattern.nextRun(new Date(Math.max(now, start - 1)))?.getTime()
+    if (first === undefined || first >= end) continue
+    const wall = zonedParts(first, timeZone)
+    marks.set(localDayOf(first, timeZone), from(wall.hour * 3600 + wall.minute * 60 + Math.floor((first % MIN) / 1000)))
+  }
+  return marks
 }
 
 /** Les passages par jour du fuseau, en clés de `MonthGrid` (`localDayOf`). */

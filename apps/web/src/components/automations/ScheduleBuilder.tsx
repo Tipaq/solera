@@ -15,7 +15,7 @@ import {
   hourWords,
   localDayOf,
   localMidnightOf,
-  marksOf,
+  monthMarks,
   ordinalWords,
   pluralKey,
   problemOf,
@@ -26,7 +26,6 @@ import {
   weekdayName,
   withFrequency,
   withRange,
-  zonedTime,
   type BuilderState,
   type CalendarDay,
   type Clock,
@@ -501,9 +500,6 @@ function DateButton({ date, today, onChange }: { date: CalendarDay; today: numbe
 
 /* ------------------------------------------------------------------ l'aperçu */
 
-/** Le compte d'un jour s'arrête là : un motif à la minute en ferait 1 440. */
-const DAY_RUNS = 99
-
 function Preview({ cadence, sentence, clock }: { cadence: ScheduleCadence | null; sentence: string | null; clock: Clock }) {
   const t = useTranslate()
   const locale = useLocale()
@@ -512,16 +508,7 @@ function Preview({ cadence, sentence, clock }: { cadence: ScheduleCadence | null
   const [month, setMonth] = useState(today)
 
   // Les passages du mois affiché, comptés jour par jour du calendrier du serveur.
-  const marked = useMemo(() => {
-    const { year, month: shown } = calendarDayOfLocal(month)
-    const length = new Date(year, shown, 0).getDate()
-    const runs = Array.from({ length }, (_, index) => {
-      const start = zonedTime({ year, month: shown, day: index + 1 }, 0, 0, timeZone)
-      const end = zonedTime({ year, month: shown, day: index + 2 }, 0, 0, timeZone)
-      return upcoming(cadence, DAY_RUNS, { after: Math.max(now, start - 1), horizon: end - 1, timeZone })
-    })
-    return marksOf(runs.flat(), timeZone)
-  }, [cadence, month, now, timeZone])
+  const marked = useMemo(() => monthMarks(cadence, calendarDayOfLocal(month), { now, timeZone }), [cadence, month, now, timeZone])
   const next = useMemo(() => upcoming(cadence, 5, { after: now, timeZone }), [cadence, now, timeZone])
 
   return (
