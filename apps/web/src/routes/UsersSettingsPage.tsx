@@ -15,7 +15,7 @@ import {
 import { AccountForm } from '../components/AccountForm'
 import { SectionHeader } from '../components/settings/SectionHeader'
 import { ApiRequestError } from '../lib/api'
-import { useTranslate } from '../lib/i18n'
+import { pluralOf, useTranslate } from '../lib/i18n'
 import { useCurrentUser } from '../lib/session'
 import { useCreateUser, useDeleteUser, useUpdateUser, useUsers, type CreateUserInput } from '../lib/users'
 
@@ -156,18 +156,13 @@ function UserCard({ user, isSelf }: { user: UserDto; isSelf: boolean }) {
             </div>
             <p className="mt-0.5 font-mono text-xs text-ink-faint">{user.username}</p>
             <p className="mt-2 text-xs text-ink-faint">
-              {t(user.ownedProjects > 1 ? 'users.count.projects.other' : 'users.count.projects.one', {
+              {t(`users.count.projects.${pluralOf(user.ownedProjects)}`, {
                 count: user.ownedProjects,
               })}
               {' · '}
-              {t(
-                user.ownedConversations > 1
-                  ? 'users.count.conversations.other'
-                  : 'users.count.conversations.one',
-                { count: user.ownedConversations },
-              )}
+              {t(`users.count.conversations.${pluralOf(user.ownedConversations)}`, { count: user.ownedConversations })}
               {' · '}
-              {t(user.activeSessions > 1 ? 'users.count.sessions.other' : 'users.count.sessions.one', {
+              {t(`users.count.sessions.${pluralOf(user.activeSessions)}`, {
                 count: user.activeSessions,
               })}
             </p>

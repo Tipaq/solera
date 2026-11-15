@@ -240,7 +240,11 @@ export const cards = sqliteTable(
      * L'activité et l'état de merge sont dérivés et n'ont donc pas de colonne ici.
      */
     column: text('column').$type<CardColumn>().notNull(),
-    /** Ordre manuel dans sa colonne, croissant. Réécrit en bloc par le glisser-déposer. */
+    /**
+     * Rang d'arrivée dans sa colonne, croissant : posé à la fin de la colonne quand la
+     * carte y entre. Départage les listes (`list_cards`, la liste HTTP) ; l'écran trie
+     * autrement.
+     */
     position: integer('position').notNull().default(0),
     /**
      * Échéance, nullable : une carte sans date est la norme, et une date posée sur
@@ -468,9 +472,9 @@ export const cardIssues = sqliteTable(
  * Table étroite et en ajout seul, parce que `cards` ne porte que `column` et
  * `updated_at`, qu'une simple correction de titre réécrit : sans elle, on ne peut pas
  * dire **quand** une carte a été terminée, et c'est précisément ce que le Journal
- * raconte. Elle doit être écrite partout où une colonne change — le glisser-déposer,
- * le menu du panneau, et le passage automatique en « en cours » au lancement d'une
- * session. Un seul chemin oublié, et elle ment.
+ * raconte. Elle doit être écrite partout où une colonne change : voir les chemins
+ * qu'énumère `recordCardMove` (`apps/server/src/cards/moves.ts`). Un seul chemin
+ * oublié, et elle ment.
  */
 export const cardMoves = sqliteTable(
   'card_moves',
@@ -1404,6 +1408,14 @@ export const projectActions = sqliteTable(
     approvedUrl: text('approved_url'),
     /** La cadence relue en dernier (JSON) : une commande planifiée part sans clic. */
     approvedCadence: text('approved_cadence'),
+    /**
+     * Le placement, sa branche et l'arrêt relus en dernier (#260) : un agent qui les règle
+     * choisit l'arbre dont le code part et ce qui tourne sans personne pour le couper, et
+     * le refus y revient.
+     */
+    approvedPlacement: text('approved_placement').$type<ActionPlacement>(),
+    approvedPinnedBranch: text('approved_pinned_branch'),
+    approvedStopCadence: text('approved_stop_cadence'),
     /** Un clic ou un agent peut la lancer ; faux, elle ne part qu'à sa cadence. */
     onDemand: integer('on_demand', { mode: 'boolean' }).notNull().default(true),
     /** `ScheduleCadence` en JSON ; NULL pour une commande qui ne part jamais seule. */
@@ -1419,7 +1431,8 @@ export const projectActions = sqliteTable(
     /**
      * Un service planifié s'arrête à cette cadence (`ScheduleCadence` en JSON) : le
      * balayage arrête son unité. NULL pour une tâche, qui finit seule, et pour un service
-     * qu'on arrête à la main. Hors relecture : arrêter ne lance rien.
+     * qu'on arrête à la main. Relue quand un agent l'écrit (#260) : la retirer laisse
+     * tourner le service.
      */
     stopCadence: text('stop_cadence'),
     /** Le prochain arrêt ; NULL sans cadence d'arrêt, ou en pause. */
@@ -1427,8 +1440,8 @@ export const projectActions = sqliteTable(
     /**
      * Où tourne un service : `follow` là où on le lance, `root` à la racine, `branch`
      * à la racine quand elle est sur `pinned_branch`, `per-worktree` une unité par arbre.
-     * Hors relecture : il ne change pas ce qui s'exécute, seulement lequel des arbres du
-     * projet le porte.
+     * Relu quand un agent l'écrit (#260) : il choisit lequel des arbres du projet, donc
+     * quel code, le service fait tourner.
      */
     placement: text('placement').$type<ActionPlacement>().notNull().default('follow'),
     pinnedBranch: text('pinned_branch'),

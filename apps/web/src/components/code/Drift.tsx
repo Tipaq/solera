@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
-import { BEHIND_ALERT, pluralOf } from '../../lib/code-model'
-import { useTranslate } from '../../lib/i18n'
+import { BEHIND_ALERT } from '../../lib/code-model'
+import { useTranslate, pluralOf } from '../../lib/i18n'
 
 /**
  * Où en est une branche face à la base : ↑ commits d'avance, ↓ de retard (ambre au-delà

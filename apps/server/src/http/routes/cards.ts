@@ -29,7 +29,6 @@ import {
   cardRelationKindSchema,
   createCardBodySchema,
   createCardNoteBodySchema,
-  reorderCardsBodySchema,
   toggleSubtask,
   toggleSubtaskBodySchema,
   promoteSubtaskBodySchema,
@@ -814,81 +813,6 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     const created = promoteSubtask(ctx.db, card, body, { userId: user.id })
 
     return reply.status(201).send({ card: readCard(id, card.projectId), created: readCard(created.id, card.projectId) })
-  })
-
-  app.post('/api/projects/:id/cards/order', async (request) => {
-    const user = requireUser(request)
-    const { id } = request.params as { id: string }
-    const body = reorderCardsBodySchema.parse(request.body)
-    loadProject(id, user.id)
-
-    // Le kanban ne montre que les feuilles : une carte qui a des enfants n'y est pas,
-    // n'entre donc pas dans le compte d'une colonne complète, et ne s'y range pas — sa
-    // colonne se déduit de ses enfants.
-    const all = ctx.db
-      .select({ id: cards.id, column: cards.column, parentId: cards.parentId })
-      .from(cards)
-      .where(eq(cards.projectId, id))
-      .all()
-    const parentIds = new Set(all.map((row) => row.parentId).filter((parentId) => parentId !== null))
-    const known = new Map(all.filter((row) => !parentIds.has(row.id)).map((row) => [row.id, row.column]))
-
-    const placed = new Set<string>()
-    for (const group of body.columns) {
-      for (const cardId of group.ids) {
-        if (parentIds.has(cardId)) {
-          throw badRequest('card_is_parent', 'Card {id} has children; its column follows theirs.', { id: cardId })
-        }
-        if (!known.has(cardId)) {
-          throw badRequest('card_not_in_project', 'Card {id} does not belong to this project.', {
-            id: cardId,
-          })
-        }
-        if (placed.has(cardId)) {
-          throw badRequest('card_placed_twice', 'Card {id} appears in two columns.', { id: cardId })
-        }
-        placed.add(cardId)
-      }
-    }
-
-    // Une colonne réécrite doit l'être en entier. Un envoi partiel laisserait les
-    // cartes omises avec leurs anciennes positions, donc intercalées au hasard parmi
-    // les nouvelles, et le board afficherait un ordre que personne n'a demandé.
-    const touched = new Set(body.columns.map((group) => group.column))
-    for (const [cardId, column] of known) {
-      if (touched.has(column) && !placed.has(cardId)) {
-        throw badRequest(
-          'card_column_incomplete',
-          'Reordering column {column} requires all of its cards.',
-          { column },
-        )
-      }
-    }
-
-    const now = Date.now()
-    writeTransaction(ctx.db, (tx) => {
-      for (const group of body.columns) {
-        group.ids.forEach((cardId, index) => {
-          const patch: Partial<typeof cards.$inferInsert> = {
-            column: group.column,
-            position: index,
-          }
-          const from = known.get(cardId)
-          // Un changement de colonne est un mouvement dans le workflow, pas un simple
-          // rangement : il vaut modification. Une réorganisation verticale n'en est
-          // pas une et ne doit pas faire remonter toute la colonne en « modifiée ».
-          if (from !== group.column) patch.updatedAt = now
-          tx.update(cards).set(patch).where(eq(cards.id, cardId)).run()
-          // Dans la transaction qui déplace : un glissement qui échoue à mi-chemin ne
-          // doit pas laisser au Journal des mouvements qui n'ont pas eu lieu.
-          if (from && from !== group.column) {
-            recordCardMove(tx, { cardId, from, to: group.column, userId: user.id, at: now })
-          }
-        })
-      }
-    })
-
-    return { ok: true }
   })
 }
 

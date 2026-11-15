@@ -12,8 +12,7 @@ import {
   renameDraftCard,
   toggleDraftAfter,
 } from '../../lib/card-draft-edit'
-import { pluralOf } from '../../lib/code-model'
-import { useTranslate } from '../../lib/i18n'
+import { useTranslate, pluralOf } from '../../lib/i18n'
 
 /**
  * Le brouillon de découpage d'un jalon, corrigé sur sa page (#195, spec jalons AFF-6) :
