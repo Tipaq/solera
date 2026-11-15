@@ -92,7 +92,7 @@ test('la carte de la conversation passe en revue sans clic, tracée au nom de la
   assert.equal(columnOf(own!), 'review')
 
   // Le propriétaire pour qui le geste est fait, et la session qui l'a fait : c'est ce que
-  // la migration ajoute, et ce qui distingue ce mouvement d'un glisser-déposer.
+  // la migration ajoute, et ce qui distingue ce mouvement d'un geste de l'écran.
   const [moved] = db.select().from(cardMoves).all()
   assert.equal(moved?.fromColumn, 'in_progress')
   assert.equal(moved?.toColumn, 'review')

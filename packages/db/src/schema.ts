@@ -240,7 +240,11 @@ export const cards = sqliteTable(
      * L'activité et l'état de merge sont dérivés et n'ont donc pas de colonne ici.
      */
     column: text('column').$type<CardColumn>().notNull(),
-    /** Ordre manuel dans sa colonne, croissant. Réécrit en bloc par le glisser-déposer. */
+    /**
+     * Rang d'arrivée dans sa colonne, croissant : posé à la fin de la colonne quand la
+     * carte y entre. Départage les listes (`list_cards`, la liste HTTP) ; l'écran trie
+     * autrement.
+     */
     position: integer('position').notNull().default(0),
     /**
      * Échéance, nullable : une carte sans date est la norme, et une date posée sur
@@ -468,9 +472,9 @@ export const cardIssues = sqliteTable(
  * Table étroite et en ajout seul, parce que `cards` ne porte que `column` et
  * `updated_at`, qu'une simple correction de titre réécrit : sans elle, on ne peut pas
  * dire **quand** une carte a été terminée, et c'est précisément ce que le Journal
- * raconte. Elle doit être écrite partout où une colonne change — le glisser-déposer,
- * le menu du panneau, et le passage automatique en « en cours » au lancement d'une
- * session. Un seul chemin oublié, et elle ment.
+ * raconte. Elle doit être écrite partout où une colonne change : voir les chemins
+ * qu'énumère `recordCardMove` (`apps/server/src/cards/moves.ts`). Un seul chemin
+ * oublié, et elle ment.
  */
 export const cardMoves = sqliteTable(
   'card_moves',

@@ -477,7 +477,7 @@ test('promouvoir une sous-tâche : une sœur, la ligne en #N, et sa case qui sui
   assert.equal((solo.json() as { created: CardDto }).created.title, 'Voir la une')
 })
 
-test('card_moves : les deux chemins qui changent une colonne écrivent une ligne', async (t) => {
+test('card_moves : le menu de la carte et le lancement d\'une session écrivent une ligne', async (t) => {
   const { app, ctx, create, moves } = await harness(t)
   const card = await create('Une carte qui traverse le board')
 
