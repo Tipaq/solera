@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { cx } from '@solera/ui'
 import type { EditorSeed } from '../../../lib/action-editor'
 import { conversationPath } from '../../../lib/conversation-route'
-import { elapsed } from '../../../lib/dates'
+import { ago } from '../../../lib/automations'
 import { useTranslate } from '../../../lib/i18n'
 import { humanLabel, loadText, shortCommand, type SessionWork, type WorkFamily } from '../../../lib/session-works'
 import { AgentIcon } from '../../AgentIcon'
@@ -41,7 +41,8 @@ export function useWorkText(projectId: string, work: SessionWork) {
     name: humanLabel(work, t),
     short: work.command ? shortCommand(work.command) : null,
     load: loadText(work, t),
-    since: work.startedAt ? elapsed(work.startedAt) : null,
+    // Comme les tuiles d'action : « depuis 3 min », pas « depuis 3min » (#274).
+    since: work.startedAt ? ago(work.startedAt, Date.now(), t) : null,
     sessionHref: conversationPath({ id: work.conversationId, projectId }),
   }
 }
