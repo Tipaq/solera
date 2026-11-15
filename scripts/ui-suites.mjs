@@ -42,12 +42,12 @@ const BATCHES = [
     'services', // 16
     'panel-project', // 16
     'decisions', // 16
-    'onboarding', // ~10 en local, à mesurer
     'worktree-status', // 16
     'palette', // 16
     'api-mcp', // 15
     'card-draft', // 12
     'brief-field', // 12
+    'onboarding', // ~10 en local, à mesurer
     'planned', // ~25, à mesurer
   ],
   [

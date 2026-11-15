@@ -88,29 +88,48 @@ try {
       throw error
     }
   }
-  // Ce que le navigateur attend encore, et ce qu'il a perdu : un `goto` qui bloque sur
-  // `load` (#263) dit lui-même quels modules restent en vol et lesquels ont échoué, avec
-  // l'erreur réseau de Chromium. Sans quoi on ne voit qu'un délai dépassé.
+  // Ce que le navigateur attend encore, et ce qu'il a perdu : une navigation qui bloque
+  // sur `load` (#263) le dit elle-même. Le CDP distingue une requête qui attend encore un
+  // socket (pas d'`ExtraInfo` : la file des 6 connexions par hôte), une requête partie
+  // sans réponse (Vite ne rend pas) et une réponse en cours ; les journaux de Vite suivent.
+  const network = await context.newCDPSession(page)
+  await network.send('Network.enable')
   const inFlight = new Map()
-  const failed = []
-  page.on('request', (request) => inFlight.set(request, Date.now()))
-  page.on('requestfinished', (request) => inFlight.delete(request))
-  page.on('requestfailed', (request) => {
-    inFlight.delete(request)
-    failed.push(`${request.failure()?.errorText} ${request.url()}`)
+  let failed = []
+  network.on('Network.requestWillBeSent', ({ requestId, request }) => {
+    inFlight.set(requestId, { url: request.url, since: Date.now(), state: 'sans socket' })
   })
-  const open = async (url) => {
+  network.on('Network.requestWillBeSentExtraInfo', ({ requestId }) => {
+    const entry = inFlight.get(requestId)
+    if (entry && entry.state === 'sans socket') entry.state = 'partie, sans réponse'
+  })
+  network.on('Network.responseReceived', ({ requestId }) => {
+    const entry = inFlight.get(requestId)
+    if (entry) entry.state = 'réponse en cours'
+  })
+  network.on('Network.loadingFinished', ({ requestId }) => inFlight.delete(requestId))
+  network.on('Network.loadingFailed', ({ requestId, errorText, canceled }) => {
+    const entry = inFlight.get(requestId)
+    inFlight.delete(requestId)
+    if (entry && !canceled) failed.push(`${errorText} ${entry.url}`)
+  })
+  const explained = async (label, navigate) => {
+    failed = []
     try {
-      await page.goto(url)
+      await navigate()
     } catch (error) {
       const now = Date.now()
-      const pending = [...inFlight].sort((a, b) => a[1] - b[1]).map(([request, since]) => `${Math.round((now - since) / 1000)} s ${request.url()}`)
-      console.error(`goto ${url} : ${pending.length} requêtes en vol, ${failed.length} en échec`)
-      console.error([...pending.slice(0, 20), ...failed.slice(-20)].join('\n'))
-      await page.screenshot({ path: join(shots, 'echec-goto.png') }).catch(() => {})
+      const pending = [...inFlight.values()].sort((a, b) => a.since - b.since)
+      const states = Object.entries(Object.groupBy(pending, (entry) => entry.state)).map(([state, entries]) => `${entries.length} ${state}`)
+      console.error(`${label} : ${pending.length} requêtes en vol (${states.join(', ')}), ${failed.length} en échec`)
+      for (const entry of pending.slice(0, 20)) console.error(`${Math.round((now - entry.since) / 1000)} s ${entry.state} ${entry.url}`)
+      for (const line of failed.slice(-20)) console.error(line)
+      console.error(`--- Vite ---\n${vite.diagnostics}`)
+      await page.screenshot({ path: join(shots, 'echec-navigation.png') }).catch(() => {})
       throw error
     }
   }
+  const open = (url) => explained(`goto ${url}`, () => page.goto(url))
   const button = (name) => page.getByRole('button', { name, exact: true })
   const settings = async () => (await context.request.get(`${base}/api/me/settings`)).json()
   /** Les réglages s'écrivent au clic, sans « Continuer » : on attend que la route l'ait pris. */
@@ -219,7 +238,7 @@ try {
   await page.getByRole('complementary').first().waitFor()
   assert.equal((await settings()).onboarding.pending, false)
   await page.getByText('Dans Solera', { exact: true }).first().waitFor()
-  await page.reload()
+  await explained('reload', () => page.reload())
   await page.waitForURL(/\/projects\/new$/)
 
   // Rejouée, elle rouvre à sa première étape ; « Passer la visite » mène au récapitulatif.
