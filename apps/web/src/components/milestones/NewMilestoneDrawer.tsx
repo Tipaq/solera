@@ -6,8 +6,7 @@ import { useMilestoneDraft, type MilestoneDraft } from '../../lib/card-drafts'
 import { useCards } from '../../lib/cards'
 import { useCreateMilestone, type CreatedMilestone } from '../../lib/create-milestone'
 import { dayFromInput } from '../../lib/dates'
-import { pluralOf } from '../../lib/code-model'
-import { useTranslate } from '../../lib/i18n'
+import { useTranslate, pluralOf } from '../../lib/i18n'
 import {
   ENTRY_STAGE,
   agentLine,

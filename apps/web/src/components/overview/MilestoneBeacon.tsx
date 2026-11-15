@@ -9,9 +9,8 @@ import { WaitingMark } from '../inbox/WaitingMark'
 import { MaturityTag } from '../milestones/MaturityTag'
 import { cardDestinationHref } from '../../lib/card-destination'
 import { loadedStatus, type StatusOf } from '../../lib/card-state'
-import { pluralOf } from '../../lib/code-model'
 import { relativeDate } from '../../lib/dates'
-import { locale, useTranslate } from '../../lib/i18n'
+import { locale, useTranslate, pluralOf } from '../../lib/i18n'
 import { waitingByMilestone, type InboxItem, type MilestoneWaiting } from '../../lib/inbox'
 import {
   beaconOf,

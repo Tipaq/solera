@@ -7,7 +7,7 @@ import { PlaceShell, type PlaceTab } from '../components/places/PlaceShell'
 import { actionsTabBadge } from '../lib/actions-tab'
 import { useActionsStatus } from '../lib/automations-query'
 import { useAllCards } from '../lib/cards'
-import { useTranslate } from '../lib/i18n'
+import { useTranslate, pluralOf } from '../lib/i18n'
 import { openLeafCount } from '../lib/place'
 import { usePortfolioAskingCount } from '../lib/portfolio'
 import { useProjects } from '../lib/projects'
@@ -49,14 +49,14 @@ export function PortfolioLayout() {
       icon: <Layers size={15} />,
       count: asking,
       tone: 'caution',
-      countTitle: t(asking === 1 ? 'place.count.asking.one' : 'place.count.asking.many', { count: asking }),
+      countTitle: t(pluralOf(asking) === 'one' ? 'place.count.asking.one' : 'place.count.asking.many', { count: asking }),
     },
     {
       to: '/projects/board',
       label: t('project.board.title'),
       icon: <SquareKanban size={15} />,
       count: open,
-      countTitle: t(open === 1 ? 'place.count.openCards.one' : 'place.count.openCards.many', { count: open }),
+      countTitle: t(pluralOf(open) === 'one' ? 'place.count.openCards.one' : 'place.count.openCards.many', { count: open }),
     },
     { to: '/projects/timeline', label: t('project.view.timeline'), icon: <Flag size={15} /> },
     {

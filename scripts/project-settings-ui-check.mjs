@@ -345,6 +345,8 @@ try {
   await instructions.getByText('Claude Code, Codex, Grok Build et OpenCode n’auront pas les consignes du projet.', { exact: true }).waitFor()
   await instructions.getByRole('listitem').filter({ hasText: 'AGENTS.md' }).getByText('absent', { exact: true }).waitFor()
   await instructions.getByText('Vide.', { exact: true }).waitFor()
+  // 0 se met au singulier en français (#270).
+  await instructions.getByText(/^0 ligne( · |$)/).waitFor()
   // Changer de mode : tout de suite, hors du brouillon de la page.
   await instructions.getByRole('radio', { name: /^Dans le dépôt/ }).click()
   await until(() => instructions.getByRole('radio', { name: /^Dans le dépôt/ }).getAttribute('aria-checked'), (value) => value === 'true', 'mode dépôt choisi')

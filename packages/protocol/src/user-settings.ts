@@ -29,13 +29,6 @@ import {
 } from './config-layers.js'
 
 /**
- * Ordre des cartes d'une colonne : `manual` suit le glisser-déposer, `recent` met en tête
- * la dernière arrivée dans la colonne, `oldest` la plus ancienne (une file d'attente).
- */
-export const boardOrderSchema = z.enum(['manual', 'recent', 'oldest'])
-export type BoardOrder = z.infer<typeof boardOrderSchema>
-
-/**
  * Réglages propres à un compte, par opposition à ceux de l'instance.
  *
  * Ils ne décrivent pas un comportement du serveur mais un point de départ : avec quoi
@@ -66,13 +59,6 @@ export interface UserSettingsDto {
    * son téléphone.
    */
   collapsedProjects: string[]
-  /**
-   * Ordre des cartes dans les colonnes du board, par projet : manuel (glisser-déposer)
-   * ou par arrivée dans la colonne, récentes ou anciennes en tête. Absent vaut manuel.
-   * Au compte et non au projet : c'est une façon de lire le board, pas une règle qu'un
-   * membre impose aux autres.
-   */
-  boardOrder: Record<string, BoardOrder>
   /**
    * CLI dont on ne veut plus entendre parler tant qu'ils ne sont pas installés.
    *
@@ -309,7 +295,6 @@ export const storedUserSettingsSchema = z
     // rien à qui la lit, et la nettoyer demanderait de toucher ce réglage à chaque
     // suppression, y compris pour les comptes qui ne se connectent plus.
     collapsedProjects: z.array(z.string()).default([]).catch([]),
-    boardOrder: z.record(z.string(), boardOrderSchema).default({}).catch({}),
     hiddenAgents: z.array(agentKindSchema).default([]).catch([]),
     projectsDir: z.string().nullable().default(null).catch(null),
     appearance: appearancePrefsSchema.nullable().default(null).catch(null),
@@ -322,7 +307,6 @@ export const storedUserSettingsSchema = z
     agentLayer: EMPTY_CONFIG_LAYER,
     agentDefaults: DEFAULT_AGENT_DEFAULTS,
     collapsedProjects: [],
-    boardOrder: {},
     hiddenAgents: [],
     projectsDir: null,
     appearance: null,
@@ -346,8 +330,6 @@ export const updateUserSettingsBodySchema = z.object({
   agentLayer: configLayerPatchSchema.optional(),
   /** La liste entière : c'est un état d'affichage, pas un journal d'ouvertures. */
   collapsedProjects: z.array(z.string().uuid()).optional(),
-  /** L'ordre d'un seul board ; les autres projets gardent le leur. */
-  boardOrder: z.object({ projectId: z.string().uuid(), order: boardOrderSchema }).optional(),
   /** La liste entière, comme les projets repliés. */
   hiddenAgents: z.array(agentKindSchema).optional(),
   /** `null` retire le dossier mémorisé ; absent, il ne bouge pas. */
