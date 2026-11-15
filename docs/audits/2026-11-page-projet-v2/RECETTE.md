@@ -48,7 +48,7 @@ Rien n'est absent. Les 17 écarts mineurs ont tous une carte :
 | Carte | Écart | Jalon |
 |---|---|---|
 | #252 | graphe git : « GRAPHE » chevauche « MESSAGE » (T-7.1) | — |
-| #253 | `PanelHost` encore monté sur le Tableau (TIR-9) | #230 |
+| #253 | `PanelHost` encore monté sur le Tableau (TIR-9) — réglé, PR #214 | #230 |
 | #261 | l'aperçu du mois gèle sur un cron « chaque minute » (PLA-11) | #200 |
 | #269 | `/sessions` au téléphone : deux bandes (COQ-12, SES-1) — **corrigé dans la PR de #269** | #230 |
 | #270 | « 0 lignes » au lieu de « 0 ligne » (R-6.6) | #230 |
@@ -110,7 +110,7 @@ Restes signalés par #228 en dehors de la recette : #279 (la couleur de « trava
 | TIR-6 role=dialog, aria-label, focus entre | ✅ | « Carte #2 », focus sur le tiroir à l'ouverture ; retour au déclencheur : shell-ui-check:179 |
 | TIR-7 Échap : couche la plus haute seulement | ✅ code | Échap ferme la fiche (vu) ; menu Radix / autocomplétion d'abord : shell-ui-check.mjs:193-229 ; capture, IME, defaultPrevented : escape-layers.ts:55,70-74 |
 | TIR-8 un seul comportement de panneau par page | ✅ | onglets de projet → tiroir ; conversation → pile dans le panneau (voir capture coque-panel-detail) |
-| TIR-9 hôte de panneau appelé, sans bouton | 🟡 | aucun bouton de panneau sur Travail ni Tableau ; mais `PanelHost` encore monté sur le Tableau (BoardPage.tsx:366) — #253 |
+| TIR-9 hôte de panneau appelé, sans bouton | ✅ code | aucun bouton de panneau sur Travail ni Tableau ; `PanelHost` monté par Travail et Actions seulement, la palette l'appelle (#253) : checks/panel.mjs |
 
 #### 1.3 Barre d'outils sur une ligne
 | Point | État | Preuve / carte |
