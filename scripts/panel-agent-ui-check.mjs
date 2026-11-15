@@ -394,6 +394,12 @@ try {
       await pane.getByText('Explore · sonnet · high · travaille depuis 4 min').waitFor()
       await click(pane.getByRole('button', { name: 'Écrire à l’agent' }))
       const box = pane.getByRole('textbox', { name: /L’agent principal transmet ton message à « Cartographier le panneau »/ })
+      // Échap ferme le formulaire, pas le détail.
+      await box.fill('brouillon')
+      await box.press('Escape')
+      assert.equal(await box.count(), 0)
+      await back(pane).waitFor()
+      await click(pane.getByRole('button', { name: 'Écrire à l’agent' }))
       await box.fill('Regarde aussi le rail vertical.')
       await shot74(pane, 'ecrire')
       await click(pane.getByRole('button', { name: 'Envoyer' }))

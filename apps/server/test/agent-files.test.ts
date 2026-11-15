@@ -166,6 +166,8 @@ test('agentTree : chacun sous son plus proche ancêtre de la liste, avec le comp
   const a = agent('a', [], { parentId: 'b' })
   const b = agent('b', [], { parentId: 'a' })
   assert.deepEqual(agentTree([a], [a, b]).map((node) => node.agent.id), ['a'])
+  // Ni quand la boucle est entière dans la liste : les deux restent visibles.
+  assert.deepEqual(agentTree([a, b], [a, b]).map((node) => node.agent.id), ['a', 'b'])
 })
 
 test('treeRows : la profondeur de chaque ligne, et un nœud replié cache sa descendance', () => {
@@ -204,6 +206,11 @@ test('buildSubAgents : le modèle, l’effort et le nom que l’appel demande, s
     } as Partial<ChatItem>),
     tool('s3', 'Task', { description: 'Rien' }, null),
   ], tasks)
+  // Nommé et terminé : le nom ne le joint plus, l'agentId le reprend.
+  const [finished] = buildSubAgents([
+    tool('s4', 'Agent', { description: 'Fini', name: 'relecteur' }, null, { output: 'Fait.\nagentId: b7d4' } as Partial<ChatItem>),
+  ], tasks)
+  assert.equal(finished!.address, 'b7d4')
   assert.deepEqual([named!.model, named!.effort, named!.address], ['haiku', 'low', 'relecteur'])
   assert.deepEqual([anonymous!.model, anonymous!.effort, anonymous!.address], [null, 'high', 'a3f9c2e1'])
   assert.deepEqual([bare!.model, bare!.effort, bare!.address], [null, null, null])

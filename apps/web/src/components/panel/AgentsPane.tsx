@@ -1,5 +1,6 @@
 import { AGENT_CAPABILITIES, type AgentKind } from '@solera/protocol'
 import {
+  Button,
   IconButton,
   PanelEmpty,
   PanelGroup,
@@ -674,6 +675,10 @@ function SubAgentMessage({
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const label = subAgentLabel(agent)
+  const form = useRef<HTMLFormElement>(null)
+  // Sa propre couche : Échap ferme le formulaire et garde le détail, au lieu de remonter
+  // à la liste en perdant le brouillon.
+  useEscapeLayer(true, onCancel, form)
 
   const send = (event?: FormEvent) => {
     event?.preventDefault()
@@ -690,14 +695,10 @@ function SubAgentMessage({
   }
   const keys = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) send()
-    if (event.key === 'Escape') {
-      event.stopPropagation()
-      onCancel()
-    }
   }
 
   return (
-    <form onSubmit={send} className="flex shrink-0 flex-col gap-1.5 border-t border-line px-3 py-2">
+    <form ref={form} onSubmit={send} className="flex shrink-0 flex-col gap-1.5 border-t border-line px-3 py-2">
       <label htmlFor={`relay-${agent.id}`} className="text-xs text-ink-faint">
         {t('panel.agent.message.hint', { name: label })}
       </label>
@@ -713,16 +714,12 @@ function SubAgentMessage({
       />
       {error ? <p className="text-xs text-critical">{error}</p> : null}
       <div className="flex items-center justify-end gap-1">
-        <button type="button" onClick={onCancel} className={panelGestureClass}>
+        <Button type="button" size="sm" variant="ghost" onClick={onCancel}>
           {t('panel.agent.message.cancel')}
-        </button>
-        <button
-          type="submit"
-          disabled={!text.trim() || sending}
-          className={cx(panelGestureClass, 'border border-line text-ink hover:border-line-strong')}
-        >
-          <Send size={12} aria-hidden /> {t('panel.agent.message.send')}
-        </button>
+        </Button>
+        <Button type="submit" size="sm" variant="secondary" icon={<Send size={12} />} disabled={!text.trim() || sending}>
+          {t('panel.agent.message.send')}
+        </Button>
       </div>
     </form>
   )

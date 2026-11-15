@@ -42,9 +42,10 @@ export interface SubAgent {
   model: string | null
   effort: string | null
   /**
-   * Le nom sous lequel l'agent principal peut lui écrire : celui que l'appel lui a donné,
-   * sinon l'`agentId` que Claude Code annonce dans le résultat de l'appel. Nul tant que ni
-   * l'un ni l'autre n'est connu.
+   * Ce que l'agent principal donne à `SendMessage` pour lui écrire : l'`agentId` que Claude
+   * Code annonce dans le résultat de l'appel, sinon le nom que l'appel lui a donné — un nom
+   * ne joint l'agent que tant qu'il tourne, l'identifiant le reprend aussi une fois fini.
+   * Nul tant que ni l'un ni l'autre n'est connu.
    */
   address: string | null
 }
@@ -115,7 +116,7 @@ export function buildSubAgents(items: ChatItem[], tasks: ChatState['tasks']): Su
       // `effort` pour Claude Code, `reasoning_effort` pour les CLI qui suivent l'API d'OpenAI.
       model: field(item.input, 'model') || null,
       effort: field(item.input, 'effort') || field(item.input, 'reasoning_effort') || null,
-      address: field(item.input, 'name') || agentIdIn(item.output),
+      address: agentIdIn(item.output) ?? (field(item.input, 'name') || null),
     })
   }
 

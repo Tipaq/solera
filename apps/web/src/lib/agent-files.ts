@@ -165,10 +165,15 @@ export function agentTree(list: SubAgent[], all: SubAgent[]): AgentNode[] {
   const nodes = new Map(list.map((agent) => [agent.id, { agent, children: [], descendants: 0 } as AgentNode]))
   const roots: AgentNode[] = []
   for (const node of nodes.values()) {
+    // Un journal incohérent qui boucle ne doit ni faire tourner l'onglet, ni faire disparaître
+    // ses agents : la remontée s'arrête à la première chaîne qui revient sur elle-même.
+    const seen = new Set([node.agent.id])
     let parentId = node.agent.parentId
-    // Le compte borne la remontée : un journal incohérent ne doit pas faire tourner l'onglet.
-    for (let hops = 0; parentId && !nodes.has(parentId) && hops < byId.size; hops += 1) parentId = byId.get(parentId)?.parentId ?? null
-    const parent = parentId && parentId !== node.agent.id ? nodes.get(parentId) : undefined
+    while (parentId && !nodes.has(parentId) && !seen.has(parentId)) {
+      seen.add(parentId)
+      parentId = byId.get(parentId)?.parentId ?? null
+    }
+    const parent = parentId && !seen.has(parentId) && !closesLoop(parentId, node.agent.id, nodes) ? nodes.get(parentId) : undefined
     if (parent) parent.children.push(node)
     else roots.push(node)
   }
@@ -178,6 +183,16 @@ export function agentTree(list: SubAgent[], all: SubAgent[]): AgentNode[] {
   }
   roots.forEach(count)
   return roots
+}
+
+/** Vrai si accrocher `child` sous `parentId` fermerait une boucle dans la liste. */
+function closesLoop(parentId: string, child: string, nodes: Map<string, AgentNode>): boolean {
+  const seen = new Set<string>()
+  for (let id: string | null = parentId; id && nodes.has(id) && !seen.has(id); id = nodes.get(id)!.agent.parentId) {
+    if (id === child) return true
+    seen.add(id)
+  }
+  return false
 }
 
 /** Les lignes à montrer d'un arbre, avec leur profondeur ; un nœud replié cache sa descendance. */
