@@ -29,6 +29,7 @@ import {
   draftProblem,
   settingsBaseOf,
   settingsPatchOf,
+  unsentEdits,
   type SettingsEdits,
   type SettingsField,
 } from '../lib/project-settings'
@@ -91,7 +92,8 @@ function useSettingsDraft(project: ProjectDto) {
     changed,
     isChanged: (...fields: SettingsField[]) => fields.some((field) => changed.includes(field)),
     set: <K extends SettingsField>(field: K, value: SettingsEdits[K]) => {
-      update.reset()
+      // L'erreur d'avant s'efface ; un enregistrement en cours, lui, reste suivi.
+      if (!update.isPending) update.reset()
       setEdits((current) => ({ ...current, [field]: value }))
     },
     count,
@@ -102,11 +104,13 @@ function useSettingsDraft(project: ProjectDto) {
     },
     save: async () => {
       const configLayer = agentLayer.body()
+      const sentLayer = agentLayer.sent()
       // L'enregistré relu (la mutation attend l'invalidation) avant d'effacer le brouillon :
-      // sinon les champs repasseraient un instant par les anciennes valeurs.
+      // sinon les champs repasseraient un instant par les anciennes valeurs. Seul ce qui est
+      // parti s'efface : un geste fait pendant l'attente reste dans le brouillon (#285).
       await update.mutateAsync({ id: project.id, ...settingsPatchOf(base, edits), ...(configLayer.length > 0 ? { configLayer } : {}) })
-      setEdits({})
-      agentLayer.clear()
+      setEdits((current) => unsentEdits(current, edits))
+      agentLayer.settle(sentLayer)
       setNotice(t(count > 1 ? 'projectSettings.save.done.other' : 'projectSettings.save.done.one', { count: String(count) }))
     },
     busy: update.isPending,
