@@ -68,6 +68,7 @@ export function DraftAgentPicker({
   const offered = agentKindSchema.options.filter((kind) => entryOf(kind)?.reason !== 'disabled')
   const masked = offered.filter((kind) => hiddenAgent(entryOf(kind), hidden))
   const shown = offered.filter((kind) => !masked.includes(kind))
+  const maskedLabels = new Intl.ListFormat(locale(), { type: 'conjunction' }).format(masked.map((kind) => AGENT_LABELS[kind]))
 
   return (
     <fieldset>
@@ -169,7 +170,7 @@ export function DraftAgentPicker({
       </div>
       {masked.length > 0 ? (
         <p className="mt-2 text-xs text-ink-faint">
-          {t('agent.install.hidden', { labels: new Intl.ListFormat(locale(), { type: 'conjunction' }).format(masked.map((kind) => AGENT_LABELS[kind])) })}{' '}
+          {t('agent.install.hidden', { labels: maskedLabels })}{' '}
           <button type="button" className="underline hover:text-ink" onClick={onReveal}>
             {t('agent.install.reveal')}
           </button>
