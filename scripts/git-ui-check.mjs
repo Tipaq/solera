@@ -400,10 +400,13 @@ try {
   await panel.screenshot({ animations: 'disabled', path: join(shots, 'commit-selectionne.png') })
   // Le clic droit ne porte que sur le sujet (carte #57) : le sha et ceux des parents
   // sont du texte qu'on copie, et c'est le menu du navigateur qui doit s'y ouvrir.
-  const sha = panel.locator('.font-mono').filter({ hasText: /^[0-9a-f]{7,}$/ }).first()
-  await sha.click({ button: 'right' })
-  await delay(300)
-  assert.equal(await page.getByRole('menuitem').count(), 0, 'le sha garde le menu du navigateur')
+  const shas = panel.locator('.font-mono').filter({ hasText: /^[0-9a-f]{7,}$/ })
+  assert.ok((await shas.count()) >= 2, 'le sha du commit et celui de son parent')
+  for (const sha of await shas.all()) {
+    await sha.click({ button: 'right' })
+    await delay(300)
+    assert.equal(await page.getByRole('menuitem').count(), 0, 'chaque sha garde le menu du navigateur')
+  }
   await panel.getByText('Convert Fahrenheit without rounding twice', { exact: true }).last().click({ button: 'right' })
   await page.getByRole('menuitem', { name: /^Copier le sha / }).waitFor()
   await page.keyboard.press('Escape')
