@@ -196,6 +196,9 @@ try {
   await save.click()
   const project1 = async () => (await (await context.request.get(`${base}/api/projects`)).json()).find((entry) => entry.id === project.id)
   await until(project1, (current) => current.configLayer.shared.cardFiling === 'deny', 'rangement de carte au projet')
+  // La page vide son brouillon une fois l'enregistré relu, après le serveur : un geste
+  // fait avant serait effacé avec lui, et « modifié ici » ne rendrait pas l'héritage (#268).
+  await page.getByText('1 réglage enregistré.', { exact: true }).waitFor()
   // Ce qu'il ne change pas reste celui du compte : les décisions réglées plus haut.
   const projectDecisions = page.locator('#reglage-agent-requests-decisions')
   assert.ok((await projectDecisions.getByRole('combobox', { name: 'Décisions' }).textContent()).includes('Demande mon accord'))

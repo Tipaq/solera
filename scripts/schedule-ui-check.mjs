@@ -64,6 +64,9 @@ try {
     SOLERA_DATA_DIR: join(data, 'data'),
     SOLERA_WEB_ROOT: join(data, 'web'),
     FAKE_CLAUDE_LOG: claudeStdinLog,
+    // Un tour de 5 s : la tuile doit avoir le temps de dire « En cours » (l. ~225),
+    // ce qu'un tour instantané ne lui laisse pas en CI.
+    FAKE_CLAUDE_TURN_MS: '5000',
   }
   const server = run(['--import', 'tsx', 'src/main.ts'], serverDir, env)
   const vite = run([join(webDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webDir, env)
