@@ -4,7 +4,7 @@ import type { GraphNodeDto, GraphRefDto } from '@solera/protocol'
 import { relativeDate, shortAge } from '../../../lib/dates'
 import { useTranslate } from '../../../lib/i18n'
 import { cx } from '@solera/ui'
-import { Lanes, laneWidth, ROW_HEIGHT } from './lanes'
+import { graphWidth, Lanes, ROW_HEIGHT } from './lanes'
 import { CommitMenu, type MenuContext } from './menus'
 
 /**
@@ -40,7 +40,7 @@ export function GraphHeader({ lanes, hovered, onHead }: {
   const t = useTranslate()
   return (
     <div className="sticky top-0 z-10 flex items-center gap-2 bg-surface px-2.5 py-1 text-micro font-semibold tracking-wide text-ink-faint uppercase">
-      <span className="shrink-0" style={{ width: laneWidth(lanes) }}>
+      <span className="shrink-0 truncate" style={{ width: graphWidth(lanes) }} data-graph-label={lanes}>
         {t('git.column.graph')}
       </span>
       {hovered ? (

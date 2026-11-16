@@ -30,6 +30,8 @@ import { launchBrowser } from './checks/browser.mjs'
  *   clavier : un `click()` de Playwright ne dirait rien du geste qui existe vraiment.
  *   Lâcher une branche **propose** au lieu d'agir, et réordonner un plan change l'ordre
  *   dans lequel git rejoue — ce qui se lit dans `git log`, pas à l'écran.
+ * - **l'en-tête « Graphe » ne chevauche pas « Message »**, à un couloir, à quelques-uns
+ *   et à beaucoup, et reste aligné sur les couloirs dessinés dessous (carte #252).
  *
  * Les images sortent dans `docs/audits/2026-10-15-git/lot-1/`, `lot-2/` et `lot-3/`,
  * une par vue.
@@ -189,10 +191,12 @@ try {
   const shots2 = join(root, 'docs/audits/2026-10-15-git/lot-2')
   const shots3 = join(root, 'docs/audits/2026-10-15-git/lot-3')
   const shots4 = join(root, 'docs/audits/2026-10-15-git/lot-4')
+  const shotsHeader = join(root, 'docs/audits/2026-11-16-graphe-entete')
   await mkdir(shots, { recursive: true })
   await mkdir(shots2, { recursive: true })
   await mkdir(shots3, { recursive: true })
   await mkdir(shots4, { recursive: true })
+  await mkdir(shotsHeader, { recursive: true })
 
   const panel = page.locator('[data-panel="workspace"]')
   // La largeur du panneau accosté se règle à la poignée, qui l'écrit dans le stockage
@@ -229,6 +233,45 @@ try {
   const lanes = await panel.locator('svg line, svg path').count()
   assert.ok(lanes > 8, `le graphe dessine ses couloirs (${lanes} traits)`)
 
+  /**
+   * L'en-tête de la colonne du graphe : son libellé tient en entier, s'arrête avant
+   * « Message », et la colonne a la largeur et la place des couloirs dessinés dessous.
+   * Rend le nombre de couloirs, pour que chaque appel dise ce qu'il a vérifié.
+   */
+  const graphHeaderClear = async (label) => {
+    const header = panel.locator('[data-graph-label]')
+    await header.waitFor()
+    const layout = await header.evaluate((node) => {
+      const lanes = document.querySelector('[data-panel="workspace"] [data-hash] > svg').getBoundingClientRect()
+      const box = node.getBoundingClientRect()
+      return {
+        count: Number(node.dataset.graphLabel),
+        clipped: node.scrollWidth > node.clientWidth,
+        right: box.right,
+        next: node.nextElementSibling.getBoundingClientRect().left,
+        left: box.left,
+        width: box.width,
+        lanesLeft: lanes.left,
+        lanesWidth: lanes.width,
+      }
+    })
+    assert.ok(!layout.clipped, `${label} : « Graphe » tient en entier`)
+    assert.ok(layout.right <= layout.next, `${label} : « Graphe » s’arrête avant « Message » (${layout.right} > ${layout.next})`)
+    assert.equal(layout.left, layout.lanesLeft, `${label} : l’en-tête commence avec les couloirs`)
+    assert.equal(layout.width, layout.lanesWidth, `${label} : l’en-tête a la largeur des couloirs`)
+    return layout.count
+  }
+  /** L'en-tête et les premières rangées : l'image ne montre que ce qui est en cause. */
+  const headerShot = async (name) => {
+    const box = await panel.locator('[data-graph-label]').boundingBox()
+    const area = await panel.boundingBox()
+    await page.screenshot({
+      animations: 'disabled',
+      path: join(shotsHeader, name),
+      clip: { x: area.x, y: box.y - 6, width: area.width, height: 220 },
+    })
+  }
+
   const columns = async () => panel.evaluate((node) =>
     [...node.querySelectorAll('span')]
       .filter((span) => span.offsetParent !== null)
@@ -240,11 +283,15 @@ try {
   const wide = await columns()
   assert.deepEqual(wide.sort(), ['AUTEUR', 'DATE', 'GRAPHE', 'MESSAGE'], '40 rem : ni Sha ni Fil')
   await panel.screenshot({ animations: 'disabled', path: join(shots, 'graphe-40rem.png') })
+  const someLanes = await graphHeaderClear('40 rem')
+  assert.ok(someLanes >= 2 && someLanes <= 5, `le dépôt de démo a quelques couloirs (${someLanes})`)
+  await headerShot('quelques-couloirs.png')
 
   // ─── Le même, à 22 rem : le minimum accosté ───────────────────────────────
   await openGit(352)
   await panel.getByText(/^En cours — /).first().waitFor()
   assert.deepEqual((await columns()).sort(), ['GRAPHE', 'MESSAGE'], '22 rem : le graphe et le message, rien d’autre')
+  await graphHeaderClear('22 rem')
   await panel.screenshot({ animations: 'disabled', path: join(shots, 'graphe-22rem.png') })
 
   // ─── Et à 60 rem : la colonne Fil entre ───────────────────────────────────
@@ -426,6 +473,10 @@ try {
     (node) => !node.textContent.includes('Convert Fahrenheit'),
     await panel.elementHandle(),
   )
+  // Un graphe filtré est aplati sur un seul couloir : la colonne la plus étroite qui
+  // soit, celle où « Graphe » débordait (carte #252).
+  assert.equal(await graphHeaderClear('recherche'), 1, 'la recherche aplatit le graphe')
+  await headerShot('un-couloir.png')
 
   // Le filtre que `git log` ne sait pas poser : ce qu'un agent a écrit.
   await field.fill('')
@@ -788,8 +839,28 @@ try {
   )
   console.log('OK : réordonner le plan au clavier change l’ordre dans lequel git rejoue.')
 
+  // ─── Beaucoup de couloirs : l'écart se resserre, l'en-tête suit ──────────
+  // Dix branches nées de la même tête, chacune avec son commit : dix pointes, donc dix
+  // couloirs ouverts en haut du graphe. `commit-tree` n'écrit que des objets, et ne
+  // touche ni l'index ni l'arbre de travail du projet.
+  const rootGit = (...args) => execFileSync('git', args, {
+    cwd: nimbus.workspacePath,
+    encoding: 'utf8',
+    env: { ...process.env, GIT_AUTHOR_NAME: 'Alex Demo', GIT_AUTHOR_EMAIL: 'alex@example.com', GIT_COMMITTER_NAME: 'Alex Demo', GIT_COMMITTER_EMAIL: 'alex@example.com' },
+  }).trim()
+  for (let i = 1; i <= 10; i++) {
+    const tip = rootGit('commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', `Lane ${i}`)
+    rootGit('branch', '-f', `lanes/${i}`, tip)
+  }
+  await openGit(640, hero)
+  await panel.getByText('Lane 10', { exact: true }).waitFor()
+  const manyLanes = await graphHeaderClear('dix branches')
+  assert.ok(manyLanes > 8, `les dix branches ouvrent leurs couloirs (${manyLanes})`)
+  await headerShot('beaucoup-de-couloirs.png')
+  console.log(`OK : « Graphe » ne chevauche pas « Message », à 1, ${someLanes} et ${manyLanes} couloirs.`)
+
   assert.deepEqual(errors, [], 'aucune erreur de page')
-  console.log('Captures :', shots, ',', shots2, ',', shots3, 'et', shots4)
+  console.log('Captures :', shots, ',', shots2, ',', shots3, ',', shots4, 'et', shotsHeader)
 } finally {
   if (browser) await browser.close()
   for (const child of processes) child.kill('SIGKILL')
