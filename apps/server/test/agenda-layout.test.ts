@@ -195,6 +195,14 @@ test('cronRunsIn : les mêmes passages qu’un nextRun après l’autre, changem
     const [from, to] = [Date.UTC(2026, 9, 24, 22), Date.UTC(2026, 9, 25, 23)]
     assert.deepEqual(cronRunsIn(expression, { from, to, count: 2000, timeZone: PARIS }), witness(expression, from, to, 0, 2000), expression)
   }
+  // À Santiago, le 6 septembre 2026 n'a pas de minuit : son jour commence à 01:00.
+  const santiago = [Date.UTC(2026, 7, 31, 4), Date.UTC(2026, 8, 7, 3)] as const
+  assert.deepEqual(
+    cronRunsIn('0 0 * * *', { from: santiago[0], to: santiago[1], count: 100, timeZone: 'America/Santiago' }),
+    upcoming(cron('0 0 * * *'), 100, { after: santiago[0] - 1, horizon: santiago[1] - 1, timeZone: 'America/Santiago' }),
+  )
+  // Un motif rare ne lit pas chaque jour de la période.
+  assert.equal(nextRunsOf(() => cronRunsIn('0 0 29 2 *', { from: paris(1, 0), to: paris(30, 0), count: 10, timeZone: PARIS })).calls, 1)
   assert.deepEqual(cronRunsIn('pas un motif', { from: NOW, to: NOW + DAY, count: 10, timeZone: PARIS }), [])
 })
 

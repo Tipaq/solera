@@ -416,7 +416,7 @@ function cronClock(expression: string, timeZone: string): { pattern: Cron; secon
  * Les `count` premiers passages d'un motif cron dans `[from, to)`, comme `upcoming`, sans
  * un `nextRun` par passage : un motif « chaque minute » en a 10 080 par semaine (#283).
  * Un jour se lit par un seul `nextRun`, puis ses heures, minutes et secondes s'énumèrent.
- * Un jour de changement d'heure reste demandé à croner passage par passage, pour que
+ * Un jour de changement d'heure, minuit sauté compris, reste demandé à croner passage par passage, pour que
  * l'agenda le montre comme il tourne : au plus `count` `nextRun`, deux jours par an.
  */
 export function cronRunsIn(
@@ -435,9 +435,12 @@ export function cronRunsIn(
     const lo = Math.max(from, start)
     const hi = Math.min(end, to)
     const next = pattern.nextRun(new Date(lo - 1))?.getTime()
-    if (next === undefined) break
+    // Un motif rare cherche loin : ce qu'il trouve au-delà de la période clôt la lecture.
+    if (next === undefined || next >= to) break
     if (next >= hi) continue
-    if (end - start !== DAY) {
+    // Un jour qui ne va pas de minuit à minuit : il change d'heure, ou son minuit saute
+    // (America/Santiago), et 24 h pile n'y valent pas 24 heures murales.
+    if (end - start !== DAY || zonedParts(start, timeZone).hour !== 0) {
       runs.push(...upcoming({ kind: 'cron', expression }, count - runs.length, { after: lo - 1, horizon: hi - 1, timeZone }))
       continue
     }
