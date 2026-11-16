@@ -190,6 +190,11 @@ test('cronRunsIn : les mêmes passages qu’un nextRun après l’autre, changem
       assert.deepEqual(got, witness(expression, from, to, now), `${expression} dès ${new Date(from).toISOString()}`)
     }
   }
+  // Le jour du passage à l'heure d'hiver, un motif dense aussi tombe comme croner le joue.
+  for (const expression of ['* * * * *', '*/5 * * * *']) {
+    const [from, to] = [Date.UTC(2026, 9, 24, 22), Date.UTC(2026, 9, 25, 23)]
+    assert.deepEqual(cronRunsIn(expression, { from, to, count: 2000, timeZone: PARIS }), witness(expression, from, to, 0, 2000), expression)
+  }
   assert.deepEqual(cronRunsIn('pas un motif', { from: NOW, to: NOW + DAY, count: 10, timeZone: PARIS }), [])
 })
 

@@ -416,8 +416,8 @@ function cronClock(expression: string, timeZone: string): { pattern: Cron; secon
  * Les `count` premiers passages d'un motif cron dans `[from, to)`, comme `upcoming`, sans
  * un `nextRun` par passage : un motif « chaque minute » en a 10 080 par semaine (#283).
  * Un jour se lit par un seul `nextRun`, puis ses heures, minutes et secondes s'énumèrent.
- * Un jour de changement d'heure n'est demandé à croner que pour un motif d'au plus
- * `DST_EXACT_RUNS` passages par jour ; un motif plus dense s'y lit à une heure près.
+ * Un jour de changement d'heure reste demandé à croner passage par passage, pour que
+ * l'agenda le montre comme il tourne : au plus `count` `nextRun`, deux jours par an.
  */
 export function cronRunsIn(
   expression: string,
@@ -427,7 +427,6 @@ export function cronRunsIn(
   const clock = cronClock(expression, timeZone)
   if (!clock) return runs
   const { pattern, seconds, minutes, hours } = clock
-  const perDay = hours.length * minutes.length * seconds.length
   const first = dayOf(from, timeZone)
   for (let index = 0; runs.length < count; index++) {
     const start = zonedTime({ ...first, day: first.day + index }, 0, 0, timeZone)
@@ -438,7 +437,7 @@ export function cronRunsIn(
     const next = pattern.nextRun(new Date(lo - 1))?.getTime()
     if (next === undefined) break
     if (next >= hi) continue
-    if (end - start !== DAY && perDay <= DST_EXACT_RUNS) {
+    if (end - start !== DAY) {
       runs.push(...upcoming({ kind: 'cron', expression }, count - runs.length, { after: lo - 1, horizon: hi - 1, timeZone }))
       continue
     }
