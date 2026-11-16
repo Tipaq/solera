@@ -25,6 +25,7 @@ import { registerScheduleRoutes } from '../src/http/routes/schedules.js'
 import { registerActionRoutes } from '../src/http/routes/actions.js'
 import type { ActionRunner } from '../src/actions/actions.js'
 import type { TaskScheduler } from '../src/scheduler/task-scheduler.js'
+import { McpSessionTokens } from '../src/agents/mcp-session-tokens.js'
 import { registerV1Routes } from '../src/http/v1/index.js'
 import { LIST_ROUTES, registerWebSocketHub } from '../src/ws/hub.js'
 import { writeNotificationPrefs } from '../src/settings/user-settings.js'
@@ -58,6 +59,7 @@ function authenticate(app: FastifyInstance, db: Awaited<ReturnType<typeof databa
 
 function stubSessions(warm: string[] = []) {
   return {
+    mcpTokens: new McpSessionTokens(),
     statusBus: new EventEmitter(),
     setNotifier: () => {},
     warmConversationIds: () => warm,

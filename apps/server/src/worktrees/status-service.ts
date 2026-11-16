@@ -1,10 +1,22 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import { conversationPaths, conversations, projects, worktrees, type Db, type ProjectRow } from '@solera/db'
-import type { WorktreeLink, WorktreeStatusDto, WorktreeStatusListDto } from '@solera/protocol'
+import type { LooseBranchDto, TreeCardFields, WorktreeLink, WorktreeStatusDto, WorktreeStatusListDto } from '@solera/protocol'
 import type { EventLog } from '../events/event-log.js'
-import { UNREADABLE, assessWorktree, defaultBase, listWorktrees, looseBranches } from './assess.js'
+import {
+  UNREADABLE,
+  assessWorktree,
+  branchFacts,
+  commitOf,
+  defaultBase,
+  listWorktrees,
+  looseBranches,
+  type BranchFacts,
+  type LooseBranch,
+} from './assess.js'
+import { DiskUsage } from './disk-usage.js'
 import { directoryGone, markWorktreeGone } from './gone.js'
 import { landedPullRequests, type MergedPullRequestSource } from './landed.js'
+import { treeCards } from './tree-card.js'
 
 /**
  * Au-delà, une liste rendue est recalculée ; en deçà, elle est resservie telle quelle.
@@ -33,6 +45,22 @@ interface CacheEntry {
   pending: Promise<WorktreeStatusListDto> | null
 }
 
+/** Une liste, et la lecture des faits de ses branches qui reste à faire, s'il en reste. */
+interface Computed {
+  value: WorktreeStatusListDto
+  details: (() => Promise<WorktreeStatusListDto>) | null
+}
+
+/**
+ * Les faits des branches déjà lus, par commit de tête : ils ne dépendent que de lui et
+ * de la base, qu'on retient avec eux.
+ */
+interface KnownFacts {
+  base: string
+  baseHead: string
+  byHead: Map<string, BranchFacts>
+}
+
 /**
  * L'avancement des worktrees d'un projet, calculé par arbre et non par session, et
  * servi depuis un cache que la fin d'un tour, une action git ou une création de
@@ -46,6 +74,7 @@ export class WorktreeStatusService {
   private readonly cache = new Map<string, CacheEntry>()
   private readonly listeners: ComputedListener[] = []
   private readonly refreshTimers = new Map<string, NodeJS.Timeout>()
+  private readonly knownFacts = new Map<string, KnownFacts>()
 
   constructor(
     private readonly db: Db,
@@ -55,6 +84,8 @@ export class WorktreeStatusService {
      * avancé (#126). Sans elle, ou quand la forge ne répond pas, seul le contenu juge.
      */
     private readonly mergedPullRequests?: MergedPullRequestSource,
+    /** La taille des arbres, mesurée en fond : partagée par tous les projets, une mesure à la fois. */
+    private readonly disk = new DiskUsage(),
   ) {
     // La fin d'un tour est le moment où l'arbre a le plus de chances d'avoir changé ;
     // une édition hors du cwd peut rattacher la session à un nouvel arbre.
@@ -144,8 +175,16 @@ export class WorktreeStatusService {
       // tourne doit compter, elle vise un état qu'il n'a peut-être pas vu.
       entry.stale = false
       entry.pending = this.compute(project)
-        .then((value) => {
+        .then(({ value, details }) => {
           entry.value = value
+          // Les faits des branches se lisent après : la liste n'attend pas un `git log`
+          // par branche. Ils remplacent la liste qu'ils complètent, si rien ne l'a
+          // remplacée entre-temps.
+          if (details) {
+            void details().then((completed) => {
+              if (entry.value === value) entry.value = completed
+            })
+          }
           // Hors du chemin de la réponse : un abonné lent ne retarde pas la liste.
           for (const listener of this.listeners) {
             void Promise.resolve()
@@ -168,6 +207,35 @@ export class WorktreeStatusService {
     return entry.pending
   }
 
+  /**
+   * Comme `get`, complétée des tailles sur disque déjà mesurées : ce que les routes de
+   * la liste servent. Une taille manquante ou vieillie part en mesure, et la liste ne
+   * l'attend pas ; `sizesPending` dit à l'interface de repasser.
+   */
+  async sized(project: ProjectRow): Promise<WorktreeStatusListDto> {
+    const list = await this.get(project)
+    let pending = false
+    const read = (path: string) => {
+      const size = this.disk.read(path)
+      pending ||= size.pending
+      return size.bytes
+    }
+    const rootSizeBytes = read(project.workspacePath)
+    const trees = list.worktrees.map((tree) => {
+      if (tree.state !== 'missing') return { ...tree, sizeBytes: read(tree.path) }
+      // Parti hors d'un nettoyage (une PR fusionnée avec sa branche, un `git worktree
+      // remove`) : recréé au même chemin, il ne doit pas reprendre l'ancienne taille.
+      this.disk.forget(tree.path)
+      return tree
+    })
+    return { ...list, worktrees: trees, rootSizeBytes, sizesPending: pending }
+  }
+
+  /** Oublie la taille d'un arbre retiré : recréé au même chemin, il se remesure. */
+  forgetSize(path: string): void {
+    this.disk.forget(path)
+  }
+
   /** Comme `get`, mais attend le recalcul plutôt que de rendre une liste périmée. */
   async current(project: ProjectRow): Promise<WorktreeStatusListDto> {
     const list = await this.get(project)
@@ -175,7 +243,21 @@ export class WorktreeStatusService {
     return (await this.cache.get(project.id)?.pending) ?? list
   }
 
-  private async compute(project: ProjectRow): Promise<WorktreeStatusListDto> {
+  /**
+   * Les branches sans arbre, jugées à l'instant et sans passer par le cache : ce que la
+   * suppression en lot rejuge avant de rien toucher. La base et les branches sorties
+   * dans un arbre, l'arbre principal compris, n'y sont pas ; elles sont rendues à côté.
+   */
+  async looseBranches(project: ProjectRow): Promise<{ base: string | null; checkedOut: Set<string>; branches: LooseBranch[] }> {
+    const { entries, base, landed } = await this.read(project)
+    const checkedOut = new Set(entries.flatMap((entry) => (entry.branch ? [entry.branch] : [])))
+    // Une distante seule n'a pas de locale à supprimer.
+    const branches = await looseBranches(project.workspacePath, base, checkedOut, landed)
+    return { base, checkedOut, branches: branches.filter((branch) => !branch.remoteOnly) }
+  }
+
+  /** Ce que git et la forge disent du dépôt, avant de juger quoi que ce soit. */
+  private async read(project: ProjectRow) {
     const repo = project.workspacePath
     const [entries, base, merged] = await Promise.all([
       listWorktrees(repo),
@@ -183,6 +265,12 @@ export class WorktreeStatusService {
       this.mergedPullRequests?.(project).catch(() => null) ?? null,
     ])
     const landed = base && merged ? landedPullRequests(merged, base) : new Map<string, never[]>()
+    return { entries, base, landed }
+  }
+
+  private async compute(project: ProjectRow): Promise<Computed> {
+    const repo = project.workspacePath
+    const { entries, base, landed } = await this.read(project)
     const rows = this.db
       .select()
       .from(worktrees)
@@ -244,6 +332,7 @@ export class WorktreeStatusService {
       }
     })
     const paths = this.touchedPaths(project.id)
+    const cardOf = treeCards(this.db, project.id)
 
     const result: WorktreeStatusDto[] = list.map((tree, index) => ({
       id: tree.id,
@@ -253,6 +342,8 @@ export class WorktreeStatusService {
       external: tree.id === null,
       head: tree.head,
       conversations: this.linkedConversations(tree.id, tree.path, paths),
+      sizeBytes: null,
+      ...cardOf.ofTree(tree),
       ...assessed[index]!,
     }))
 
@@ -265,12 +356,46 @@ export class WorktreeStatusService {
     )
 
     const checkedOut = new Set(entries.flatMap((entry) => (entry.branch ? [entry.branch] : [])))
-    const branches = await looseBranches(repo, base, checkedOut, landed).catch((err: unknown) => {
-      console.warn('[worktrees] branches illisibles :', err)
-      return []
-    })
+    const [loose, baseHead] = await Promise.all([
+      looseBranches(repo, base, checkedOut, landed).catch((err: unknown) => {
+        console.warn('[worktrees] branches illisibles :', err)
+        return []
+      }),
+      base ? commitOf(repo, base) : null,
+    ])
 
-    return { base, computedAt: Date.now(), fresh: true, worktrees: result, branches }
+    // Les faits déjà lus resservent tant que ni la tête de la branche ni la base n'ont
+    // bougé : en régime établi, la liste part complète.
+    const known = this.knownFacts.get(project.id)
+    const reusable = known && base && known.base === base && known.baseHead === baseHead ? known.byHead : new Map<string, BranchFacts>()
+    const missing = base && baseHead ? loose.filter((branch) => !reusable.has(branch.head)) : []
+    const value: WorktreeStatusListDto = {
+      base,
+      computedAt: Date.now(),
+      fresh: true,
+      worktrees: result,
+      branches: loose.map((branch) => branchDto(branch, reusable.get(branch.head), cardOf.ofBranch(branch.name))),
+      branchesPending: missing.length > 0,
+      // Les tailles ne sont pas de ce calcul : `sized` les ajoute, depuis leur propre cache.
+      rootSizeBytes: null,
+      sizesPending: false,
+    }
+    if (!base || !baseHead || missing.length === 0) return { value, details: null }
+
+    const details = async (): Promise<WorktreeStatusListDto> => {
+      const read = await branchFacts(repo, base, missing).catch((err: unknown) => {
+        console.warn('[worktrees] faits des branches illisibles :', err)
+        return new Map<string, BranchFacts>()
+      })
+      const byHead = new Map<string, BranchFacts>()
+      for (const branch of loose) {
+        const facts = reusable.get(branch.head) ?? read.get(branch.name)
+        if (facts) byHead.set(branch.head, facts)
+      }
+      this.knownFacts.set(project.id, { base, baseHead, byHead })
+      return { ...value, branches: loose.map((branch) => branchDto(branch, byHead.get(branch.head), cardOf.ofBranch(branch.name))), branchesPending: false }
+    }
+    return { value, details }
   }
 
   /**
@@ -313,6 +438,21 @@ export class WorktreeStatusService {
     }
 
     return [...linked].map(([id, link]) => ({ id, link }))
+  }
+}
+
+function branchDto(branch: LooseBranch, facts: BranchFacts | undefined, card: TreeCardFields): LooseBranchDto {
+  return {
+    ...card,
+    name: branch.name,
+    merged: branch.merged,
+    remoteOnly: branch.remoteOnly,
+    head: branch.head,
+    subject: facts?.subject ?? null,
+    lastCommitAt: facts?.lastCommitAt ?? null,
+    ahead: facts?.ahead ?? null,
+    behind: facts?.behind ?? null,
+    recentCommits: facts?.recentCommits ?? [],
   }
 }
 

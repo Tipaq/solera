@@ -1,16 +1,18 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
-import { homedir, tmpdir } from 'node:os'
-import { delimiter, join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { writeFakeClaude } from './checks/fake-clis.mjs'
 
-// Vrais composants, vraie API et vrai CLI Claude, dans une base temporaire : la tâche
-// créée ici tire pour de bon, à la minute. Compter deux tours très courts de quota.
+// Vrais composants et vraie API, dans une base temporaire : la tâche créée ici tire pour
+// de bon, à la minute. Le CLI Claude est un faux (`checks/fake-clis.mjs`) qui joue un
+// tour court : la suite tourne en CI, sans compte ni quota.
 // Les captures vont dans SCHEDULE_SHOTS, ou dans un dossier temporaire annoncé à la fin.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
@@ -26,21 +28,6 @@ async function freePort() {
   const port = socket.address().port
   await new Promise((resolve) => socket.close(resolve))
   return port
-}
-
-/**
- * Le dossier où le Solera du poste a installé ses CLI agents.
- *
- * La suite donne au serveur un `SOLERA_DATA_DIR` jetable, et ce préfixe suit le dossier
- * de données : un CLI installé depuis l'interface devient alors introuvable, et le tir
- * meurt à la naissance sur « native binary not found at claude ». On rend donc le `bin`
- * du poste au `PATH` du serveur d'essai — c'est une installation, pas un état, et rien
- * dans la suite n'a de raison de l'isoler.
- */
-function hostAgentsBin() {
-  const data = process.env.SOLERA_DATA_DIR
-    ?? join(process.env.XDG_DATA_HOME || join(homedir(), '.local/share'), 'solera')
-  return join(data, 'agents', 'bin')
 }
 
 function run(args, cwd, env) {
@@ -66,7 +53,9 @@ try {
   const apiPort = await freePort()
   const webPort = await freePort()
   const config = join(data, 'config.toml')
-  await writeFile(config, '[agents.codex]\nenabled = false\n[agents.opencode]\nenabled = false\n')
+  const fakeClaude = await writeFakeClaude(data)
+  const claudeStdinLog = join(data, 'claude-stdin.jsonl')
+  await writeFile(config, `[agents.claude]\nbinary = "${fakeClaude}"\n[agents.codex]\nenabled = false\n[agents.opencode]\nenabled = false\n`)
   const env = {
     ...process.env,
     SOLERA_PORT: String(apiPort),
@@ -74,7 +63,7 @@ try {
     SOLERA_CONFIG: config,
     SOLERA_DATA_DIR: join(data, 'data'),
     SOLERA_WEB_ROOT: join(data, 'web'),
-    PATH: `${hostAgentsBin()}${delimiter}${process.env.PATH ?? ''}`,
+    FAKE_CLAUDE_LOG: claudeStdinLog,
   }
   const server = run(['--import', 'tsx', 'src/main.ts'], serverDir, env)
   const vite = run([join(webDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webDir, env)
@@ -87,7 +76,11 @@ try {
   browser = await launchBrowser()
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', serviceWorkers: 'block' })
   await context.addInitScript((origin) => {
-    if (window === window.top && location.origin === origin) localStorage.setItem('solera.locale', 'fr')
+    if (window !== window.top || location.origin !== origin) return
+    localStorage.setItem('solera.locale', 'fr')
+    // Toutes les sessions d'un projet dans la colonne : « Ajuster à la hauteur » en
+    // couperait, et l'absence d'un tir n'y prouverait plus rien.
+    localStorage.setItem('solera.display.sessionLimit', '50')
   }, new URL(base).origin)
   const login = await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'solera-demo' } })
   assert.ok(login.ok())
@@ -112,34 +105,56 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   await mkdir(shots, { recursive: true })
 
-  // --- Création par le formulaire ------------------------------------------------
+  // --- Création par l'éditeur unifié ---------------------------------------------
+  // L'ancienne adresse des Planifiées du projet mène à son onglet Actions.
   await page.goto(`${base}/p/${project.id}/schedules`)
-  await page.getByText('Aucune tâche planifiée dans ce projet').waitFor()
-  await page.getByRole('button', { name: 'Tâche', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Nouvelle tâche planifiée', exact: true })
-  await dialog.getByRole('textbox', { name: 'Nom', exact: true }).fill('Veille de test')
+  await page.waitForURL(`**/p/${project.id}/actions`)
+  await page.getByRole('heading', { name: 'Agents', exact: true }).waitFor()
+  assert.equal(await page.locator('[data-action-tile]').count(), 0)
+  await page.getByRole('button', { name: 'Nouvelle action', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Nouvelle action', exact: true }).getByRole('button', { name: /^Nouvelle tâche d’agent/ }).click()
+  const dialog = page.getByRole('dialog', { name: 'Nouvelle action', exact: true })
+  // « Nouvelle tâche d'agent » arrive sur un agent ; on la planifie.
+  assert.equal(await dialog.getByRole('radio', { name: /^Un agent/ }).getAttribute('aria-checked'), 'true')
+  await dialog.getByRole('checkbox', { name: /^Planifiée/ }).click()
+  assert.equal(await dialog.getByRole('checkbox', { name: /^Planifiée/ }).getAttribute('aria-checked'), 'true')
+  // Une erreur s'affiche sous son champ, une fois quitté ; Enregistrer reste grisé.
+  const label = dialog.getByRole('textbox', { name: 'Libellé', exact: true })
+  await label.focus()
+  await dialog.getByRole('textbox', { name: 'Prompt', exact: true }).focus()
+  await dialog.getByRole('alert').getByText('Un libellé court : c’est le texte du bouton.').waitFor()
+  await dialog.getByRole('button', { name: /^Enregistrer — À compléter : / }).waitFor()
+  await label.fill('Veille de test')
   await dialog.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Réponds seulement « OK », sans utiliser aucun outil.')
-  // Sans cadence valide, rien ne part : le bouton doit le dire.
-  await dialog.getByRole('spinbutton', { name: 'Tous les', exact: true }).fill('0')
-  assert.equal(await dialog.getByRole('button', { name: 'Créer la tâche', exact: true }).isDisabled(), true)
-  await dialog.getByRole('radio', { name: 'Cron', exact: true }).click()
-  await dialog.getByText(/À 09:00, uniquement le lundi/).waitFor()
-  await dialog.getByRole('radio', { name: 'Intervalle', exact: true }).click()
-  await dialog.getByRole('spinbutton', { name: 'Tous les', exact: true }).fill('1')
-  await dialog.getByRole('combobox', { name: 'Unité', exact: true }).click()
-  await page.getByRole('option', { name: 'minutes', exact: true }).click()
+  // Chaque minute, pour qu'un tir parte pendant la suite : une règle personnalisée.
+  await dialog.getByRole('button', { name: 'chaque jour', exact: true }).click()
+  await page.getByRole('menuitemradio', { name: 'Personnalisé (cron)' }).click()
+  await dialog.getByRole('textbox', { name: 'Expression cron', exact: true }).fill('* * * * *')
+  await dialog.getByRole('button', { name: /^Options/ }).click()
   await dialog.getByRole('spinbutton', { name: 'Durée maximale (min)', exact: true }).fill('3')
-  await dialog.getByText(/Prochain tir :/).waitFor()
+  await dialog.locator('[data-editor-summary]').getByText(/^Agent · Claude Code · à la demande \+ /).waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'form-desktop.png') })
-  await dialog.getByRole('button', { name: 'Créer la tâche', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Enregistrer', exact: true }).click()
   await dialog.waitFor({ state: 'hidden' })
 
-  const card = page.locator('[data-schedule="Veille de test"]')
-  await card.getByText('Active', { exact: true }).waitFor()
-  await card.getByText('Toutes les 1 min').waitFor()
+  // Sa tuile, dans le groupe des agents du Lanceur.
+  const card = page.locator('[data-action-tile]', { has: page.getByText('Veille de test', { exact: true }) })
+  await card.getByText('Jamais lancée', { exact: true }).waitFor()
   const [created] = await schedules()
-  assert.deepEqual(created.cadence, { kind: 'interval', minutes: 1 })
+  assert.deepEqual(created.cadence, { kind: 'cron', expression: '* * * * *' })
   assert.equal(created.maxDurationMinutes, 3)
+  assert.equal(created.onDemand, true)
+  assert.equal(created.worktreeMode, 'root')
+
+  // Son nom ouvre son détail dans le tiroir commun : ce que l'agent reçoit, quand il passe.
+  await card.getByRole('button', { name: /^Veille de test/ }).click()
+  const detail = page.getByRole('dialog', { name: 'Veille de test', exact: true })
+  await detail.getByText('Claude Code reçoit ce prompt, dans une session neuve :').waitFor()
+  await detail.getByText('Prochain passage :', { exact: false }).waitFor()
+  await detail.getByRole('button', { name: 'Mettre en pause', exact: true }).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'detail-desktop.png') })
+  await detail.getByRole('button', { name: 'Fermer', exact: true }).click()
+  await detail.waitFor({ state: 'hidden' })
 
   // --- Le tir part tout seul, à l'heure ------------------------------------------
   const fired = await until('le tir planifié part', (task) => task.runs.some((entry) => entry.conversationId), 100_000)
@@ -149,9 +164,12 @@ try {
   assert.equal(thread.scheduleId, created.id)
   assert.match(thread.title, /^Veille de test · /)
 
-  // En pause tout de suite : un seul tir automatique suffit à la preuve.
-  await card.getByRole('button', { name: 'Mettre en pause', exact: true }).click()
+  // En pause tout de suite, depuis son détail : un seul tir automatique suffit à la preuve.
+  await card.getByRole('button', { name: /^Veille de test/ }).click()
+  await detail.getByRole('button', { name: 'Mettre en pause', exact: true }).click()
   await until('la tâche est en pause', (task) => !task.enabled && task.nextRunAt === null, 10_000)
+  await detail.getByRole('button', { name: 'Fermer', exact: true }).click()
+  await detail.waitFor({ state: 'hidden' })
 
   // La colonne ne montre que les tâches, jamais leurs tirs (carte #35). On est sur
   // /p/<projet>/schedules : le lieu *Projets* est donc affiché, et le groupe du projet
@@ -173,34 +191,38 @@ try {
   await places.getByRole('button', { name: /^Planifiées/ }).click()
   await column.getByRole('link', { name: /^Veille de test/ }).waitFor()
   assert.equal(await threadLink.count(), 0, 'Le lieu *Planifiées* ne montre que les tâches')
-  await page.goto(`${base}/p/${project.id}/schedules`)
+  await page.goto(`${base}/p/${project.id}/actions`)
 
   const done = await until('le tir se termine', (task) => task.runs.every((entry) => entry.status !== 'running'), 150_000)
   assert.equal(done.runs.find((entry) => entry.id === run1.id).status, 'succeeded', JSON.stringify(done.runs))
-  await card.getByRole('button', { name: /Historique des tirs/ }).click()
-  await card.getByText('terminé', { exact: true }).first().waitFor({ timeout: 30_000 })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'schedule-desktop.png') })
+  await card.getByRole('button', { name: /^Veille de test/ }).click()
+  await detail.locator(`[data-run="${run1.id}"]`).getByText('réussi', { exact: true }).waitFor({ timeout: 30_000 })
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'detail-runs-desktop.png') })
 
-  // Puisque la colonne ne les porte plus, l'historique est la **seule** route vers le
-  // fil d'un tir : sans ce lien, il ne s'atteindrait plus que par la palette.
-  const runLink = card.locator(`a[href$="/c/${thread.id}"]`)
+  // Puisque la colonne ne les porte plus, les passages du détail sont la **seule** route
+  // vers le fil d'un tir : sans ce lien, il ne s'atteindrait plus que par la palette.
+  const runLink = detail.locator(`a[href$="/c/${thread.id}"]`)
   await runLink.waitFor()
 
-  // Le fil s'ouvre comme une conversation ordinaire, et l'agent a su qu'il tournait seul.
+  // Le fil s'ouvre comme une conversation ordinaire, et l'agent a su qu'il tournait seul :
+  // le serveur le lui a dit dans le premier message envoyé au CLI.
   await runLink.click()
   await page.getByText(/personne n'est au clavier/).first().waitFor()
+  const [firstPrompt] = (await readFile(claudeStdinLog, 'utf8')).split('\n').filter(Boolean).map((line) => JSON.parse(line)).filter((message) => message.type === 'user')
+  assert.ok(JSON.stringify(firstPrompt?.message.content).includes("personne n'est au clavier"), 'Le premier message du tir dit au CLI que personne n’est au clavier')
   await page.screenshot({ animations: 'disabled', path: join(shots, 'run-desktop.png') })
 
   // --- Lancer maintenant, depuis le téléphone ------------------------------------
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto(`${base}/p/${project.id}/schedules`)
-  await card.getByText('En pause', { exact: true }).waitFor()
+  await page.goto(`${base}/p/${project.id}/actions`)
+  await card.getByText('(en pause)', { exact: false }).waitFor()
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
   await page.screenshot({ animations: 'disabled', path: join(shots, 'schedule-mobile.png') })
-  await card.getByRole('button', { name: 'Lancer maintenant', exact: true }).click()
+  await card.getByRole('button', { name: 'Lancer « Veille de test »', exact: true }).click()
   const manual = await until('le tir manuel part', (task) => task.runs.some((entry) => entry.trigger === 'manual'), 60_000)
-  assert.equal(manual.enabled, false, 'Lancer maintenant ne sort pas la tâche de sa pause')
-  await card.getByText('En cours', { exact: true }).waitFor({ timeout: 30_000 })
+  assert.equal(manual.enabled, false, 'Lancer ne sort pas la tâche de sa pause')
+  await card.getByText(/^En cours/).waitFor({ timeout: 30_000 })
 
   // Au doigt non plus : le tiroir ouvert sur le lieu *Planifiées* montre les tâches et
   // rien d'autre. On y vient par l'adresse — cliquer le lieu referme le tiroir, puisque
@@ -214,11 +236,14 @@ try {
   assert.equal(await drawer.locator(`a[href$="/c/${thread.id}"]`).count(), 0, 'La colonne ne porte aucun tir')
   await page.screenshot({ animations: 'disabled', path: join(shots, 'sidebar-mobile.png') })
   await page.getByRole('button', { name: 'Fermer la navigation', exact: true }).click()
-  await page.goto(`${base}/p/${project.id}/schedules`)
+  await page.goto(`${base}/p/${project.id}/actions`)
 
-  await page.getByRole('button', { name: 'Modifier', exact: true }).click()
-  const editor = page.getByRole('dialog', { name: 'Modifier la tâche', exact: true })
-  assert.equal(await editor.getByRole('textbox', { name: 'Nom', exact: true }).inputValue(), 'Veille de test')
+  await card.getByRole('button', { name: 'Plus pour « Veille de test »', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Modifier', exact: true }).click()
+  const editor = page.getByRole('dialog', { name: 'Modifier « Veille de test »', exact: true })
+  assert.equal(await editor.getByRole('textbox', { name: 'Libellé', exact: true }).inputValue(), 'Veille de test')
+  // La nature d'une action existante est figée : seule sa carte reste.
+  assert.equal(await editor.getByRole('radio', { name: /^Une commande/ }).count(), 0)
   const saveBox = await editor.getByRole('button', { name: 'Enregistrer', exact: true }).boundingBox()
   assert.ok(saveBox.y + saveBox.height <= 844, 'The mobile save action remains visible')
   assert.equal(await editor.evaluate((node) => node.scrollWidth <= node.clientWidth), true)
@@ -229,9 +254,10 @@ try {
 
   // --- Suppression : les fils redeviennent des conversations ordinaires, rangées --
   await page.setViewportSize({ width: 1440, height: 900 })
-  await card.getByRole('button', { name: 'Supprimer', exact: true }).click()
-  await page.getByRole('dialog').getByRole('button', { name: 'Supprimer', exact: true }).click()
-  await page.getByText('Aucune tâche planifiée dans ce projet').waitFor()
+  await card.getByRole('button', { name: 'Plus pour « Veille de test »', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Supprimer', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Supprimer « Veille de test » ?' }).getByRole('button', { name: 'Supprimer', exact: true }).click()
+  await card.waitFor({ state: 'detached' })
   const after = (await api('/api/conversations')).filter((entry) => entry.title.startsWith('Veille de test · '))
   assert.equal(after.length, 2)
   assert.ok(after.every((entry) => entry.scheduleId === null && entry.archivedAt !== null))

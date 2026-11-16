@@ -1,7 +1,7 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { launchOf } from '../launch.js'
+import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface, type Interface } from 'node:readline'
 import type { InitializeRequest, InitializeResponse } from '@agentclientprotocol/sdk'
+import type { EnvironmentProvider } from '../../environments/provider.js'
 
 /**
  * Client JSON-RPC de l'Agent Client Protocol (ACP), sur stdio et délimité par des sauts
@@ -40,6 +40,8 @@ export interface AcpClientOptions {
   /** Nom court du CLI, pour préfixer ce qu'il écrit sur stderr dans les logs. */
   label: string
   binary: string
+  /** Où lancer l'agent : l'environnement de la session, ou celui du CLI pour une sonde. */
+  environment: EnvironmentProvider
   args: string[]
   cwd?: string
   env?: NodeJS.ProcessEnv
@@ -66,12 +68,11 @@ export class AcpClient {
   private stderrTail = ''
 
   constructor(private readonly options: AcpClientOptions) {
-    const launch = launchOf(options.binary)
-    this.child = spawn(launch.command, [...launch.args, ...options.args], {
+    this.child = options.environment.spawn({
+      command: options.binary,
+      args: options.args,
       cwd: options.cwd,
       env: options.env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
     })
 
     this.child.stderr.on('data', (chunk: Buffer) => {

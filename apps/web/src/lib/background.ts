@@ -17,6 +17,8 @@ export interface BackgroundWork {
   id: string
   kind: string
   description: string
+  /** La commande d'un `Bash` lancé en fond, lue dans l'appel qui l'a lancé. */
+  command: string | null
   /** Ce qu'il fait à l'instant, nul tant qu'il n'a pas rendu compte. */
   activity: string | null
   lastTool: string | null
@@ -26,23 +28,22 @@ export interface BackgroundWork {
 
 export function buildBackground(state: ChatState): BackgroundWork[] {
   const works: BackgroundWork[] = []
-  const spawned = new Set(
-    state.items
-      .filter((item) => item.kind === 'tool' && isSpawnTool(item.name))
-      .map((item) => item.id),
-  )
+  const calls = new Map(state.items.flatMap((item) => (item.kind === 'tool' ? [[item.id, item] as const] : [])))
 
   for (const live of state.background) {
     const task = state.tasks.get(live.id)
     // Un travail dont le lancement manque au fil replié n'est rattachable à rien : le
     // montrer vaut mieux que le taire, puisque la liste de niveau, elle, affirme qu'il
     // tourne. C'est le cas d'un fil rechargé après un retard trop grand pour le socket.
-    if (task?.toolCallId && spawned.has(task.toolCallId)) continue
+    const call = task?.toolCallId ? calls.get(task.toolCallId) : undefined
+    if (call && isSpawnTool(call.name)) continue
+    const command = typeof call?.input === 'object' && call.input !== null ? (call.input as Record<string, unknown>).command : null
 
     works.push({
       id: live.id,
       kind: live.kind,
       description: task?.description || live.description,
+      command: typeof command === 'string' && command ? command : null,
       activity: task?.activity ?? null,
       lastTool: task?.lastTool ?? null,
       toolUses: task?.toolUses ?? 0,

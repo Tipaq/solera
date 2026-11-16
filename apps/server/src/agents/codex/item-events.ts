@@ -63,10 +63,11 @@ const MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024
  * Synchrone à dessein : l'événement `tool.completed` doit partir dans l'ordre des
  * items, et un fichier local de quelques Mo se lit sans latence sensible. Une image
  * illisible (supprimée, trop lourde, format inconnu) rend le chemin seul, sans erreur :
- * Codex, lui, l'a bien vue.
+ * Codex, lui, l'a bien vue. `outside` ramène le chemin que voit le CLI à celui de l'hôte.
  */
-function imageViewOutput(cwd: string, path: string): unknown {
-  const absolute = isAbsolute(path) ? path : resolve(cwd, path)
+function imageViewOutput(cwd: string, path: string, outside: Outside): unknown {
+  const seen = outside(path)
+  const absolute = isAbsolute(seen) ? seen : resolve(cwd, seen)
   const mediaType = VIEWABLE_IMAGE_TYPES[extname(absolute).slice(1).toLowerCase()]
   if (!mediaType) return { path }
   try {
@@ -81,6 +82,9 @@ function imageViewOutput(cwd: string, path: string): unknown {
   }
 }
 
+/** Un chemin tel que le CLI le voit, rendu à l'hôte : `EnvironmentProvider.pathOutside` (#152). */
+type Outside = (path: string) => string
+
 export function startedItem(item: ThreadItem, parentToolCallId: string | null): SoleraEvent[] {
   if (item.type === 'contextCompaction') return [{ type: 'context.compaction_started' }]
   const action = tool(item)
@@ -93,17 +97,19 @@ export function startedItem(item: ThreadItem, parentToolCallId: string | null): 
  * annoncés), l'intitulé, et parfois la nature même de l'outil. On republie donc l'entrée
  * avant la sortie. Un `functionCallOutput` ne porte pas d'arguments : il n'efface pas
  * ceux du départ.
+ *
+ * `cwd` est celui de l'hôte ; les chemins que le CLI rend passent par `outside`.
  */
 export function completedItem(
-  item: ThreadItem, cwd: string, durationMs: number, parentToolCallId: string | null,
+  item: ThreadItem, cwd: string, durationMs: number, parentToolCallId: string | null, outside: Outside = (path) => path,
 ): SoleraEvent[] {
   const action = item.type === 'functionCallOutput' ? null : tool(item)
   const update: SoleraEvent[] = action ? [{ type: 'tool.input_updated', toolCallId: item.id, ...action }] : []
-  return [...update, ...completedEvents(item, cwd, durationMs, parentToolCallId)]
+  return [...update, ...completedEvents(item, cwd, durationMs, parentToolCallId, outside)]
 }
 
 function completedEvents(
-  item: ThreadItem, cwd: string, durationMs: number, parentToolCallId: string | null,
+  item: ThreadItem, cwd: string, durationMs: number, parentToolCallId: string | null, outside: Outside,
 ): SoleraEvent[] {
   const finish = (output: unknown, isError = false, duration = durationMs): SoleraEvent => ({
     type: 'tool.completed', toolCallId: item.id, output, isError, durationMs: duration,
@@ -123,7 +129,7 @@ function completedEvents(
     case 'fileChange': return [
       finish(item.changes, item.status === 'failed' || item.status === 'declined'),
       ...(item.status === 'completed' ? item.changes.map((change): SoleraEvent => ({
-        type: 'file.edited', toolCallId: item.id, path: toWorkspacePath(cwd, change.path),
+        type: 'file.edited', toolCallId: item.id, path: toWorkspacePath(cwd, outside(change.path)),
         action: change.kind.type === 'add' ? 'created' : change.kind.type === 'delete' ? 'deleted' : 'modified',
       })) : []),
     ]
@@ -132,7 +138,7 @@ function completedEvents(
     case 'dynamicToolCall': return [finish(item.contentItems, item.status === 'failed' || item.success === false, item.durationMs ?? durationMs)]
     case 'collabAgentToolCall': return [finish(item.agentsStates, item.status === 'failed')]
     case 'webSearch': return [finish({ query: item.query, action: item.action, results: item.results })]
-    case 'imageView': return [finish(imageViewOutput(cwd, item.path))]
+    case 'imageView': return [finish(imageViewOutput(cwd, item.path, outside))]
     case 'imageGeneration': return [
       finish({ status: item.status, revisedPrompt: item.revisedPrompt, savedPath: item.savedPath, failure: item.failure }, item.failure != null || item.status === 'failed'),
       ...(item.result && !item.failure ? [{

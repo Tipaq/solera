@@ -1,6 +1,6 @@
 import type { EditDiffDto } from '@solera/protocol'
 import { additionDiff, unifiedDiff } from '@solera/protocol'
-import { toWorkspacePath } from '../paths.js'
+import { loggedPath, toWorkspacePath } from '../paths.js'
 
 /**
  * Les outils de Grok Build, ramenés aux noms et aux champs du journal (invariant I3).
@@ -130,7 +130,7 @@ export function commandOutput(rawOutput: unknown): string | null {
  */
 export function describeEdit(completedRaw: unknown, cwd: string, path: string): EditDiffDto {
   const diffs = (fields(completedRaw).diffs as AcpDiff[] | undefined) ?? []
-  const diff = diffs.find((entry) => toWorkspacePath(cwd, entry.path) === path)
+  const diff = diffs.find((entry) => toWorkspacePath(cwd, loggedPath(entry.path)) === path)
   if (!diff) {
     return { path, kind: 'unavailable', patch: '', content: '', partial: false, reason: "Le détail de cet appel n'a pas été conservé." }
   }

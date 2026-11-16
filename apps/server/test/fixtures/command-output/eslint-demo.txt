@@ -1,0 +1,13 @@
+> @solera/web@0.20.1 lint /home/tim/projects/solera/apps/web
+> eslint src --max-warnings 0
+
+src/routes/prototype-automations/ActionsPage.tsx
+  48:10  warning  'AgendaVariant' is defined but never used  @typescript-eslint/no-unused-vars
+
+src/components/prototype/panel/ProtoSidePanel.tsx
+  212:6  error  React Hook useCallback has a missing dependency: 'aside'  react-hooks/exhaustive-deps
+
+src/lib/dates.ts
+  88:15  error  'week' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+Vérification de 214 fichiers sur 240…

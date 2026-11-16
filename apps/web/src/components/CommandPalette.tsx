@@ -8,6 +8,8 @@ import {
   FolderOpen,
   Loader,
   MessageSquare,
+  MessagesSquare,
+  PanelRight,
   Play,
   Plug,
   Plus,
@@ -16,7 +18,6 @@ import {
   Settings,
   ShieldQuestion,
   Square,
-  Split,
   SquareKanban,
   SquareTerminal,
   X,
@@ -35,10 +36,12 @@ import { describeTransport, useMcpServers } from '../lib/mcp'
 import { fileFields, rankByFields, usePaletteCatalog, usePaletteFiles } from '../lib/palette'
 import { splitExcerpt, useMessageSearch } from '../lib/search'
 import { useSchedules } from '../lib/schedules'
+import { sessionsHref } from '../lib/sessions-view'
+import { NEW_PARAM } from '../lib/place'
 import { useCurrentUser } from '../lib/session'
 import { openSettings } from '../lib/settings-dialog'
 import { openTab } from '../lib/editor-tabs'
-import { openPanelOnArrival, setPanelOpen, setPanelTab, showTerminal } from '../lib/panel'
+import { openPanelOnArrival, setPanelOpen, setPanelTab, showTerminal, type PanelTab } from '../lib/panel'
 import { projectScope } from '../lib/workspace-scope'
 import { visibleSections } from './settings/sections'
 import { AgentIcon } from './AgentIcon'
@@ -143,15 +146,16 @@ export function CommandPalette({
    * coque : la palette s'ouvre depuis n'importe quelle vue, et l'adresse est ce que
    * toutes ont en commun.
    */
-  const route = /^\/p\/([^/]+)(?:\/(c\/([^/]+)|board))?/.exec(pathname)
+  const route = /^\/p\/([^/]+)(?:\/(c\/([^/]+)|board|travail|actions))?/.exec(pathname)
   const projectId = route?.[1] ?? null
   const conversationId = route?.[3] && route[3] !== 'new' ? route[3] : null
   /**
    * Les vues qui montent le panneau, où un fichier s'ouvre sans quitter la page : la
-   * conversation et le board. Le brouillon n'en a pas, et un panneau « ouvert » qu'il
-   * ne monte pas resterait sans bouton pour le refermer.
+   * conversation, Travail et Actions. Le brouillon et le Tableau n'en ont pas, et un
+   * panneau « ouvert » qu'une vue ne monte pas resterait sans bouton pour le refermer.
    */
-  const panelHere = conversationId !== null || route?.[2] === 'board'
+  const onPanelView = route?.[2] === 'travail' || route?.[2] === 'actions'
+  const panelHere = conversationId !== null || onPanelView
 
   // Un fichier se cherche dès la première lettre derrière `/` : le préfixe dit déjà ce
   // qu'on veut, et un nom de fichier se tape court.
@@ -229,8 +233,23 @@ export function CommandPalette({
         label: t('palette.action.newProject'),
         run: () => go('/projects/new'),
       },
+      {
+        key: 'cmd-all-sessions',
+        icon: <MessagesSquare size={14} />,
+        label: t('palette.sessions.all'),
+        run: () => go(sessionsHref()),
+      },
     ]
 
+    const projectName = projectId ? projectNames.get(projectId) : undefined
+    if (projectId && projectName !== undefined) {
+      entries.push({
+        key: 'cmd-project-sessions',
+        icon: <MessagesSquare size={14} />,
+        label: t('palette.sessions.project', { name: projectName }),
+        run: () => go(sessionsHref({ project: projectId })),
+      })
+    }
     // Une tâche se planifie dans un projet : sans projet sous les yeux, le geste n'a
     // pas de destination et proposer une page vide serait un cul-de-sac.
     if (projectId) {
@@ -238,7 +257,8 @@ export function CommandPalette({
         key: 'cmd-schedule',
         icon: <CalendarPlus size={14} />,
         label: t('palette.action.schedule'),
-        run: () => go(`/p/${projectId}/schedules`),
+        // L'onglet Actions s'ouvre sur le choix de ce qu'on planifie.
+        run: () => go(`/p/${projectId}/actions?${NEW_PARAM}=planifier`),
       })
       entries.push({
         key: 'cmd-board',
@@ -246,12 +266,18 @@ export function CommandPalette({
         label: t('palette.action.board'),
         run: () => go(`/p/${projectId}/board`),
       })
-      // Découper un chantier en cartes (#70) : dicter en vrac, valider un brouillon.
+    }
+    // Le panneau de Travail et d'Actions n'a pas de bouton : on l'appelle d'ici, comme
+    // le ferait un fichier ouvert.
+    if (onPanelView) {
       entries.push({
-        key: 'cmd-split',
-        icon: <Split size={14} />,
-        label: t('split.action'),
-        run: () => go(`/p/${projectId}/c/new?split=new`),
+        key: 'cmd-panel',
+        icon: <PanelRight size={14} />,
+        label: t('palette.action.panel'),
+        run: () => {
+          close()
+          setPanelOpen(true)
+        },
       })
     }
 
@@ -266,11 +292,24 @@ export function CommandPalette({
     })
 
     return entries
-  }, [close, go, projectId, t])
+  }, [close, go, onPanelView, projectId, projectNames, t])
+
+  /**
+   * Rejoindre Travail d'un projet, panneau ouvert sur `tab`. L'arrivée rend au panneau
+   * l'état de sa nouvelle page : c'est celui-là qu'on écrit.
+   */
+  const goToPanelOf = useCallback(
+    (target: string, tab: PanelTab) => {
+      const travailPath = `/p/${target}/travail`
+      openPanelOnArrival(travailPath, tab)
+      navigate(travailPath)
+    },
+    [navigate],
+  )
 
   /**
    * Ouvrir un fichier dans le panneau de son projet. Celui d'un autre projet, ou vu
-   * depuis une page sans panneau, fait d'abord aller au board de ce projet : c'est la
+   * depuis une page sans panneau, fait d'abord aller à Travail de ce projet : c'est la
    * vue de projet qui monte le panneau sans qu'il faille choisir une conversation.
    */
   const openFile = useCallback(
@@ -283,18 +322,15 @@ export function CommandPalette({
         setPanelOpen(true)
         return
       }
-      // L'arrivée rend au panneau l'état de sa nouvelle page : c'est celui-là qu'on écrit.
-      const board = `/p/${fileProject}/board`
-      openPanelOnArrival(board, 'files')
-      navigate(board)
+      goToPanelOf(fileProject, 'files')
     },
-    [close, conversationId, navigate, panelHere, projectId],
+    [close, conversationId, goToPanelOf, panelHere, projectId],
   )
 
   /**
    * Le geste d'une action de projet. Dans le projet sous les yeux et sur une vue qui
    * monte le panneau, elle se joue là où l'on est, worktree de la conversation compris ;
-   * ailleurs, on rejoint d'abord le board de son projet, et elle se joue à sa racine.
+   * ailleurs, on rejoint d'abord Travail de son projet, et elle se joue à sa racine.
    * Relire ouvre l'onglet *Actions*, où la commande se lit avant de partir.
    */
   const runProjectAction = useCallback(
@@ -307,9 +343,7 @@ export function CommandPalette({
       }
       const here = action.projectId === projectId && panelHere
       if (!here) {
-        const board = `/p/${action.projectId}/board`
-        openPanelOnArrival(board, op === 'output' ? 'terminals' : 'actions')
-        navigate(board)
+        goToPanelOf(action.projectId, op === 'output' ? 'terminals' : 'actions')
       }
       if (op === 'review') {
         setPanelTab('actions')
@@ -320,7 +354,7 @@ export function CommandPalette({
         startAction({ action, op, conversationId: here ? (conversationId ?? undefined) : undefined })
       }
     },
-    [close, conversationId, navigate, panelHere, projectId, startAction],
+    [close, conversationId, goToPanelOf, panelHere, projectId, startAction],
   )
 
   const groups = useMemo((): Group[] => {
@@ -330,6 +364,29 @@ export function CommandPalette({
       items: items.slice(0, expanded === id ? EXPANDED : PER_FAMILY),
       total: items.length,
     })
+
+    /**
+     * Quand la recherche trouve plus de sessions que la palette n'en montre, une
+     * dernière ligne mène à la page Sessions, la recherche déjà posée : la palette
+     * n'est pas une page de résultats, celle-là l'est. Elle compte dans le total, sans
+     * quoi « N de plus » oublierait la session qu'elle pousse hors de la liste.
+     */
+    const withSessionsPage = (group: Group): Group =>
+      group.total > group.items.length
+        ? {
+            ...group,
+            total: group.total + 1,
+            items: [
+              ...group.items,
+              {
+                key: 'c-all-results',
+                icon: <MessagesSquare size={14} />,
+                label: t('palette.sessions.results', { count: group.total }),
+                run: () => go(sessionsHref({ search: term })),
+              },
+            ],
+          }
+        : group
 
     /** Une phrase se cherche par morceaux et initiales, pas en lettres éparses. */
     const sentence = (text: string): FuzzyField => ({ text, weight: 1, mode: 'words' })
@@ -380,7 +437,8 @@ export function CommandPalette({
           run: () => runProjectAction(action, op),
         }))
       })
-    const visibleActions = (projectActions ?? []).filter((action) => projectNames.has(action.projectId))
+    // Une commande qui ne part qu'à sa cadence n'a pas de bouton, ici non plus.
+    const visibleActions = (projectActions ?? []).filter((action) => action.onDemand && projectNames.has(action.projectId))
 
     const projectItems = (source = projects ?? []): Item[] =>
       source.map((project) => ({
@@ -526,7 +584,7 @@ export function CommandPalette({
       label: task.name,
       // Une tâche sans projet ne se lit que sur la page Planifiées, qui les porte toutes.
       meta: task.projectId ? projectNames.get(task.projectId) : t('destination.none'),
-      run: () => go(task.projectId ? `/p/${task.projectId}/schedules` : '/schedules'),
+      run: () => go(task.projectId ? `/p/${task.projectId}/actions` : '/schedules'),
     }))
 
     // Un skill global n'a pas de projet ; celui d'un projet qu'on ne voit plus (archivé
@@ -578,13 +636,15 @@ export function CommandPalette({
 
     return [
       limit('notes', []),
-      limit(
-        'conversations',
-        conversationItems(
-          rankByFields(conversations ?? [], term, (conversation) => [
-            sentence(conversation.title),
-            ...context(groupName(conversation)),
-          ]),
+      withSessionsPage(
+        limit(
+          'conversations',
+          conversationItems(
+            rankByFields(conversations ?? [], term, (conversation) => [
+              sentence(conversation.title),
+              ...context(groupName(conversation)),
+            ]),
+          ),
         ),
       ),
       limit('messages', messageItems),

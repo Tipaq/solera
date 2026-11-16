@@ -4,6 +4,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DEFAULT_OPENCODE_CONFIG, soleraEventSchema, type SoleraEvent } from '@solera/protocol'
 import { OpencodeRunner } from '../agents/opencode/runner.js'
+import { hostEnvironment } from '../environments/host.js'
 
 /**
  * Sonde manuelle : un vrai tour sur l'opencode installé, jamais exécutée en CI.
@@ -21,7 +22,7 @@ let finish: () => void = () => {}
 const completed = new Promise<void>((resolve) => { finish = resolve })
 const runner = new OpencodeRunner({
   conversationId: 'opencode-probe', cwd, attachmentsRoot: cwd, prototypesDir: null,
-  binary: process.env.OPENCODE_BIN ?? join(homedir(), '.opencode/bin/opencode'), resumeSessionId: null,
+  binary: process.env.OPENCODE_BIN ?? join(homedir(), '.opencode/bin/opencode'), environment: hostEnvironment, resumeSessionId: null,
   config: { ...DEFAULT_OPENCODE_CONFIG, model: process.env.OPENCODE_MODEL ?? 'opencode/big-pickle', soleraMcp: false },
   projectOverview: () => 'The project codename is ZEPHYR-9.', maskedInstructionRoots: () => [], memoryDir: () => null,
   resolveMcpServers: () => ({ servers: [], failures: [] }), skillRoots: () => [],

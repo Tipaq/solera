@@ -17,6 +17,7 @@ import {
   writeTransaction,
   type AgentRequestRow,
   type ConversationRow,
+  type ProjectActionRow,
   type ProjectRow,
 } from '@solera/db'
 import {
@@ -38,10 +39,14 @@ import {
   createProjectActionBodySchema,
   updateProjectActionBodySchema,
   agentKindSchema,
+  appendSubtasks,
+  CARD_CLOSED_COLUMNS,
+  changesBesidesSubtasks,
   cardColumnSchema,
   formatSessionMessage,
   parseAgentConfig,
   scheduleCadenceSchema,
+  scheduleWorktreeModeSchema,
   type ScheduleCadence,
   type AgentConfig,
   type AgentKind,
@@ -49,6 +54,8 @@ import {
   type CardColumn,
   type SoleraEvent,
   type WorktreeState,
+  type ActionSchedulePatch,
+  actionPlacementSchema,
   type ProjectActionRunResult,
   allowsRequest,
   type AgentRequestPolicy,
@@ -58,6 +65,8 @@ import {
   createAction,
   deleteAction,
   loadAction,
+  readActionCadence,
+  unitsOrphanedBy,
   updateAction,
   type ActionRunner,
 } from '../actions/actions.js'
@@ -69,6 +78,7 @@ import { parentBranchFor } from '../cards/parent-branch.js'
 import { recordCardMove } from '../cards/moves.js'
 import { resolveParent, setToClarify } from '../cards/tree.js'
 import { createConversation } from '../conversations/create.js'
+import { EnvironmentUnavailableError } from '../environments/provider.js'
 import { inheritedConfig } from '../conversations/config-inheritance.js'
 import { acceptCardFiling, acceptDraft, acceptFiling, type AcceptDeps } from './request-accept.js'
 import { adoptSessionTitle } from '../conversations/title.js'
@@ -88,7 +98,10 @@ import {
   cardByNumber,
   cardNumbers,
   createCardFor,
+  DESCRIPTION_MAX,
   editOwnSubtasks,
+  labelList,
+  subtaskLabels,
   promoteOwnSubtask,
   linkOwnConversation,
   parseDueDay,
@@ -162,7 +175,11 @@ const AWAITS_CLICK = new Set<AgentRequestRow['kind']>(AWAITING_KINDS)
  */
 export const MAX_LAUNCH_DEPTH = 2
 
-/** Lancements réussis par session et par heure. */
+/**
+ * Lancements réussis par heure et par compte, pour ce qui vient hors session. Une session
+ * de Solera n'a pas de cadence : celle qui orchestre un jalon lance autant de cartes qu'il
+ * en faut, et la profondeur des chaînes reste gardée par MAX_LAUNCH_DEPTH.
+ */
 export const LAUNCHES_PER_HOUR = 6
 
 /** Une mission plus longue tient dans un fichier que la mission cite. */
@@ -223,6 +240,7 @@ function describeCardChange(line: Extract<SoleraEvent, { type: 'card_filing.requ
     line.dueAt ? `échéance ${day(line.dueAt.to)}` : null,
     line.blocks ? `bloque ${line.blocks.map((card) => `#${card.number}`).join(', ')}` : null,
     line.unblocks ? `ne bloque plus ${line.unblocks.map((card) => `#${card.number}`).join(', ')}` : null,
+    line.addSubtasks ? `ajouter ${line.addSubtasks.length} sous-tâche${line.addSubtasks.length > 1 ? 's' : ''}` : null,
   ]
     .filter((part) => part !== null)
     .join(', ')
@@ -316,6 +334,7 @@ interface StartSessionPayload {
   effort?: unknown
   worktree?: unknown
   card?: unknown
+  confined?: unknown
 }
 
 export class AgentRequests {
@@ -409,6 +428,8 @@ export class AgentRequests {
       await this.reviews?.mergeReady()
       // Et la PR d'une parente vers la branche par défaut, quand ses enfants sont closes.
       await this.parentPullRequests?.sweep()
+      // Et la fusion de ces PR sur la forge, sans retenir le balayage : voir `checkMerged`.
+      void this.parentPullRequests?.checkMerged().catch((err: unknown) => this.logger?.warn({ err }, 'PR de parente non relues'))
     } finally {
       this.busy = false
     }
@@ -794,6 +815,7 @@ export class AgentRequests {
     }
 
     this.assertLaunchAllowed(requester, request.id)
+    const confined = this.launchConfinement(requester, payload.confined)
 
     const agent = this.parseAgent(payload.agent, requester.agent)
     const config = await this.launchConfig(agent, project, requester.userId, payload)
@@ -802,35 +824,51 @@ export class AgentRequests {
     const title =
       typeof payload.title === 'string' && payload.title.trim() ? payload.title.trim().slice(0, 200) : undefined
 
-    const row = await createConversation(this.ctx.db, this.sessions, {
-      projectId: project.id,
-      userId: requester.userId,
-      agent,
-      config,
-      worktreeId,
-      cardId: card?.id ?? null,
-      title,
-      titleSource: prompt,
-      origin: null,
-      firstMessage: {
-        clientMessageId: randomUUID(),
-        // Lancée par un compte et non par une session : la mission arrive nue, comme si
-        // l'utilisateur l'avait tapée, sans note qui renverrait à une session inexistante.
-        text: requester.id
-          ? formatSessionMessage({
-              kind: 'launch',
-              from: requester.id,
-              title: requester.title,
-              agent: requester.agent,
-              messageId: request.id,
-              body: prompt,
-            })
-          : prompt,
-        attachments: [],
-        mentions: [],
-        skills: [],
-      },
-    })
+    let row: ConversationRow
+    try {
+      row = await createConversation(this.ctx.db, this.sessions, {
+        projectId: project.id,
+        userId: requester.userId,
+        agent,
+        config,
+        // Une session confinée ne lance que des sessions confinées : sinon elle écrirait la
+        // mission d'un agent libre de tout l'hôte.
+        ...(this.confined(requester) ? { environment: this.sessions.environments.ofConversation(requester.id!) } : {}),
+        autonomous: { confined },
+        worktreeId,
+        cardId: card?.id ?? null,
+        title,
+        titleSource: prompt,
+        origin: null,
+        firstMessage: {
+          clientMessageId: randomUUID(),
+          // Lancée par un compte et non par une session : la mission arrive nue, comme si
+          // l'utilisateur l'avait tapée, sans note qui renverrait à une session inexistante.
+          text: requester.id
+            ? formatSessionMessage({
+                kind: 'launch',
+                from: requester.id,
+                title: requester.title,
+                agent: requester.agent,
+                messageId: request.id,
+                body: prompt,
+              })
+            : prompt,
+          attachments: [],
+          mentions: [],
+          skills: [],
+        },
+      })
+    } catch (err) {
+      // Le refus se lit aussi sur la carte, pas seulement dans la réponse à l'agent.
+      if (card && err instanceof EnvironmentUnavailableError) {
+        this.ctx.db
+          .insert(cardNotes)
+          .values({ id: randomUUID(), cardId: card.id, conversationId: requester.id, userId: null, body: `Session non lancée : ${err.message}`, createdAt: Date.now() })
+          .run()
+      }
+      throw err
+    }
     if (card) advanceCardOnLaunch(this.ctx, card.id, requester.userId)
 
     const tree = worktreeId
@@ -842,7 +880,9 @@ export class AgentRequests {
       `CLI ${agent}, modèle ${describeModel(config)}, effort ${describeEffort(config)}.`,
       tree ? `Elle travaille dans le worktree « ${tree} ».` : 'Elle travaille à la racine du projet.',
       card ? `Rattachée à la carte #${card.number} « ${card.title} ».` : null,
-      describePermissions(config),
+      row.environmentConfined ? 'Elle est confinée : elle tourne sans demandes d\'autorisation.' : null,
+      // Celle qu'elle a reçue : confinée, elle a quitté les demandes d'autorisation.
+      describePermissions(parseAgentConfig(row.config)),
       requester.id
         ? "L'utilisateur la voit dans Solera. Pour être prévenu de sa fin : notify_when_done avec ce même id, puis termine ton tour si tu n'as rien d'autre à faire."
         : 'Elle apparaît dans Solera comme les autres. Pour lire sa réponse : read_conversation avec ce même id et `wait_seconds`.',
@@ -876,6 +916,7 @@ export class AgentRequests {
       )
     }
 
+    if (requester.id) return
     const [recent] = this.ctx.db
       .select({ total: count() })
       .from(agentRequests)
@@ -884,7 +925,7 @@ export class AgentRequests {
           eq(agentRequests.conversationId, requester.id),
           // Hors session, la cadence se compte par compte : tous ses clients extérieurs
           // ensemble, et pas ceux d'un autre compte de l'instance.
-          requester.id ? undefined : eq(agentRequests.userId, requester.userId),
+          eq(agentRequests.userId, requester.userId),
           eq(agentRequests.kind, 'start_session'),
           eq(agentRequests.isError, false),
           ne(agentRequests.id, requestId),
@@ -894,9 +935,7 @@ export class AgentRequests {
       .all()
     if ((recent?.total ?? 0) >= LAUNCHES_PER_HOUR) {
       throw new Refusal(
-        requester.id
-          ? `Refusé : cette session a déjà lancé ${LAUNCHES_PER_HOUR} sessions dans l'heure. Crée des cartes avec create_card pour le reste, l'utilisateur les lancera.`
-          : `Refusé : ce compte a déjà lancé ${LAUNCHES_PER_HOUR} sessions dans l'heure depuis un client MCP. Crée des cartes avec create_card pour le reste, ou lance-les depuis Solera.`,
+        `Refusé : ce compte a déjà lancé ${LAUNCHES_PER_HOUR} sessions dans l'heure depuis un client MCP. Crée des cartes avec create_card pour le reste, ou lance-les depuis Solera.`,
       )
     }
   }
@@ -1008,7 +1047,7 @@ export class AgentRequests {
 
     assertWorktreeName(name)
     const base = (await parentBranchFor(this.ctx.db, project, cardId)) ?? 'HEAD'
-    const row = await createWorktree(this.ctx, project, requester.userId, name, base)
+    const row = await createWorktree(this.ctx, project, requester.userId, name, base, cardId)
     this.worktreeStatus?.forget(project.id)
     return row.id
   }
@@ -1056,7 +1095,7 @@ export class AgentRequests {
         (await parentBranchFor(this.ctx.db, project, requester.cardId)) ||
         (await defaultBase(project.workspacePath)) ||
         'HEAD'
-      row = await createWorktree(this.ctx, project, requester.userId, branch, base)
+      row = await createWorktree(this.ctx, project, requester.userId, branch, base, requester.cardId)
       origin = row.baseRef === branch
         ? `La branche « ${branch} » existait : elle est reprise telle quelle.`
         : `Branche neuve, partie de ${base}.`
@@ -1073,10 +1112,11 @@ export class AgentRequests {
       .run()
     this.worktreeStatus?.forget(project.id)
 
+    const path = this.seenBy(requester, row.path)
     return [
-      `Worktree « ${branch} » prêt dans ${row.path}. ${origin}`,
+      `Worktree « ${branch} » prêt dans ${path}. ${origin}`,
       "Ta session y est rattachée : l'utilisateur retrouve l'arbre et ta session dans la vue Chantiers du projet, d'où il le nettoiera une fois fusionné.",
-      `Ton répertoire de travail ne change pas. Travaille dans l'arbre par chemins absolus : édite les fichiers sous ${row.path}, et lance tes commandes avec \`cd ${row.path} && …\` ou \`git -C ${row.path} …\`.`,
+      `Ton répertoire de travail ne change pas. Travaille dans l'arbre par chemins absolus : édite les fichiers sous ${path}, et lance tes commandes avec \`cd ${path} && …\` ou \`git -C ${path} …\`.`,
       `Pour qu'une autre session y travaille directement, start_session avec \`worktree: "${branch}"\`.`,
     ].join('\n')
   }
@@ -1123,7 +1163,7 @@ export class AgentRequests {
       })
       return [
         `- \`${tree.name}\` : ${WORKTREE_STATE_WORDS[tree.state]}${facts.length ? ` (${facts.join(', ')})` : ''}`,
-        `  ${tree.path}${tree.external ? ' · créé hors de Solera' : ''}`,
+        `  ${this.seenBy(requester, tree.path)}${tree.external ? ' · créé hors de Solera' : ''}`,
         sessions.length ? `  Sessions : ${sessions.join(' ; ')}` : '  Aucune session rattachée.',
       ].join('\n')
     })
@@ -1149,6 +1189,26 @@ export class AgentRequests {
     return { id: card.id, number: card.number, title: card.title }
   }
 
+  /**
+   * Le confinement demandé par `start_session` (#146) : oui, non, ou rien pour le
+   * réglage du projet. Une session confinée ne peut pas en lancer une libre.
+   */
+  private launchConfinement(requester: Requester, value: unknown): boolean | null {
+    if (value !== undefined && value !== null && typeof value !== 'boolean') {
+      throw new Refusal('Le paramètre `confined` est un booléen.')
+    }
+    const confined = value ?? null
+    if (confined === false && this.confined(requester)) {
+      throw new Refusal('Une session confinée ne lance que des sessions confinées : omets `confined`.')
+    }
+    return confined
+  }
+
+  /** La session qui demande est-elle confinée ? Un compte sans session ne l'est pas. */
+  private confined(requester: Requester): boolean {
+    return requester.id !== null && this.sessions.environments.ofConversation(requester.id).confined
+  }
+
   // --- schedule_task -------------------------------------------------------------
 
   /**
@@ -1164,6 +1224,11 @@ export class AgentRequests {
     project: ProjectRow,
     payload: Record<string, unknown>,
   ): Promise<string> {
+    if (this.confined(requester)) {
+      throw new Refusal(
+        'Refusé : cette session est confinée, et une tâche planifiée tournerait hors de son confinement. Propose-la à l’utilisateur.',
+      )
+    }
     if (requester.scheduleId) {
       throw new Refusal(
         "Refusé : cette session est elle-même un tir planifié. Une tâche qui en crée d'autres se multiplierait sans personne pour l'arrêter ; ouvre une carte avec create_card.",
@@ -1195,6 +1260,17 @@ export class AgentRequests {
     }
 
     const cadence = parseAgentCadence(payload)
+    const onDemand = payload.on_demand ?? true
+    if (typeof onDemand !== 'boolean') throw new Refusal('`on_demand` vaut `true` ou `false`.')
+    if (!cadence && !onDemand) {
+      throw new Refusal(
+        'Refusé : sans cadence et sans `on_demand`, la tâche ne partirait jamais. Donne une cadence, ou laisse-la à la demande.',
+      )
+    }
+    const worktreeMode = scheduleWorktreeModeSchema.safeParse(payload.worktree_mode ?? 'root')
+    if (!worktreeMode.success) {
+      throw new Refusal('`worktree_mode` vaut `root` (à la racine du projet) ou `new` (un worktree neuf par tir).')
+    }
     const maxDurationMinutes = payload.max_duration_minutes ?? DEFAULT_SCHEDULE_DURATION_MINUTES
     if (
       typeof maxDurationMinutes !== 'number' ||
@@ -1232,6 +1308,8 @@ export class AgentRequests {
         config,
         prompt,
         cadence,
+        onDemand,
+        worktreeMode: worktreeMode.data,
         overlapPolicy: overlap,
         maxDurationMinutes,
         enabled: true,
@@ -1242,8 +1320,10 @@ export class AgentRequests {
 
     const lines = [
       `Tâche planifiée « ${task.name} » créée, id ${task.id}.`,
-      `Cadence : ${describeCadence(cadence)}. Prochain tir : ${task.nextRunAt ? new Date(task.nextRunAt).toLocaleString('fr-FR') : 'aucun'} (heure du serveur).`,
-      `Chaque tir ouvre une session neuve : CLI ${agent}, modèle ${describeModel(config)}, effort ${describeEffort(config)}, ${task.maxDurationMinutes} min au plus, à la racine du projet.`,
+      cadence
+        ? `Cadence : ${describeCadence(cadence)}${onDemand ? ', et à la demande' : ''}. Prochain tir : ${task.nextRunAt ? new Date(task.nextRunAt).toLocaleString('fr-FR') : 'aucun'} (heure du serveur).`
+        : "Sans cadence : elle ne part qu'à la demande, d'un clic dans l'interface.",
+      `Chaque tir ouvre une session neuve : CLI ${agent}, modèle ${describeModel(config)}, effort ${describeEffort(config)}, ${task.maxDurationMinutes} min au plus, ${worktreeMode.data === 'new' ? 'dans un worktree neuf, sur une branche à lui' : 'à la racine du projet'}.`,
       describePermissions(config)
         ? "Attention : avec les permissions par défaut du projet, un tir s'arrêtera pour demander un accord que personne ne donnera, jusqu'à sa durée maximale. Dis-le à l'utilisateur : il règle les permissions de la tâche dans la vue Planification."
         : null,
@@ -1275,8 +1355,8 @@ export class AgentRequests {
     // retire l'outil.
     this.assertFilingAllowed(requester)
 
-    const given = typeof payload.path === 'string' ? payload.path.trim() : ''
-    if (!given) {
+    const asked = typeof payload.path === 'string' ? payload.path.trim() : ''
+    if (!asked) {
       throw new Refusal(
         'Le paramètre `path` est requis : le chemin absolu du dossier du projet, que tu dois avoir créé avant.',
       )
@@ -1310,9 +1390,10 @@ export class AgentRequests {
       )
     }
 
-    const workspacePath = await assertUsableWorkspace(given).catch(() => {
+    // L'agent nomme le dossier tel qu'il le voit ; le projet le garde tel que l'hôte le lit.
+    const workspacePath = await assertUsableWorkspace(this.hostPathFrom(requester, asked)).catch(() => {
       throw new Refusal(
-        `Refusé : « ${given} » n'existe pas, ou n'est pas un dossier. Crée-le d'abord avec tes propres outils : Solera ne crée pas de dossier.`,
+        `Refusé : « ${asked} » n'existe pas, ou n'est pas un dossier. Crée-le d'abord avec tes propres outils : Solera ne crée pas de dossier.`,
       )
     })
 
@@ -1322,7 +1403,7 @@ export class AgentRequests {
     const root = resolved.endsWith(sep) ? resolved.slice(0, -sep.length) : resolved
     if (workspacePath !== root && !workspacePath.startsWith(root + sep)) {
       throw new Refusal(
-        `Refusé : « ${workspacePath} » est hors de ${root}, où cette instance range ses projets. Crée le dossier là-bas, puis rappelle create_project.`,
+        `Refusé : « ${this.seenBy(requester, workspacePath)} » est hors de ${this.seenBy(requester, root)}, où cette instance range ses projets. Crée le dossier là-bas, puis rappelle create_project.`,
       )
     }
 
@@ -1352,7 +1433,7 @@ export class AgentRequests {
     })
 
     return [
-      `Projet « ${row.name} » créé, id ${row.id}, sur ${row.workspacePath}.`,
+      `Projet « ${row.name} » créé, id ${row.id}, sur ${this.seenBy(requester, row.workspacePath)}.`,
       `Consignes en mode ${row.instructionsMode}.`,
       `Il est privé et vide : aucune conversation n'y est rangée. Pour y ranger celle-ci ou une autre : move_conversation avec project="${row.id}", que l'utilisateur accorde d'un clic.`,
     ].join('\n')
@@ -1729,6 +1810,19 @@ export class AgentRequests {
   }
 
   /**
+   * Un chemin de l'hôte tel que la session qui demande le voit : `/mnt/c/…` dans un
+   * conteneur sous Windows natif (#153). Tel quel quand son CLI ne tourne plus.
+   */
+  private seenBy(requester: { id: string }, hostPath: string): string {
+    return this.sessions.runnerEnvironment(requester.id)?.pathInside(hostPath) ?? hostPath
+  }
+
+  /** L'inverse : un chemin que la session donne, tel que l'hôte le lit. */
+  private hostPathFrom(requester: { id: string }, path: string): string {
+    return this.sessions.runnerEnvironment(requester.id)?.pathOutside(path) ?? path
+  }
+
+  /**
    * Les deux outils de rangement sont une portée accordée, pas une capacité par défaut.
    *
    * Vérifié ici et pas seulement à la liste des outils du serveur MCP : c'est la base qui
@@ -2010,8 +2104,34 @@ export class AgentRequests {
       if (blocks.length > 0) line.blocks = blocks.map(ref)
       if (unblocks.length > 0) line.unblocks = unblocks.map(ref)
 
-      if (!line.toColumn && !line.close && !line.parent && !line.dueAt && !line.blocks && !line.unblocks) {
-        throw new Refusal(`Rien à changer pour #${number} : donne \`column\`, \`close\`, \`parent\`, \`due\`, \`blocks\` ou \`unblocks\`.`)
+      // L'ajout au jalon rangé dans une carte qui existe (#185). Une proposition et non
+      // `edit_subtasks` : la carte est celle d'une autre session, et sa description
+      // engage le travail d'une personne.
+      const add = labelList(change.add_subtasks, 'add_subtasks')
+      if (add.length > 0) {
+        const existing = subtaskLabels(card.description)
+        const known = add.find((label) => existing.has(label))
+        if (known) throw new Refusal(`« ${known} » est déjà une sous-tâche de #${number}. Retire-la de \`add_subtasks\`.`)
+        const twice = add.find((label, index) => add.indexOf(label) !== index)
+        if (twice) throw new Refusal(`« ${twice} » apparaît deux fois dans \`add_subtasks\` de #${number}.`)
+        // Un pas de plus sur un travail déclaré fini ne se fera pas : rouvrir la carte
+        // est le choix d'une personne, et il se propose dans la même ligne.
+        const reopened = line.toColumn !== undefined && !CARD_CLOSED_COLUMNS.includes(line.toColumn)
+        if (CARD_CLOSED_COLUMNS.includes(card.column) && !reopened) {
+          throw new Refusal(
+            `#${number} est en « ${COLUMN_WORDS[card.column]} » : propose de la rouvrir avec \`column\` dans la même ligne, ou range l'ajout dans une autre carte.`,
+          )
+        }
+        if (appendSubtasks(card.description, add).length > DESCRIPTION_MAX) {
+          throw new Refusal(`La description de #${number} dépasserait 20 000 caractères. Propose plutôt une nouvelle carte avec propose_cards.`)
+        }
+        line.addSubtasks = add
+      }
+
+      if (!changesBesidesSubtasks(line) && !line.addSubtasks) {
+        throw new Refusal(
+          `Rien à changer pour #${number} : donne \`column\`, \`close\`, \`parent\`, \`due\`, \`blocks\`, \`unblocks\` ou \`add_subtasks\`.`,
+        )
       }
       proposed.push(line)
     }
@@ -2269,26 +2389,64 @@ export class AgentRequests {
   /**
    * Créée ou modifiée en `proposed` : l'utilisateur relit la commande avant que son
    * premier clic la lance. Renommer ou redécrire un bouton relu ne change pas son statut.
+   *
+   * Une cadence se relit comme une commande : planifiée, elle partirait sans clic. Les
+   * bornes d'une cadence d'agent sont celles de `schedule_task`.
    */
   private registerAction(requester: ConversationRow, project: ProjectRow, payload: Record<string, unknown>): string {
-    const fields = Object.fromEntries(
+    const updating = payload.id !== undefined && payload.id !== null && payload.id !== ''
+    const fields: Record<string, unknown> = Object.fromEntries(
       ['label', 'description', 'kind', 'command', 'subdir', 'url']
         .filter((key) => payload[key] !== undefined && payload[key] !== null)
         .map((key) => [key, payload[key]]),
     )
-    if (payload.id !== undefined && payload.id !== null && payload.id !== '') {
-      const row = this.projectAction(requester, payload.id)
+    if (payload.schedule !== undefined && payload.schedule !== null) {
+      // Les mêmes refus que schedule_task : une commande planifiée tourne hors de la
+      // session, et un tir qui en planifie d'autres se multiplierait.
+      if (this.confined(requester)) {
+        throw new Refusal('Refusé : cette session est confinée, et une commande planifiée tournerait hors de son confinement. Propose-la à l’utilisateur.')
+      }
+      if (requester.scheduleId) {
+        throw new Refusal("Refusé : cette session est elle-même un tir planifié. Ouvre plutôt une carte avec create_card.")
+      }
+    }
+    if (payload.schedule !== undefined) fields.schedule = parseActionSchedule(payload.schedule, !updating)
+    if (payload.on_demand !== undefined && payload.on_demand !== null) fields.onDemand = payload.on_demand
+    if (payload.placement !== undefined && payload.placement !== null) {
+      const placement = actionPlacementSchema.safeParse(payload.placement)
+      if (!placement.success) {
+        throw new Refusal('Refusé : `placement` vaut `follow`, `root`, `branch` ou `per-worktree`.')
+      }
+      fields.placement = placement.data
+    }
+    if (payload.branch !== undefined) fields.pinnedBranch = payload.branch === '' ? null : payload.branch
+    const existing = updating ? this.projectAction(requester, payload.id) : null
+    refuseIncoherentPlacement(fields, existing)
+    const when = (row: ProjectActionRow) => {
+      if (row.cadence === null) return describePlacement(row)
+      const next = row.scheduleEnabled
+        ? `, prochain tir ${row.nextRunAt ? new Date(row.nextRunAt).toLocaleString('fr-FR') : 'aucun'} (heure du serveur)`
+        : ', en pause'
+      const stop = row.stopCadence
+        ? ` Arrêtée ${describeCadence(readActionCadence(row.stopCadence)!)}${row.nextStopAt ? `, prochain arrêt ${new Date(row.nextStopAt).toLocaleString('fr-FR')}` : ''}.`
+        : ''
+      return `${describePlacement(row)} Planifiée (${describeCadence(readActionCadence(row.cadence)!)})${next}${row.onDemand ? '' : ', sans bouton'} : chaque tir part sans clic, sans terminal, à la racine du projet (et dans son sous-dossier).${stop}`
+    }
+    if (existing) {
+      const row = existing
       const parsed = updateProjectActionBodySchema.safeParse(fields)
       if (!parsed.success) throw new Refusal(describeZod(parsed.error))
       const next = updateAction(this.ctx.db, row, parsed.data, requester.id)
+      // Ses unités tourneraient sans plus de bouton ; l'arrêt n'attend pas la réponse.
+      if (unitsOrphanedBy(row, next)) void this.actions?.forget(row).catch(() => undefined)
       return next.approvedAt
-        ? `Action « ${next.label} » mise à jour ; elle reste validée.`
-        : `Action « ${next.label} » mise à jour. Sa commande a changé : l'utilisateur doit la valider avant de la lancer d'un clic.`
+        ? `Action « ${next.label} » mise à jour ; elle reste validée.${when(next)}`
+        : `Action « ${next.label} » mise à jour. Ce qu'elle exécute a changé : l'utilisateur doit la valider avant qu'elle parte d'un clic ou à sa cadence.${when(next)}`
     }
     const parsed = createProjectActionBodySchema.safeParse(fields)
     if (!parsed.success) throw new Refusal(describeZod(parsed.error))
     const row = createAction(this.ctx.db, project.id, parsed.data, requester.id)
-    return `Action « ${row.label} » (${row.kind}, id ${row.id}) proposée. Elle apparaît dans l'onglet Actions du panneau ; l'utilisateur la valide avant son premier lancement.`
+    return `Action « ${row.label} » (${row.kind}, id ${row.id}) proposée. Elle apparaît dans l'onglet Actions du panneau ; l'utilisateur la valide avant son premier lancement.${when(row)}`
   }
 
   private async removeAction(requester: ConversationRow, payload: Record<string, unknown>): Promise<string> {
@@ -2302,6 +2460,9 @@ export class AgentRequests {
    * Lance l'action dans le worktree de la session qui demande. Permis même pour une
    * action encore proposée : l'agent pourrait exécuter la même commande dans son shell,
    * la relecture protège le clic de l'utilisateur, pas l'agent de lui-même.
+   *
+   * Sans arguments ajoutés : la commande qui part d'ici est celle que l'action porte,
+   * et une variante se lance dans son propre shell.
    */
   private async runAction(
     requester: ConversationRow,
@@ -2309,8 +2470,16 @@ export class AgentRequests {
     payload: Record<string, unknown>,
   ): Promise<string> {
     if (!this.actions) throw new Refusal('Les actions ne sont pas disponibles sur ce serveur.')
+    if (payload.args !== undefined && payload.args !== null) {
+      throw new Refusal("`args` n'est pas accepté : run_action lance la commande de l'action telle quelle. Pour une variante, exécute-la dans ton shell.")
+    }
     const row = this.projectAction(requester, payload.id)
-    const result = await this.actions.run(row, resolveConversationCwd(this.ctx.db, requester) ?? project.workspacePath, requester.id)
+    if (!row.onDemand) {
+      throw new Refusal(`« ${row.label} » est une commande planifiée, pas à la demande : elle ne part qu'à sa cadence. Pour la jouer maintenant, exécute sa commande dans ton shell.`)
+    }
+    const result = await this.actions.run(row, resolveConversationCwd(this.ctx.db, requester) ?? project.workspacePath, requester.id, {
+      trigger: 'agent',
+    })
     if (result.service) {
       // Un temps pour qu'un échec immédiat (port pris, commande introuvable) se voie.
       if (!result.alreadyRunning) await new Promise((resolve) => setTimeout(resolve, 2000))
@@ -2358,20 +2527,22 @@ export class AgentRequests {
 }
 
 /**
- * La cadence telle qu'un agent la donne : exactement un de `every_minutes`, `cron`, `at`.
+ * La cadence telle qu'un agent la donne : au plus un de `every_minutes`, `cron`, `at`.
+ * Null sans aucun des trois : la tâche ne part qu'à la demande.
  *
  * Trois paramètres à plat plutôt qu'un objet discriminé : c'est la forme qu'un modèle
  * remplit sans se tromper, et celle de `CronCreate` qu'il connaît déjà.
  */
-function parseAgentCadence(payload: Record<string, unknown>): ScheduleCadence {
+function parseAgentCadence(payload: Record<string, unknown>): ScheduleCadence | null {
   const given = ['every_minutes', 'cron', 'at'].filter(
     (key) => payload[key] !== undefined && payload[key] !== null && payload[key] !== '',
   )
-  if (given.length !== 1) {
+  if (given.length > 1) {
     throw new Refusal(
-      'Donne exactement une cadence : `every_minutes` (intervalle), `cron` (motif à cinq champs) ou `at` (date et heure uniques, ISO 8601).',
+      'Donne au plus une cadence : `every_minutes` (intervalle), `cron` (motif à cinq champs) ou `at` (date et heure uniques, ISO 8601). Sans cadence, la tâche ne part qu’à la demande.',
     )
   }
+  if (given.length === 0) return null
 
   let candidate: unknown
   if (given[0] === 'every_minutes') {
@@ -2405,6 +2576,94 @@ function parseAgentCadence(payload: Record<string, unknown>): ScheduleCadence {
     }
   }
   return cadence
+}
+
+/**
+ * Le `schedule` de `register_action` : une cadence comme celle de `schedule_task`, une
+ * durée maximale, une pause. Null retire la planification. En modification, une pause
+ * seule (`enabled`) garde la cadence.
+ */
+function parseActionSchedule(raw: unknown, requireCadence: boolean): ActionSchedulePatch | null {
+  if (raw === null) return null
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Refusal('`schedule` est un objet : `every_minutes`, `cron` ou `at`, et au besoin `max_duration_minutes` et `enabled`. Null retire la planification.')
+  }
+  const given = raw as Record<string, unknown>
+  const schedule: ActionSchedulePatch = {}
+  // Sans cadence, une tâche d'agent ne part qu'à la demande ; une commande planifiée en
+  // a besoin d'une, sauf pour une pause seule en modification.
+  const cadence = parseAgentCadence(given)
+  if (cadence) schedule.cadence = cadence
+  else if (requireCadence) {
+    throw new Refusal('`schedule` demande une cadence : `every_minutes`, `cron` ou `at`.')
+  }
+  const maxDuration = given.max_duration_minutes
+  if (maxDuration !== undefined && maxDuration !== null) {
+    if (
+      typeof maxDuration !== 'number' ||
+      !Number.isInteger(maxDuration) ||
+      maxDuration < MIN_SCHEDULE_DURATION_MINUTES ||
+      maxDuration > MAX_SCHEDULE_DURATION_MINUTES
+    ) {
+      throw new Refusal(`\`max_duration_minutes\` est un entier entre ${MIN_SCHEDULE_DURATION_MINUTES} et ${MAX_SCHEDULE_DURATION_MINUTES}.`)
+    }
+    schedule.maxDurationMinutes = maxDuration
+  }
+  if (given.enabled !== undefined && given.enabled !== null) {
+    if (typeof given.enabled !== 'boolean') throw new Refusal('`schedule.enabled` vaut true ou false.')
+    schedule.enabled = given.enabled
+  }
+  // L'arrêt d'un service planifié : une cadence de la même forme, ou null pour le retirer.
+  if (given.stop !== undefined) {
+    if (given.stop === null) schedule.stopCadence = null
+    else if (typeof given.stop !== 'object' || Array.isArray(given.stop)) {
+      throw new Refusal('`schedule.stop` est un objet : `every_minutes`, `cron` ou `at`, comme la cadence. Null retire l’arrêt.')
+    } else {
+      const stop = parseAgentCadence(given.stop as Record<string, unknown>)
+      if (!stop) throw new Refusal('`schedule.stop` demande une cadence : `every_minutes`, `cron` ou `at`.')
+      schedule.stopCadence = stop
+    }
+  }
+  return schedule
+}
+
+/**
+ * Les refus du placement et de l'arrêt, dits à l'agent avant d'écrire : le serveur
+ * refuserait aussi, mais d'un code d'API qui ne lui dit pas quoi corriger (#260).
+ * `existing` : l'action modifiée, dont les champs non donnés restent.
+ */
+function refuseIncoherentPlacement(fields: Record<string, unknown>, existing: ProjectActionRow | null): void {
+  const kind = (fields.kind ?? existing?.kind) as ProjectActionRow['kind'] | undefined
+  const placement = (fields.placement ?? existing?.placement ?? 'follow') as ProjectActionRow['placement']
+  const branch = fields.pinnedBranch !== undefined ? fields.pinnedBranch : (existing?.pinnedBranch ?? null)
+  const url = (fields.url ?? existing?.url ?? null) as string | null
+  const schedule = fields.schedule as ActionSchedulePatch | null | undefined
+  if (kind === 'task' && fields.placement !== undefined && placement !== 'follow') {
+    throw new Refusal('Refusé : une `task` tourne toujours là où on la lance. `placement` ne vaut que pour un `service`.')
+  }
+  if (fields.pinnedBranch && placement !== 'branch') {
+    throw new Refusal('Refusé : `branch` ne vaut qu’avec `placement: "branch"`.')
+  }
+  if (placement === 'branch' && (typeof branch !== 'string' || !branch.trim())) {
+    throw new Refusal('Refusé : `placement: "branch"` demande `branch`, la branche sur laquelle le service tourne toujours.')
+  }
+  if (placement === 'per-worktree' && url && !url.includes('{port}')) {
+    throw new Refusal('Refusé : une instance par worktree écoute sur son propre port, que sa commande reçoit dans `PORT`. Son `url` doit contenir `{port}`.')
+  }
+  if (schedule?.stopCadence) {
+    if (kind === 'task') throw new Refusal('Refusé : seul un `service` s’arrête à heure fixe. Une `task` finit seule.')
+    if (!schedule.cadence && !existing?.cadence) {
+      throw new Refusal('Refusé : `schedule.stop` arrête un service planifié. Donne aussi sa cadence de démarrage (`every_minutes`, `cron` ou `at`).')
+    }
+  }
+}
+
+/** Où tourne un service, dit à l'agent après l'écriture ; rien pour une tâche, qui suit. */
+function describePlacement(row: Pick<ProjectActionRow, 'kind' | 'placement' | 'pinnedBranch'>): string {
+  if (row.kind === 'task' || row.placement === 'follow') return ''
+  if (row.placement === 'root') return ' Il tourne toujours à la racine du projet.'
+  if (row.placement === 'branch') return ` Il tourne toujours sur la branche \`${row.pinnedBranch}\`.`
+  return ' Une instance par worktree, chacune sur son port (`PORT`).'
 }
 
 function describeCadence(cadence: ScheduleCadence): string {

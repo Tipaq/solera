@@ -129,6 +129,8 @@ try {
       if (path.endsWith('/worktrees')) return route.fulfill({ json: [] })
       if (path.includes('/files')) return route.fulfill({ json: { files: [] } })
       if (path.includes('/cards/')) return route.fulfill({ json: { cards: [] } })
+      // Le composer lit la connexion des CLI (#91) : un `{}` sans `entries` le ferait tomber.
+      if (path === '/api/agents/auth') return route.fulfill({ json: { entries: [] } })
       if (path === '/api/mcp/servers') return route.fulfill({ json: { servers: [], soleraServer: true, agentMemory: true, projectFiling: true, cardFiling: true } })
       return route.fulfill({ json: {} })
     })
@@ -205,6 +207,10 @@ try {
     await list.getByRole('option', { name: /Ancienne piste écartée/ }).waitFor()
     await page.keyboard.press('Enter')
     assert.equal(await field.inputValue(), `Regarde session:${OLD} `)
+    // Le choix replace le curseur à l'image suivante (`pickSession`) : une frappe plus
+    // rapide qu'une image, que seul un robot sait faire, glisserait sa première lettre
+    // derrière le curseur replacé.
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve())))
     // La puce au-dessus du champ dit de quelle session il s'agit.
     await page.getByLabel('Sessions citées').getByRole('link', { name: 'Ancienne piste écartée' }).waitFor()
 

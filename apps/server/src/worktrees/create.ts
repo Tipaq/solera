@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { and, eq } from 'drizzle-orm'
-import { worktrees, type ProjectRow, type WorktreeRow } from '@solera/db'
+import { cards, worktrees, type ProjectRow, type WorktreeRow } from '@solera/db'
+import { relativizeWorktreeLinks } from '../environments/devcontainer/worktree-links.js'
 import { GitError, addWorktree, readGitStatus } from '../git.js'
 import type { AppContext } from '../http/context.js'
 import { badRequest, conflict } from '../http/errors.js'
@@ -20,6 +21,8 @@ export async function createWorktree(
   userId: string,
   name: string,
   baseRef: string,
+  /** La carte pour laquelle l'arbre est créé : retenue si elle est du projet (#168). */
+  cardId: string | null,
 ): Promise<WorktreeRow> {
   if (!(await readGitStatus(project.workspacePath))) {
     throw badRequest('not_a_repository', 'This project is not a git repository.')
@@ -43,6 +46,9 @@ export async function createWorktree(
       throw err
     },
   )
+  // Sous Windows natif, un lien absolu `C:/…` ne mène nulle part dans un dev container :
+  // relatif, le worktree s'y ouvre dès sa création, sans attendre le prochain lancement (#151).
+  if (process.platform === 'win32') await relativizeWorktreeLinks(project.workspacePath).catch(() => undefined)
 
   const row: WorktreeRow = {
     id: randomUUID(),
@@ -53,10 +59,17 @@ export async function createWorktree(
     createdBy: userId,
     createdAt: Date.now(),
     removedAt: null,
+    cardId: cardId && ownCard(ctx, project, cardId) ? cardId : null,
   }
 
   // Une entrée précédente supprimée porte le même nom : l'index unique l'interdirait.
   if (existing) ctx.db.delete(worktrees).where(eq(worktrees.id, existing.id)).run()
   ctx.db.insert(worktrees).values(row).run()
   return row
+}
+
+function ownCard(ctx: AppContext, project: ProjectRow, cardId: string): boolean {
+  return Boolean(
+    ctx.db.select({ id: cards.id }).from(cards).where(and(eq(cards.id, cardId), eq(cards.projectId, project.id))).get(),
+  )
 }

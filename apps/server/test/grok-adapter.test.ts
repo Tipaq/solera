@@ -49,7 +49,7 @@ test('catalogue : modèles, efforts du plus bas au plus haut, défauts et comman
 
 test('fork : rang du dernier tour gardé, ou toute la session', async (t) => {
   const { adapter, cwd, rpc } = await adapterFixture(t)
-  const target = { agentSessionId: 'ses_root', cwd }
+  const target = { agentSessionId: 'ses_root', cwd, accountEnv: {}, cli: adapter.cli }
   assert.deepEqual(adapter.forkCut(logWithTurns(2, 5), 'c', 10), { targetPromptIndex: 1 })
   assert.deepEqual(adapter.forkCut(logWithTurns(5, 5), 'c', 10), { targetPromptIndex: null })
   assert.throws(() => adapter.forkCut(logWithTurns(0, 3), 'c', 1), ForkError)

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import type { EditorSeed } from './action-editor'
 
 /**
  * État du panneau latéral droit, partagé hors de React.
@@ -111,14 +112,10 @@ export function usePanelOpen(): boolean {
 export const PANEL_TRANSITION_MS = 200
 
 /**
- * Présence du panneau dans le document, distincte de son état ouvert.
- *
- * Le panneau reste monté le temps de sortir de l'écran, puis disparaît : il tient des
- * terminaux vivants et des requêtes d'arborescence, qu'on ne veut pas garder derrière
- * un panneau fermé.
+ * Présence dans le document d'un élément qui glisse, distincte de son état ouvert : il
+ * reste monté le temps de sortir de l'écran, puis disparaît. Le panneau, le tiroir.
  */
-export function usePanelPresence(): { mounted: boolean; open: boolean } {
-  const open = usePanelOpen()
+export function usePresence(open: boolean): boolean {
   const [mounted, setMounted] = useState(open)
 
   useEffect(() => {
@@ -131,13 +128,63 @@ export function usePanelPresence(): { mounted: boolean; open: boolean } {
     return () => clearTimeout(timer)
   }, [open])
 
-  return { mounted, open }
+  return mounted
+}
+
+/**
+ * Présence du panneau dans le document : il tient des terminaux vivants et des requêtes
+ * d'arborescence, qu'on ne veut pas garder derrière un panneau fermé.
+ */
+export function usePanelPresence(): { mounted: boolean; open: boolean } {
+  const open = usePanelOpen()
+  return { mounted: usePresence(open), open }
 }
 
 export function setPanelOpen(next: boolean): void {
   if (next === open) return
   open = next
+  // Ouvert sans geste qui désigne un arbre, le panneau montre le dossier de sa page.
+  if (next) worktree = null
   if (scope !== null) openByScope.set(scope, next)
+  for (const listener of listeners) listener()
+}
+
+/**
+ * L'arbre que le panneau d'une vue de lieu montre à la place du dossier du projet : un
+ * arbre **sans session**, désigné par le geste « Diff » de Travail ou de l'Aperçu
+ * (carte #169). Un arbre qui a une session s'ouvre dans elle, par
+ * `openPanelOnArrival`.
+ *
+ * Il ne survit ni à la fermeture du panneau ni au départ de la page : un panneau rouvert
+ * autrement, ou ailleurs, montre de nouveau le dossier de sa page.
+ */
+export interface PanelWorktree {
+  id: string
+  /** Le nom de l'arbre, pour dire au panneau ce qu'il parcourt. */
+  name: string
+}
+
+let worktree: PanelWorktree | null = null
+
+export function usePanelWorktree(): PanelWorktree | null {
+  return useSyncExternalStore(
+    subscribe,
+    () => worktree,
+    () => null,
+  )
+}
+
+/**
+ * Ouvre l'onglet Git du panneau sur un arbre sans session, ou sur le dossier du projet
+ * (`null`) : le geste « Diff » de la racine.
+ */
+export function openGitPanel(target: PanelWorktree | null): void {
+  tab = 'git'
+  subAgentId = null
+  checkpointKey = null
+  setPanelOpen(true)
+  // Après l'ouverture, qui oublie l'arbre d'un panneau ouvert sans geste.
+  worktree = target
   for (const listener of listeners) listener()
 }
 
@@ -153,7 +200,9 @@ export function setPanelScope(next: string): void {
   if (scope !== null) openByScope.set(scope, open)
   scope = next
   const restored = openByScope.get(next) ?? false
-  if (restored === open) return
+  const leftWorktree = worktree !== null
+  worktree = null
+  if (restored === open && !leftWorktree) return
   open = restored
   for (const listener of listeners) listener()
 }
@@ -307,6 +356,50 @@ export function clearSubAgent(): void {
   if (subAgentId === null) return
   subAgentId = null
   for (const listener of listeners) listener()
+}
+
+/**
+ * « En faire une action » depuis un autre onglet du panneau (PACT-8, PAG-12) : l'onglet
+ * Actions ouvre son éditeur pré-rempli. Il n'est pas forcément monté au moment de la
+ * demande — l'onglet Agent est devant — : la graine attend qu'il la prenne, une fois.
+ * Une demande plus récente remplace celle qui attendait.
+ */
+let actionEdit: EditorSeed | null = null
+const actionEditListeners = new Set<() => void>()
+
+export function requestActionEdit(seed: EditorSeed): void {
+  actionEdit = seed
+  setPanelTab('actions')
+  setPanelOpen(true)
+  for (const listener of actionEditListeners) listener()
+}
+
+/** La graine en attente, une seule fois. */
+export function takeActionEdit(): EditorSeed | null {
+  const seed = actionEdit
+  actionEdit = null
+  return seed
+}
+
+export function onActionEditRequest(listener: () => void): () => void {
+  actionEditListeners.add(listener)
+  return () => actionEditListeners.delete(listener)
+}
+
+/** Côté onglet Actions : prend la graine qui attendait au montage, puis celles qui arrivent. */
+export function useActionEditRequest(onSeed: (seed: EditorSeed) => void): void {
+  const latest = useRef(onSeed)
+  useEffect(() => {
+    latest.current = onSeed
+  })
+  useEffect(() => {
+    const take = () => {
+      const seed = takeActionEdit()
+      if (seed) latest.current(seed)
+    }
+    take()
+    return onActionEditRequest(take)
+  }, [])
 }
 
 /**

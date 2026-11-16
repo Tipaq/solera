@@ -2,11 +2,11 @@ import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { spawn, type IPty } from 'node-pty'
-import { launchOf } from '../agents/launch.js'
+import type { IPty } from 'node-pty'
 import { existsSync } from 'node:fs'
 import { claudeSecretKind, type ClaudeAccount, type ClaudeLoginPurpose, type ClaudeLoginStatusDto } from '@solera/protocol'
 import type { AgentAuth } from '../agents/auth.js'
+import type { CliLauncher } from '../agents/cli-binary.js'
 import { agentProcessEnv } from '../agents/process-env.js'
 import type { ClaudeAccountGauges } from './gauges.js'
 import type { ClaudeIdentify } from './identity.js'
@@ -180,7 +180,7 @@ export class ClaudeLoginService {
    */
   constructor(
     private readonly store: ClaudeAccountStore,
-    private readonly binary: () => Promise<string>,
+    private readonly cli: CliLauncher,
     private readonly gauges: ClaudeAccountGauges | null = null,
     private readonly cliAuth: (() => Promise<AgentAuth>) | null = null,
     /** Absente, aucune adresse n'est lue : c'est le cas des tests qui ne mènent que le CLI. */
@@ -306,15 +306,16 @@ export class ClaudeLoginService {
    */
   private async spawnCli(args: string[], isolated: boolean): Promise<{ pty: IPty; configDir: string }> {
     const configDir = await mkdtemp(join(tmpdir(), 'solera-claude-login-'))
-    const launch = launchOf(await this.binary())
-    const pty = spawn(launch.command, [...launch.args, ...args], {
+    const pty = this.cli.environment.spawnPty({
+      command: await this.cli.executable(),
+      args,
       name: 'xterm-256color',
       // Large : l'URL d'`auth login` est imprimée en texte et non en lien, et la plus
       // longue des deux, avec ses sept portées, ne doit pas dépendre de la largeur.
       cols: 400,
       rows: 40,
       cwd: configDir,
-      env: agentProcessEnv({ ...(isolated ? { CLAUDE_CONFIG_DIR: configDir } : {}), TERM: 'xterm-256color' }) as Record<string, string>,
+      env: agentProcessEnv({ ...(isolated ? { CLAUDE_CONFIG_DIR: configDir } : {}), TERM: 'xterm-256color' }),
     })
     return { pty, configDir }
   }

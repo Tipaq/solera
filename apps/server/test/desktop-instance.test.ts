@@ -7,15 +7,16 @@ import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import Fastify from 'fastify'
 import { authSessions, openDatabase, runMigrations, users } from '@solera/db'
+import { BridgeListeners } from '../src/environments/devcontainer/bridge.js'
 import { registerErrorHandler } from '../src/http/errors.js'
-import { registerLocalOriginGuard } from '../src/http/local-origin.js'
+import { localHosts, registerLocalOriginGuard } from '../src/http/local-origin.js'
 import { openDesktopSession } from '../src/instance/desktop.js'
 import { instanceCapabilities } from '../src/instance/profile.js'
 
 /** Une requête brute, pour forger `Host` et `Origin` comme le ferait une page hostile. */
-function raw(port: number, path: string, headers: Record<string, string>): Promise<number | undefined> {
+function raw(port: number, path: string, headers: Record<string, string>, address = '127.0.0.1'): Promise<number | undefined> {
   return new Promise((resolve, reject) => {
-    const req = request({ host: '127.0.0.1', port, path, headers }, (res) => {
+    const req = request({ host: address, port, path, headers }, (res) => {
       res.resume()
       resolve(res.statusCode)
     })
@@ -25,6 +26,10 @@ function raw(port: number, path: string, headers: Record<string, string>): Promi
 }
 
 async function guarded(t: TestContext): Promise<number> {
+  return (await guardedApp(t)).port
+}
+
+async function guardedApp(t: TestContext): Promise<{ app: ReturnType<typeof Fastify>; port: number }> {
   const app = Fastify()
   registerErrorHandler(app)
   registerLocalOriginGuard(app)
@@ -34,7 +39,7 @@ async function guarded(t: TestContext): Promise<number> {
   t.after(() => app.close())
   const address = app.server.address()
   assert.ok(address && typeof address === 'object')
-  return address.port
+  return { app, port: address.port }
 }
 
 test("la garde locale ne répond qu'à la fenêtre de l'app", async (t) => {
@@ -48,6 +53,27 @@ test("la garde locale ne répond qu'à la fenêtre de l'app", async (t) => {
   // Une autre page locale, même site au sens des cookies.
   assert.equal(await raw(port, '/api/health', { host, origin: 'http://127.0.0.1:5173' }), 403)
   assert.equal(await raw(port, '/api/health', { host, origin: 'null' }), 403)
+})
+
+test('un dev container joint le MCP par la passerelle Docker ou par host.docker.internal, pas par un autre nom', async (t) => {
+  const { app, port } = await guardedApp(t)
+  // 127.0.0.2 tient lieu de passerelle Docker : toute la plage 127/8 se lie sous Linux.
+  const bridges = new BridgeListeners()
+  bridges.serve(app.server)
+  await bridges.ensure('127.0.0.2')
+  assert.equal(await raw(port, '/api/health', { host: `127.0.0.2:${port}` }, '127.0.0.2'), 200)
+  assert.equal(await raw(port, '/api/health', { host: `attacker.example:${port}` }, '127.0.0.2'), 403)
+  // Une passerelle n'ouvre pas son adresse sur la boucle locale.
+  assert.equal(await raw(port, '/api/health', { host: `127.0.0.2:${port}` }), 403)
+  // Docker Desktop relaie host.docker.internal sur la boucle locale.
+  assert.equal(await raw(port, '/api/health', { host: `host.docker.internal:${port}` }), 200)
+  assert.equal(await raw(port, '/api/health', { host: `host.docker.internal:${port}` }, '127.0.0.2'), 403)
+})
+
+test("une passerelle IPv6 s'accepte entre crochets, la boucle locale IPv6 non", () => {
+  assert.ok(localHosts('fd00::1', 7517).includes('[fd00::1]:7517'))
+  assert.ok(localHosts('::ffff:172.17.0.1', 7517).includes('172.17.0.1:7517'))
+  assert.deepEqual(localHosts('::1', 7517), ['127.0.0.1:7517', 'localhost:7517'])
 })
 
 test('le relais des Storybook accepte ses pages opaques, pas un autre Host', async (t) => {

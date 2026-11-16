@@ -7,6 +7,7 @@ import {
 } from '@solera/protocol'
 import { CachedProbeMap } from '../cached-probe.js'
 import { withControlSession } from './control-session.js'
+import type { CliLauncher } from '../cli-binary.js'
 
 /**
  * Commandes en `/` que le CLI reconnaît dans un dossier donné, sans session.
@@ -33,7 +34,7 @@ export class ClaudeCommandCatalog {
     (cwd) => resolve(cwd),
   )
 
-  constructor(private readonly executable: () => Promise<string>) {}
+  constructor(private readonly cli: CliLauncher) {}
 
   list(cwd: string, force = false): Promise<ProjectCommandsDto> {
     return this.probes.read(cwd, force)
@@ -42,7 +43,7 @@ export class ClaudeCommandCatalog {
   private probe(cwd: string): Promise<{ commands: SlashCommandDto[] }> {
     return withControlSession(
       {
-        executable: this.executable,
+        cli: this.cli,
         cwd,
         tag: 'commands',
         options: { mcpServers: {}, strictMcpConfig: true },

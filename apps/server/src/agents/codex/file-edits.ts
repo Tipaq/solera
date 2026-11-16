@@ -1,7 +1,7 @@
 import type { EditDiffDto } from '@solera/protocol'
 import type { FileUpdateChange, ThreadItem } from '@solera/codex-bindings/v2'
 import { additionDiff, deletionDiff } from '@solera/protocol'
-import { toWorkspacePath } from '../paths.js'
+import { loggedPath, toWorkspacePath } from '../paths.js'
 
 /**
  * Ce qu'un `fileChange` a fait d'un fichier.
@@ -13,7 +13,7 @@ export function describeEdit(completedRaw: unknown, cwd: string, path: string): 
   const item = (completedRaw as { item?: ThreadItem } | null)?.item
   const changes: FileUpdateChange[] = item?.type === 'fileChange' ? item.changes : []
 
-  const change = changes.find((entry) => toWorkspacePath(cwd, entry.path) === path)
+  const change = changes.find((entry) => toWorkspacePath(cwd, loggedPath(entry.path)) === path)
   if (!change) {
     return {
       path,

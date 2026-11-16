@@ -244,6 +244,11 @@ try {
   await page.locator('.cm-vault-link').first().click()
   await page.waitForURL('**/vault/note/Produit/Atelier.md')
 
+  // Le panneau suit la page (`setPanelScope`) : une autre note est une autre page, il
+  // s'y referme, et se rouvre d'un geste.
+  await page.locator('[data-panel="vault"]').waitFor({ state: 'detached' })
+  await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
+
   // Créer dans un dossier : le titre se tape dans l'arbre, et la note hérite du dossier.
   await page.getByRole('button', { name: 'Notes', exact: true }).click()
   const folder = page.getByRole('button', { name: /^Journal/ })

@@ -2,6 +2,7 @@ import { FolderSearch } from 'lucide-react'
 import { useId, useState } from 'react'
 import { DirectoryPicker } from './DirectoryPicker'
 import { Button, cx } from '@solera/ui'
+import { useTranslate } from '../lib/i18n'
 
 interface PathFieldProps {
   label: string
@@ -13,6 +14,8 @@ interface PathFieldProps {
   /** Le chemin est exigé côté serveur : sans ça, un champ vide part et revient en
    * erreur de validation, dans une phrase qui nomme un champ de l'API. */
   required?: boolean
+  /** Le libellé est déjà dit à côté (une rangée de réglages) : il ne reste que pour les lecteurs d'écran. */
+  hideLabel?: boolean
 }
 
 /**
@@ -27,14 +30,16 @@ export function PathField({
   error,
   placeholder,
   required,
+  hideLabel,
 }: PathFieldProps) {
+  const t = useTranslate()
   const id = useId()
   const [pickerOpen, setPickerOpen] = useState(false)
   const describedBy = error ? `${id}-error` : hint ? `${id}-hint` : undefined
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-sm font-medium text-ink-soft">
+      <label htmlFor={id} className={cx('text-sm font-medium text-ink-soft', hideLabel && 'sr-only')}>
         {label}
       </label>
 
@@ -67,7 +72,7 @@ export function PathField({
           onClick={() => setPickerOpen(true)}
           icon={<FolderSearch size={16} />}
         >
-          <span className="hidden sm:inline">Parcourir</span>
+          <span className="hidden sm:inline">{t('pathField.browse')}</span>
         </Button>
       </div>
 

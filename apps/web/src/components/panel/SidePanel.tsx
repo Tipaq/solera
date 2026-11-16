@@ -1,7 +1,7 @@
 import { TooltipButton } from '@solera/ui'
 import { Bot, ChevronLeft, FileCode, GitCompare, Globe, Search, SquareKanban, SquareTerminal, X, Zap } from 'lucide-react'
-import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import type { AgentKind } from '@solera/protocol'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import type { AgentKind, ExecutionEnvironment } from '@solera/protocol'
 import type { BackgroundWork } from '../../lib/background'
 import type { EditTurn, TurnCheckpoint } from '../../lib/chat-fold'
 import { openTab, useEditorTabs } from '../../lib/editor-tabs'
@@ -18,19 +18,22 @@ import {
   usePanelTree,
   useSelectedSubAgent,
   type PanelTab,
+  type PanelWorktree,
 } from '../../lib/panel'
-import { projectScope } from '../../lib/workspace-scope'
+import { projectScope, worktreeScope } from '../../lib/workspace-scope'
 import { resizeHandle } from '../../lib/resize-handle'
 import { useMediaQuery } from '../../lib/viewport'
 import { PanelFocus } from '../PanelFocus'
 import type { SubAgent } from '../../lib/subagents'
 import { useRefreshTree } from '../../lib/tree'
-import { useProjects } from '../../lib/projects'
-import { useActions } from '../../lib/actions'
+import { useProjectEnvironments, useProjects } from '../../lib/projects'
+import { actionsTabBadge } from '../../lib/actions-tab'
+import { useActionsStatus } from '../../lib/automations-query'
 import { useCards } from '../../lib/cards'
 import { toReviewCount } from '../../lib/project-pane'
 import { IconButton, cx } from '@solera/ui'
 import { ActionsPane } from './ActionsPane'
+import { useTeammates } from '../../lib/teammates'
 import { AgentsPane } from './AgentsPane'
 import { FilesPane } from './FilesPane'
 import { GitPane } from './GitPane'
@@ -38,7 +41,7 @@ import { SearchPane } from './SearchPane'
 import { TerminalsPane } from './TerminalsPane'
 import { ProjectPane, type ProjectPaneSession } from './ProjectPane'
 import { WebPane } from './WebPane'
-import { useWebPane } from '../../lib/web-pane'
+import { useWebPane, type PortsSource } from '../../lib/web-pane'
 import { QuickOpen } from './QuickOpen'
 import { HeaderBand } from '../HeaderBand'
 
@@ -82,7 +85,9 @@ export const SidePanel = memo(function SidePanel({
   docked = false,
   canDock = false,
   workspaceName,
+  worktree,
   session,
+  environment,
 }: {
   /** Null sur un fil libre : il n'y a alors pas de répertoire de travail du tout. */
   projectId: string | null
@@ -108,44 +113,65 @@ export const SidePanel = memo(function SidePanel({
   docked?: boolean
   canDock?: boolean
   workspaceName?: string
+  /**
+   * En vue de lieu, l'arbre sans session que le geste « Diff » a désigné (carte #169) :
+   * Fichiers, Recherche et Git le parcourent à la place du dossier du projet. Terminaux
+   * et Actions, qui s'ouvrent à la racine, n'y sont pas proposés.
+   */
+  worktree?: PanelWorktree
   /** Ce que la vue *Projet* lit de la session : sa carte, son fil, son activité. */
   session?: ProjectPaneSession
+  /** Où tourne la session ; en vue projet, l'environnement par défaut du projet. */
+  environment?: ExecutionEnvironment
 }) {
   // L'onglet vit hors du panneau : le fil le pilote, en ouvrant un fichier depuis un
   // diff comme en désignant un sous-agent depuis le bandeau.
   const t = useTranslate()
   // Un fil libre n'a pas de dossier : les cinq vues de répertoire n'ont pas d'objet.
   const hasWorkspace = projectId !== null
-  const scope = conversationId ?? projectScope(projectId ?? '')
+  const worktreeView = !conversationId && worktree !== undefined
+  const scope = conversationId ?? (worktreeView ? worktreeScope(worktree.id) : projectScope(projectId ?? ''))
   const { data: projects } = useProjects()
   const projectName = projects?.find((project) => project.id === projectId)?.name
   const workspaceLabel = hasWorkspace
-    ? [projectName, workspaceName ?? t('terminal.dir.workspace')].filter(Boolean).join(' · ')
+    ? [projectName, (worktreeView ? worktree.name : workspaceName) ?? t('terminal.dir.workspace')].filter(Boolean).join(' · ')
     : t('panel.noWorkspace')
   const chosenTab = usePanelTab()
   // La vue *Web* n'existe que tant qu'une page y est ouverte. Elle ne dépend d'aucun
   // dossier : un fil libre qui cherche sur le web en a autant besoin qu'un autre.
   const hasWeb = useWebPane(scope) !== null
+  const projectEnvironment = useProjectEnvironments(hasWeb && !environment ? (projectId ?? undefined) : undefined).data?.default
+  // Une session confinée a son propre conteneur (#145), dont les ports ne sont pas ceux du projet.
+  const sessionEnvironment = environment ?? projectEnvironment
+  const inContainer = sessionEnvironment?.where === 'devcontainer'
+  const confined = sessionEnvironment?.confined ?? false
+  // Mémorisé : la vue *Web* est mémoïsée, un objet neuf à chaque rendu la referait.
+  const containerPorts = useMemo<PortsSource | null>(() => {
+    if (!inContainer) return null
+    if (confined) return conversationId ? { conversationId } : null
+    return projectId ? { projectId } : null
+  }, [inContainer, confined, conversationId, projectId])
   // L'onglet choisi survit d'une vue à l'autre ; en vue projet, un onglet de session
   // retombe sur les fichiers plutôt que d'afficher un panneau vide. Sans dossier, c'est
   // l'inverse : seul *Agent* existe, et c'est lui qu'on retrouve en revenant.
   const sessionTab = chosenTab === 'agents' || chosenTab === 'project'
+  // Sur un arbre, les vues qui s'ouvriraient à la racine retombent sur Git.
+  const rootOnlyTab = worktreeView && (chosenTab === 'terminals' || chosenTab === 'actions')
   const tab: PanelTab = chosenTab === 'web'
     ? hasWeb ? 'web' : hasWorkspace ? 'files' : 'agents'
     : !hasWorkspace
       ? 'agents'
-      : conversationId || !sessionTab
-        ? chosenTab
-        : 'files'
+      : rootOnlyTab
+        ? 'git'
+        : conversationId || !sessionTab
+          ? chosenTab
+          : 'files'
+  // Lus seulement quand l'onglet Agent est ouvert : c'est le seul à les montrer.
+  const teammates = useTeammates(tab === 'agents' ? conversationId : undefined, tab === 'agents' ? (projectId ?? undefined) : undefined)
   // Le badge de *Projet* compte ce qui attend une relecture : c'est la seule chose du
   // board qui réclame quelqu'un, et le reste se lit en ouvrant l'onglet.
   const { data: cards } = useCards(conversationId && projectId ? projectId : undefined)
   const reviewCount = toReviewCount(cards)
-  // Le badge d'*Actions* ne compte que celles à relire : elles seules attendent quelqu'un.
-  const { data: actions } = useActions()
-  const proposedActions = (actions ?? []).filter(
-    (action) => action.projectId === projectId && action.status === 'proposed',
-  ).length
   const selectedSubAgent = useSelectedSubAgent()
   /**
    * Le premier rendu se fait volontairement hors écran, l'entrée n'étant lancée qu'au
@@ -160,6 +186,8 @@ export const SidePanel = memo(function SidePanel({
   const wasRunning = useRef(turnRunning)
   const wide = useMediaQuery('(min-width: 48rem)')
   const modal = !wide || fullscreen
+  // Stable : l'onglet Actions, mémoïsé, le reçoit pour proposer de s'agrandir quand il édite à l'étroit.
+  const expand = useCallback(() => setFullscreen(true), [])
   const treeOpen = usePanelTree()
   const { active: openFile } = useEditorTabs(scope)
 
@@ -272,9 +300,13 @@ export const SidePanel = memo(function SidePanel({
       className={cx(
         // Pas d'`overflow-hidden` ici : il rognerait la poignée, posée en débord sur
         // le bord gauche. C'est la zone de défilement interne qui borne le contenu.
-        // L'ombre porte le décollement : sans elle, un panneau posé sur le fil se lit
-        // comme une colonne de plus, et on cherche pourquoi le fil est coupé.
-        'surface flex flex-col border-l border-line shadow-pop',
+        'surface flex flex-col border-l border-line',
+        // La règle des deux familles (gabarit « Panneau et tiroir ») : ancré, le panneau
+        // pousse le fil et n'a pas d'ombre. Posé par-dessus — en feuille, au téléphone,
+        // en plein écran — il prend celle du tiroir, légère et portée vers la gauche :
+        // sans elle, il se lirait comme une colonne de plus, et on chercherait pourquoi
+        // le fil est coupé.
+        docked && !fullscreen ? null : 'shadow-drawer',
         // Plein écran au doigt, largeur réglable au-delà. `absolute` et non `fixed` :
         // le repère est le calque de la coque, donc le panneau suit le viewport visuel.
         // La largeur est bornée en CSS et pas seulement à l'enregistrement : une
@@ -335,11 +367,12 @@ export const SidePanel = memo(function SidePanel({
         closable={!modal && !docked}
         tab={tab}
         hasWorkspace={hasWorkspace}
+        showRootViews={!worktreeView}
         hasConversation={Boolean(conversationId)}
         hasWeb={hasWeb}
         agentBadge={subAgents.filter((entry) => entry.status === 'running').length + background.length}
         projectBadge={reviewCount}
-        actionsBadge={proposedActions}
+        projectId={projectId}
       />
 
       {/* Monté même quand un autre onglet est devant : revenir aux fichiers ne doit
@@ -410,6 +443,7 @@ export const SidePanel = memo(function SidePanel({
             <TerminalsPane
               projectId={projectId}
               conversationId={conversationId}
+              inWorktree={conversationId !== undefined && workspaceName !== undefined}
               visible={tab === 'terminals'}
             />
           </div>
@@ -419,7 +453,7 @@ export const SidePanel = memo(function SidePanel({
       {/* Monté seulement quand on le regarde : la liste vient du cache des actions, et
           les terminaux qu'elle ouvre vivent dans leur propre vue. */}
       {tab === 'actions' && projectId ? (
-        <ActionsPane projectId={projectId} conversationId={conversationId} />
+        <ActionsPane projectId={projectId} conversationId={conversationId} onExpand={modal ? undefined : expand} />
       ) : null}
 
       {/* Monté seulement quand on le regarde, contrairement aux autres : il ne tient
@@ -428,11 +462,12 @@ export const SidePanel = memo(function SidePanel({
       {tab === 'agents' && conversationId && agent ? (
         <AgentsPane
           conversationId={conversationId}
-          scope={scope}
+          title={session?.title}
           agent={agent}
           agents={subAgents}
           background={background}
           editTurns={editTurns}
+          teammates={teammates}
           selectedId={selectedSubAgent}
           onOpenFile={openInFiles}
         />
@@ -451,7 +486,7 @@ export const SidePanel = memo(function SidePanel({
           perdrait où l'on en était dedans. */}
       {hasWeb ? (
         <div className={cx('min-h-0 min-w-0 flex-1 overflow-hidden', tab === 'web' ? 'flex' : 'hidden')}>
-          <WebPane scope={scope} />
+          <WebPane scope={scope} ports={containerPorts} />
         </div>
       ) : null}
 
@@ -500,7 +535,7 @@ export const SidePanel = memo(function SidePanel({
  * *Agent* et *Projet*. Sur un fil libre il ne reste qu'*Agent* — sans board, *Projet*
  * n'a rien à montrer — et le trait n'a donc rien à séparer.
  */
-function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, hasWeb, agentBadge, projectBadge, actionsBadge }: {
+function ViewBar({ band, closable, tab, hasWorkspace, showRootViews, hasConversation, hasWeb, agentBadge, projectBadge, projectId }: {
   /** Vrai quand cette rangée *est* le segment de bande du panneau, à sa hauteur. */
   band: boolean
   /** Le panneau recouvre le bouton du fil : il porte alors sa propre fermeture. */
@@ -508,14 +543,15 @@ function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, hasWeb, a
   tab: PanelTab
   /** Faux sur un fil libre : les cinq vues de répertoire n'ont rien à montrer. */
   hasWorkspace: boolean
+  /** Faux sur un arbre sans session : Terminaux et Actions s'ouvriraient à la racine. */
+  showRootViews: boolean
   hasConversation: boolean
   /** Une page est ouverte dans la vue *Web* : son onglet n'existe qu'alors. */
   hasWeb: boolean
   agentBadge: number
   /** Cartes du projet en attente de relecture. */
   projectBadge: number
-  /** Actions du projet proposées par un agent, en attente de relecture. */
-  actionsBadge: number
+  projectId: string | null
 }) {
   const t = useTranslate()
   const views = (
@@ -528,11 +564,13 @@ function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, hasWeb, a
             active={tab === 'search'} onSelect={() => setPanelTab('search')} />
           <Tab icon={<GitCompare size={15} />} label={t('panel.tab.git')} keepLabel={!band}
             active={tab === 'git'} onSelect={() => setPanelTab('git')} />
-          <Tab icon={<SquareTerminal size={15} />} label={t('panel.tab.terminals')} keepLabel={!band}
-            active={tab === 'terminals'} onSelect={() => setPanelTab('terminals')} />
-          <Tab icon={<Zap size={15} />} label={t('panel.tab.actions')} keepLabel={!band}
-            badge={actionsBadge} badgeLabel={(label, count) => t('panel.tab.actions.badge', { label, count })}
-            badgeTone="caution" active={tab === 'actions'} onSelect={() => setPanelTab('actions')} />
+          {showRootViews ? (
+            <>
+              <Tab icon={<SquareTerminal size={15} />} label={t('panel.tab.terminals')} keepLabel={!band}
+                active={tab === 'terminals'} onSelect={() => setPanelTab('terminals')} />
+              {projectId ? <ActionsTab projectId={projectId} band={band} active={tab === 'actions'} /> : null}
+            </>
+          ) : null}
         </>
       ) : null}
       {hasConversation ? (
@@ -581,6 +619,20 @@ function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, hasWeb, a
   )
 }
 
+/**
+ * L'onglet *Actions* : son compte est celui de l'onglet du projet, ce qui attend d'abord,
+ * sinon ce qui tourne. À part pour ne lire l'état des actions que là où il y a un projet.
+ */
+function ActionsTab({ projectId, band, active }: { projectId: string; band: boolean; active: boolean }) {
+  const t = useTranslate()
+  const badge = actionsTabBadge(useActionsStatus(projectId))
+  return (
+    <Tab icon={<Zap size={15} />} label={t('panel.tab.actions')} keepLabel={!band}
+      badge={badge?.count} badgeTone={badge?.tone} active={active} onSelect={() => setPanelTab('actions')}
+      badgeLabel={badge ? (label, count) => t('panel.tab.actions.badge', { label, status: t(badge.countTitle, { count }) }) : undefined} />
+  )
+}
+
 function Tab({
   icon,
   label,
@@ -598,8 +650,9 @@ function Tab({
   badge?: number
   /** Ce que le décompte compte, dit au lecteur d'écran. Par défaut, ce qui tourne. */
   badgeLabel?: (label: string, count: number) => string
-  /** En `caution`, le décompte dit que quelqu'un attend, et non que quelque chose tourne. */
-  badgeTone?: 'accent' | 'caution'
+  /** En `caution`, le décompte dit que quelqu'un attend ; en `running`, comme dans la
+      rangée d'un lieu, que quelque chose tourne tout seul. */
+  badgeTone?: 'accent' | 'caution' | 'running'
   /** Garde son nom à l'étroit quand il est actif : le cas du panneau qui recouvre. */
   keepLabel?: boolean
   onSelect: () => void
@@ -628,7 +681,11 @@ function Tab({
       {badge > 0 ? (
         <span className={cx(
           'flex size-4 shrink-0 items-center justify-center rounded-full text-micro font-semibold',
-          badgeTone === 'caution' ? 'bg-caution/12 text-caution' : 'bg-accent text-accent-ink',
+          badgeTone === 'caution'
+            ? 'bg-caution/12 text-caution'
+            : badgeTone === 'running'
+              ? 'bg-positive/12 text-positive'
+              : 'bg-accent text-accent-ink',
         )}>
           {badge}
         </span>

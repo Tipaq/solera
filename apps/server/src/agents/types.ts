@@ -5,6 +5,8 @@ import type {
   ElicitationValue,
   SoleraEvent,
 } from '@solera/protocol'
+import type { EnvironmentProvider } from '../environments/provider.js'
+import type { TranscriptHome } from './claude/transcript.js'
 import type { ResolvedMcpServers } from './mcp-registry.js'
 
 /**
@@ -60,6 +62,11 @@ export interface RunnerContext {
    * quand rien n'a été trouvé, pour que l'échec porte le nom demandé.
    */
   binary: string
+  /**
+   * L'environnement où tourne la session, figé à sa création : le runner y lance son
+   * CLI, et jamais directement. `binary` y a été résolu.
+   */
+  environment: EnvironmentProvider
   /** Racine de stockage des pièces jointes, à autoriser en lecture pour l'agent. */
   attachmentsRoot: string
   /**
@@ -67,6 +74,12 @@ export interface RunnerContext {
    * hors du workspace, donc à autoriser en écriture. Null sans DS (carte #63).
    */
   prototypesDir: string | null
+  /**
+   * Où le CLI de Claude range les transcripts de la session, vu de l'hôte : pas
+   * forcément sous le `CLAUDE_CONFIG_DIR` du serveur ni au nom du cwd de l'hôte (#154).
+   * Absent : ceux de l'hôte.
+   */
+  transcripts?: TranscriptHome
   /** Origine héritée par les services lancés depuis cette conversation. */
   processEnv?: Record<string, string>
   /**

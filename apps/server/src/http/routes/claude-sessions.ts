@@ -7,9 +7,12 @@ import { conversations, projects, type ConversationRow } from '@solera/db'
 import {
   type ClaudeSessionsDto,
   type ClaudeSyncDto,
+  HOST_ENVIRONMENT,
 } from '@solera/protocol'
+import { environmentColumns } from '../../environments/environments.js'
 import type { AgentRegistry } from '../../agents/registry.js'
 import type { TranslatedEvent } from '../../agents/claude/transcript.js'
+import { claudeTranscripts } from '../../agents/claude/transcript-home.js'
 import {
   importPreparedTranscript,
   prepareTranscript,
@@ -25,6 +28,7 @@ import { badRequest, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 import type { AppContext } from '../context.js'
 import { conversationToDto } from './conversations.js'
+import { NO_LINKS } from './cards.js'
 
 /**
  * Reprise dans Solera de sessions commencées avec le CLI Claude Code.
@@ -158,15 +162,19 @@ export function registerClaudeSessionRoutes(
       id: randomUUID(),
       projectId: project.id,
       worktreeId: null,
+      place: null,
       // Une session importée depuis le CLI ne vient d'aucune carte.
       cardId: null,
       purpose: null,
       splitCardId: null,
+      splitMode: null,
       userId: user.id,
       title: importTitle(info, prepared.firstPrompt),
       titleSetByUser: false,
       titleSetByAgent: false,
       agent: 'claude',
+      // Une session du CLI natif est née sur l'hôte, et son historique y est resté.
+      ...environmentColumns(HOST_ENVIRONMENT),
       agentSessionId: sessionId,
       forkedFromId: null,
       handoffFromId: null,
@@ -225,7 +233,7 @@ export function registerClaudeSessionRoutes(
         opening,
         release: async () => true,
       })
-      return reply.status(201).send(conversationToDto({ ...row, lastSeq }, user.id, 0, null, false))
+      return reply.status(201).send(conversationToDto({ ...row, lastSeq }, user.id, 0, NO_LINKS, false))
     } catch (error) {
       // Un import initial qui échoue ne doit pas réserver l'identifiant natif avec un
       // journal partiel.
@@ -263,7 +271,7 @@ export function registerClaudeSessionRoutes(
     if (pending) return pending
     const sync = (async (): Promise<ClaudeSyncDto> => {
       try {
-        const cwd = agentCwd(ctx.db, ctx.config.paths.threads, conversation)
+        const cwd = agentCwd(ctx.db, ctx.config, conversation)
         // Les repères ne se calculent que sans curseur valable : ils lisent tout le journal.
         let anchors: ReturnType<EventLog['importAnchors']> | undefined
         const prepared = await prepareTranscript(
@@ -272,6 +280,7 @@ export function registerClaudeSessionRoutes(
           savedTranscript(ctx.db, id, conversation.lastSeq),
           () => (anchors ??= log.importAnchors(id)),
           conversation.lastSeq > 0,
+          claudeTranscripts(ctx.config.paths, conversation),
         )
         if (!prepared) return { imported: 0 }
         const result = await importPreparedTranscript({

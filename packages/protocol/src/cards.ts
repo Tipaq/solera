@@ -6,6 +6,7 @@ import { z } from 'zod'
 import type { ConversationStatus } from './api.js'
 import type { AgentKind } from './events.js'
 import type { CardIssueDto } from './issues.js'
+import type { CardRefinementDto } from './refinement.js'
 
 /**
  * Colonne du board, c'est-à-dire la position choisie d'une carte dans le workflow.
@@ -46,6 +47,10 @@ export const createCardBodySchema = z.object({
   column: cardColumnSchema.default('todo'),
   /** La parente, pour découper une carte : lui ajouter un enfant. */
   parentId: z.string().uuid().optional(),
+  /** L'échéance, en minuit local du jour : un jalon se crée daté d'un seul appel. */
+  dueAt: z.number().int().nullable().optional(),
+  /** Le drapeau « jalon ». Refusé avec une parente : une enfant n'en est pas un. */
+  milestone: z.boolean().optional(),
 })
 
 export const updateCardBodySchema = z
@@ -65,6 +70,12 @@ export const updateCardBodySchema = z
      * c'est un état de cette colonne, pas une colonne de plus.
      */
     toClarify: z.boolean(),
+    /**
+     * Coche ou décoche le drapeau « jalon ». Le cocher sur une carte qui garde une
+     * parente est refusé (409 `card_milestone_child`), le décocher sur une carte de
+     * premier niveau qui a des enfants aussi (409 `card_milestone_has_children`).
+     */
+    milestone: z.boolean(),
   })
   .partial()
 
@@ -162,31 +173,27 @@ export const promoteSubtaskBodySchema = z.object({
   blocks: z.boolean().default(true),
 })
 
-/**
- * Ordre des cartes, colonne par colonne, du haut vers le bas.
- *
- * Un déplacement touche une colonne quand il monte ou descend une carte, deux quand il
- * la change de colonne. Les deux sont donc écrites d'un seul geste : les envoyer
- * séparément laisserait une carte dupliquée ou absente entre les deux requêtes.
- */
-export const reorderCardsBodySchema = z.object({
-  columns: z
-    .array(
-      z.object({
-        column: cardColumnSchema,
-        ids: z.array(z.string().uuid()),
-      }),
-    )
-    .min(1)
-    .max(CARD_COLUMNS.length),
-})
-
 /** Une carte vue depuis une autre : de quoi rendre une puce `#12` sans second appel. */
 export interface CardLinkDto {
   id: string
   number: number
   title: string
   column: CardColumn
+}
+
+/**
+ * La PR d'une branche de parente vers la branche par défaut, que Solera ouvre quand les
+ * enfants sont closes (#68). Un jalon reste « Lancé » tant que `mergedAt` est nul.
+ */
+export interface CardBranchPrDto {
+  number: number
+  url: string
+  /** La branche qu'elle vise ; `null` tant que Solera ne l'a pas relevée sur la forge. */
+  base: string | null
+  /** Fusionnée depuis Solera ou vue fusionnée sur la forge ; `null` tant qu'elle ne l'est pas. */
+  mergedAt: number | null
+  /** Vue fermée sans fusion sur la forge (#198) ; `null` ouverte, ou rouverte depuis. */
+  closedAt: number | null
 }
 
 /**
@@ -245,16 +252,33 @@ export interface CardDto {
   position: number
   /** Échéance choisie, `null` tant que personne n'en a posé — et c'est la norme. */
   dueAt: number | null
-  /**
-   * La carte parente. Un jalon n'est pas un type : c'est une carte de haut niveau, qui
-   * a une échéance et des enfants.
-   */
+  /** La carte parente : une carte qui en a une n'est jamais un jalon. */
   parent: CardLinkDto | null
+  /**
+   * Le drapeau « jalon » : coché à la main, ou posé d'office quand une carte de premier
+   * niveau reçoit son premier enfant, et gardé ensuite. Il suffit à dire si une carte est
+   * un jalon : jamais vrai sur une carte qui a une parente, toujours vrai sur une carte de
+   * premier niveau qui a des enfants. Sans enfant, il fait une idée de jalon.
+   */
+  milestone: boolean
   /**
    * Les enfants directs, par numéro. Une carte qui en a sert de regroupement : le
    * kanban ne la montre pas, et sa colonne se déduit d'eux (`deriveParentColumn`).
    */
   children: CardLinkDto[]
+  /**
+   * La branche où les enfants se fusionnent (#68), créée au premier besoin ; `null` pour
+   * une carte qui n'en a pas encore.
+   */
+  branch: string | null
+  /** La PR de cette branche vers la branche par défaut, une fois ouverte (#187). */
+  branchPr: CardBranchPrDto | null
+  /**
+   * La session d'affinage de la carte (#184) — la conversation `split` non archivée la
+   * plus récente qui la découpe —, ou `null` tant qu'aucune n'a été lancée. Le détail
+   * (questions, brouillon) se lit par `GET /api/cards/:id/refinement`.
+   */
+  refinement: CardRefinementDto | null
   /** `null` : venue de l'extérieur et pas encore acceptée. Elle ne lance pas de session. */
   acceptedAt: number | null
   /** « À préciser » depuis cette date, ou `null`. Ne se pose qu'en « à faire ». */
@@ -554,6 +578,24 @@ export function appendCardPrecision(text: string, entry: { day: string; author: 
 }
 
 /**
+ * Une ligne de `request_card_change` change-t-elle autre chose que les sous-tâches
+ * (#185) ? Au dépôt, une ligne sans aucun changement est refusée ; au clic, une ligne dont
+ * les sous-tâches sont toutes déjà là n'a plus rien à faire si elle ne portait que ça ; et
+ * la page d'un jalon ne montre en ajout proposé (#196) que les lignes qui n'ajoutent que
+ * des sous-tâches. Un futur champ de ligne doit y entrer.
+ */
+export function changesBesidesSubtasks(line: {
+  toColumn?: unknown
+  close?: unknown
+  parent?: unknown
+  dueAt?: unknown
+  blocks?: unknown
+  unblocks?: unknown
+}): boolean {
+  return Boolean(line.toColumn || line.close || line.parent || line.dueAt || line.blocks || line.unblocks)
+}
+
+/**
  * Ajoute des sous-tâches non cochées : sous la dernière qui existe, avec sa puce et son
  * retrait, ou dans une section `CARD_SUBTASKS_HEADING` s'il n'y en a aucune.
  *
@@ -604,6 +646,16 @@ export function cardBranchName(number: number, title: string): string {
  */
 export function parentBranchName(number: number, title: string): string {
   return branchName('jalon', number, title)
+}
+
+/**
+ * Le numéro de carte que porte un nom de branche fait par `cardBranchName` ou
+ * `parentBranchName` : `feat/153-titre` → 153. Une déduction, que le serveur ne retient
+ * que si le projet a une carte de ce numéro (#168).
+ */
+export function cardNumberOfBranch(name: string): number | null {
+  const match = /\/(\d+)(?:-|$)/.exec(name)
+  return match ? Number(match[1]) : null
 }
 
 function branchName(prefix: string, number: number, title: string): string {

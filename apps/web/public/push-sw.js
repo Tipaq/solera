@@ -22,6 +22,7 @@ const TITLES = {
     plan: 'Un plan attend ta validation',
     turnCompleted: "L'agent a terminé",
     decision: 'Une décision est à prendre',
+    scheduleFailed: 'Une commande planifiée a échoué',
     test: 'Notification de test',
   },
   en: {
@@ -31,6 +32,7 @@ const TITLES = {
     plan: 'A plan is waiting for review',
     turnCompleted: 'The agent has finished',
     decision: 'A decision is needed',
+    scheduleFailed: 'A scheduled command failed',
     test: 'Test notification',
   },
 }

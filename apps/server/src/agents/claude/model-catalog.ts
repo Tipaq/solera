@@ -8,6 +8,7 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk'
 import { CachedProbe } from '../cached-probe.js'
 import { withControlSession } from './control-session.js'
+import type { CliLauncher } from '../cli-binary.js'
 
 /**
  * Catalogue Claude : modèles, compte, styles de sortie, sous-agents et disponibilité du
@@ -43,7 +44,7 @@ export class ClaudeModelCatalog {
    * fait honorer le préfixe des CLI que Solera installe lui-même, et le réglage
    * `agents.claude.binary`, y compris pour un CLI installé pendant que le daemon tourne.
    */
-  constructor(private readonly executable: () => Promise<string>) {}
+  constructor(private readonly cli: CliLauncher) {}
 
   list(): Promise<Listing & { fetchedAt: number }> {
     return this.cached.read()
@@ -51,7 +52,7 @@ export class ClaudeModelCatalog {
 
   private probe(): Promise<Listing> {
     return withControlSession(
-      { executable: this.executable, cwd: homedir(), tag: 'catalog' },
+      { cli: this.cli, cwd: homedir(), tag: 'catalog' },
       async (session) => {
         const models = await session.supportedModels()
         // Le compte est secondaire : son absence ne doit pas priver l'UI des modèles.

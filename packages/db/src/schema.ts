@@ -1,4 +1,4 @@
-import type { AgentKind, CardColumn, CardRelationKind, GitForge, InstructionsMode, IssueProvider, IssuePush, IssueState } from '@solera/protocol'
+import type { ActionPlacement, ActionRunStatus, ActionRunTrigger, AgentKind, CardColumn, CardRelationKind, ConfinedServices, EnvironmentWhere, GitForge, InstructionsMode, IssueProvider, IssuePush, IssueState, SchedulePlace, ScheduleScope, ScheduleWorktreeMode } from '@solera/protocol'
 import { sql } from 'drizzle-orm'
 import {
   blob,
@@ -89,6 +89,31 @@ export const projects = sqliteTable(
      * sur un dépôt si lourd que la capture retarde visiblement l'envoi d'un message.
      */
     turnCheckpoints: integer('turn_checkpoints', { mode: 'boolean' }).notNull().default(true),
+    /**
+     * L'environnement d'exécution par défaut des sessions du projet (ADR 0001) : où
+     * tourne leur CLI, et confiné ou non. Une session le recopie à sa création et le
+     * garde ensuite ; un terminal ouvert hors session le prend. L'hôte non confiné pour
+     * un projet qui n'a rien réglé, comme avant la notion.
+     */
+    environmentWhere: text('environment_where').$type<EnvironmentWhere>().notNull().default('host'),
+    environmentConfined: integer('environment_confined', { mode: 'boolean' }).notNull().default(false),
+    /**
+     * Les services docker-compose du dev container pour le conteneur d'une session
+     * confinée (#145) : ceux du projet, partagés, ou une copie par session.
+     */
+    confinedServices: text('confined_services').$type<ConfinedServices>().notNull().default('shared'),
+    /**
+     * Les sessions autonomes (tâches planifiées, cartes d'un jalon, sessions lancées par
+     * un agent, relectures) sont-elles confinées quand leur lancement ne le dit pas
+     * (#146) ? Faux : elles prennent l'environnement du projet, comme les autres.
+     */
+    autonomousConfined: integer('autonomous_confined', { mode: 'boolean' }).notNull().default(false),
+    /**
+     * Le cap du projet (#183) : où il va, en une phrase de 280 caractères au plus,
+     * affichée en tête de l'onglet Jalons et donnée à la session qui affine un jalon.
+     * Null tant que personne n'en a écrit.
+     */
+    cap: text('cap'),
     archivedAt: timestamp('archived_at'),
     createdAt: timestamp('created_at').notNull(),
   },
@@ -152,6 +177,12 @@ export const worktrees = sqliteTable(
       .references(() => users.id),
     createdAt: timestamp('created_at').notNull(),
     removedAt: timestamp('removed_at'),
+    /**
+     * La carte pour laquelle l'arbre a été créé, quand il l'a été pour une : la carte de
+     * l'arbre quand aucune de ses sessions n'en traite (#168). Sans cascade, comme
+     * `conversations.card_id` : une carte effacée ne compte plus, l'arbre reste.
+     */
+    cardId: text('card_id'),
   },
   (t) => [uniqueIndex('idx_worktrees_project_name').on(t.projectId, t.name)],
 )
@@ -209,7 +240,11 @@ export const cards = sqliteTable(
      * L'activité et l'état de merge sont dérivés et n'ont donc pas de colonne ici.
      */
     column: text('column').$type<CardColumn>().notNull(),
-    /** Ordre manuel dans sa colonne, croissant. Réécrit en bloc par le glisser-déposer. */
+    /**
+     * Rang d'arrivée dans sa colonne, croissant : posé à la fin de la colonne quand la
+     * carte y entre. Départage les listes (`list_cards`, la liste HTTP) ; l'écran trie
+     * autrement.
+     */
     position: integer('position').notNull().default(0),
     /**
      * Échéance, nullable : une carte sans date est la norme, et une date posée sur
@@ -218,10 +253,10 @@ export const cards = sqliteTable(
     dueAt: timestamp('due_at'),
     /**
      * La carte parente : les cartes forment un arbre, et c'est la seule hiérarchie du
-     * board. Un jalon n'est pas un type, c'est une carte de haut niveau qui a une
-     * échéance et des enfants ; découper une carte, c'est lui en ajouter, sans qu'elle
-     * change de nature. Une table `milestones` aurait dupliqué ce qu'une carte porte
-     * déjà : un nom, une date, un fil de notes, un état.
+     * board. Un jalon reste une carte, de premier niveau, que distingue son drapeau
+     * (`milestone`) ; découper une carte, c'est lui ajouter des enfants. Une table
+     * `milestones` aurait dupliqué ce qu'une carte porte déjà : un nom, une date, un fil
+     * de notes, un état.
      *
      * Profondeur libre dans le modèle (l'interface en rend bien trois niveaux), sans
      * cycle : la route qui rattache refuse une descendante (`cards/tree.ts`).
@@ -235,6 +270,17 @@ export const cards = sqliteTable(
     parentId: text('parent_id').references((): AnySQLiteColumn => cards.id, {
       onDelete: 'set null',
     }),
+    /**
+     * Le drapeau « jalon » (#183) : la carte est un jalon, ou l'idée d'un jalon qu'on
+     * affinera. Coché à la main sur une carte sans parente, et posé d'office quand une
+     * carte de premier niveau reçoit son premier enfant : il reste quand on les détache,
+     * pour qu'un jalon vidé redevienne une idée et non une carte ordinaire.
+     *
+     * Jamais vrai sur une carte qui a une parente : une carte rangée dans un jalon n'en
+     * est pas un. La poser sous une parente lève le drapeau (`cards/tree.ts`), et le
+     * cocher sur une enfant est refusé.
+     */
+    milestone: integer('milestone', { mode: 'boolean' }).notNull().default(false),
     /**
      * Date d'acceptation ; `null` pour une carte venue de l'extérieur (une issue
      * absorbée) que personne n'a encore acceptée. Elle attend en tête de « à faire »
@@ -260,6 +306,18 @@ export const cards = sqliteTable(
      */
     branchPrNumber: integer('branch_pr_number'),
     branchPrUrl: text('branch_pr_url'),
+    /**
+     * Quand cette PR a été fusionnée (#187) : depuis Solera, ou vue fusionnée sur la forge
+     * par le balayage. Un jalon reste « Lancé » jusque-là, « Livré » ensuite.
+     */
+    branchPrMergedAt: timestamp('branch_pr_merged_at'),
+    /**
+     * Quand la forge l'a vue fermée sans fusion (#198) ; levée si elle est rouverte. Le
+     * jalon le dit au lieu de proposer une fusion que la forge refuserait.
+     */
+    branchPrClosedAt: timestamp('branch_pr_closed_at'),
+    /** La branche que vise cette PR, relevée à l'ouverture ou sur la forge (#198). */
+    branchPrBase: text('branch_pr_base'),
     createdBy: text('created_by')
       .notNull()
       .references(() => users.id),
@@ -414,9 +472,9 @@ export const cardIssues = sqliteTable(
  * Table étroite et en ajout seul, parce que `cards` ne porte que `column` et
  * `updated_at`, qu'une simple correction de titre réécrit : sans elle, on ne peut pas
  * dire **quand** une carte a été terminée, et c'est précisément ce que le Journal
- * raconte. Elle doit être écrite partout où une colonne change — le glisser-déposer,
- * le menu du panneau, et le passage automatique en « en cours » au lancement d'une
- * session. Un seul chemin oublié, et elle ment.
+ * raconte. Elle doit être écrite partout où une colonne change : voir les chemins
+ * qu'énumère `recordCardMove` (`apps/server/src/cards/moves.ts`). Un seul chemin
+ * oublié, et elle ment.
  */
 export const cardMoves = sqliteTable(
   'card_moves',
@@ -591,7 +649,11 @@ export const milestoneRuns = sqliteTable(
       .notNull()
       .references(() => cards.id, { onDelete: 'cascade' }),
     state: text('state', { enum: ['running', 'paused', 'stopped', 'finished'] }).notNull(),
+    /** `auto` : le serveur lance les cartes prêtes ; `manual` : une personne les lance (#186). */
+    mode: text('mode', { enum: ['manual', 'auto'] }).notNull().default('auto'),
     concurrency: integer('concurrency').notNull().default(3),
+    /** Ses sessions sont-elles confinées (#146) ; null : le réglage du projet. */
+    confined: integer('confined', { mode: 'boolean' }),
     /** La configuration du jalon (JSON `AgentConfig`, CLI compris), celle des cartes sans réglage propre. */
     config: text('config').notNull(),
     /** Le compte qui a lancé : ses sessions sont les siennes, et c'est lui qu'on prévient. */
@@ -943,6 +1005,13 @@ export const conversations = sqliteTable(
      * `cardId`.
      */
     splitCardId: text('split_card_id'),
+    /**
+     * Comment la session d'affinage d'un jalon s'y prend (#184) : `questions`, poser ce
+     * qui manque avant de découper, ou `direct`, découper sur le brief. Stocké pour la
+     * même raison que `purpose` : le briefing le redit à chaque démarrage, et la page du
+     * jalon le montre. NULL hors découpage.
+     */
+    splitMode: text('split_mode', { enum: ['questions', 'direct'] }),
     userId: text('user_id')
       .notNull()
       .references(() => users.id),
@@ -961,6 +1030,14 @@ export const conversations = sqliteTable(
     // Dérivé de l'enum du protocole : ajouter un CLI ne demande pas de retoucher
     // la colonne, et une divergence entre les deux listes ne peut plus s'installer.
     agent: text('agent').$type<AgentKind>().notNull(),
+    /**
+     * L'environnement d'exécution de la session, figé à sa création : celui du projet
+     * par défaut, ou celui choisi en l'ouvrant. Ne change plus ensuite, parce qu'un
+     * historique natif et des processus vivants n'ont pas de sens hors du monde où ils
+     * sont nés. Ses terminaux le suivent.
+     */
+    environmentWhere: text('environment_where').$type<EnvironmentWhere>().notNull().default('host'),
+    environmentConfined: integer('environment_confined', { mode: 'boolean' }).notNull().default(false),
     /** Identifiant natif du CLI, pour `--resume` ou `thread/resume`. */
     agentSessionId: text('agent_session_id'),
     /**
@@ -1004,6 +1081,12 @@ export const conversations = sqliteTable(
      * redeviennent des conversations ordinaires.
      */
     scheduleId: text('schedule_id'),
+    /**
+     * Où tourne un fil sans projet ouvert par une tâche Savoir (`vault`) ou Instance
+     * (`instance`) ; null : son dossier à lui sous `threads`. Sur le fil et non relu de sa
+     * tâche : la tâche supprimée, il doit reprendre là où il a commencé.
+     */
+    place: text('place').$type<SchedulePlace>(),
     /**
      * JSON `AgentConfig` : la configuration complète que ce fil reçoit, l'héritage puis
      * ses propres changements. Recalculée à chaque lancement de session et à chaque
@@ -1095,6 +1178,8 @@ export const conversations = sqliteTable(
     index('idx_conversations_project').on(t.projectId, t.position),
     index('idx_conversations_user').on(t.userId),
     index('idx_conversations_schedule').on(t.scheduleId),
+    // La session d'affinage d'une carte, lue pour chaque carte du board (#184).
+    index('idx_conversations_split_card').on(t.splitCardId, t.createdAt),
   ],
 )
 
@@ -1133,6 +1218,12 @@ export const scheduledTasks = sqliteTable(
     id: text('id').primaryKey(),
     /** Projet visé, ou NULL : une tâche planifiée n'a pas besoin de projet non plus. */
     projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+    /**
+     * Où s'ouvrent ses tirs : `project` quand `project_id` est posé, sinon le vault
+     * (`vault`), le dossier de données (`instance`) ou un dossier vide par fil (`none`).
+     * Figée à la création.
+     */
+    scope: text('scope').$type<ScheduleScope>().notNull().default('project'),
     /** Compte au nom duquel les tirs s'ouvrent : celui qui a créé la tâche. */
     userId: text('user_id')
       .notNull()
@@ -1148,12 +1239,24 @@ export const scheduledTasks = sqliteTable(
      */
     config: text('config').notNull(),
     prompt: text('prompt').notNull(),
-    /** JSON `ScheduleCadence` : intervalle, motif cron ou date unique. */
-    cadence: text('cadence').notNull(),
+    /**
+     * JSON `ScheduleCadence` : intervalle, motif cron ou date unique. NULL : la tâche ne
+     * part qu'à la demande, et `on_demand` est alors vrai.
+     */
+    cadence: text('cadence'),
+    /** Un bouton la lance d'un clic. Vrai par défaut : une tâche existante se lançait déjà ainsi. */
+    onDemand: integer('on_demand', { mode: 'boolean' }).notNull().default(true),
+    /**
+     * Où s'ouvre la session d'un tir : `root`, la racine du projet ; `new`, un worktree
+     * neuf par tir, sur une branche nommée d'après la tâche et l'heure.
+     */
+    worktreeMode: text('worktree_mode').$type<ScheduleWorktreeMode>().notNull().default('root'),
     /** `fresh` : une session neuve par tir. Seul mode pour l'instant. */
     executionMode: text('execution_mode').$type<'fresh'>().notNull().default('fresh'),
     /** Que faire d'un tir qui arrive pendant que le précédent tourne encore. */
     overlapPolicy: text('overlap_policy').$type<'skip' | 'wait'>().notNull().default('skip'),
+    /** Ses tirs sont-ils confinés (#146) ; null : le réglage du projet, relu à chaque tir. */
+    confined: integer('confined', { mode: 'boolean' }),
     /** Au-delà, le tir est interrompu : rien d'autre n'arrêterait un agent qui s'égare. */
     maxDurationMinutes: integer('max_duration_minutes').notNull(),
     enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
@@ -1294,12 +1397,101 @@ export const projectActions = sqliteTable(
      * l'interface, effacée quand un agent change ce qui s'exécute.
      */
     approvedAt: timestamp('approved_at'),
+    /**
+     * Ce qu'une personne a relu en dernier, recopié à chaque validation : la relecture
+     * montre ce qu'un agent a changé depuis, et le refus y revient. NULL tant que
+     * l'action n'a jamais été validée.
+     */
+    approvedKind: text('approved_kind').$type<'task' | 'service'>(),
+    approvedCommand: text('approved_command'),
+    approvedSubdir: text('approved_subdir'),
+    approvedUrl: text('approved_url'),
+    /** La cadence relue en dernier (JSON) : une commande planifiée part sans clic. */
+    approvedCadence: text('approved_cadence'),
+    /**
+     * Le placement, sa branche et l'arrêt relus en dernier (#260) : un agent qui les règle
+     * choisit l'arbre dont le code part et ce qui tourne sans personne pour le couper, et
+     * le refus y revient.
+     */
+    approvedPlacement: text('approved_placement').$type<ActionPlacement>(),
+    approvedPinnedBranch: text('approved_pinned_branch'),
+    approvedStopCadence: text('approved_stop_cadence'),
+    /** Un clic ou un agent peut la lancer ; faux, elle ne part qu'à sa cadence. */
+    onDemand: integer('on_demand', { mode: 'boolean' }).notNull().default(true),
+    /** `ScheduleCadence` en JSON ; NULL pour une commande qui ne part jamais seule. */
+    cadence: text('cadence'),
+    /** Faux : en pause, la cadence gardée. */
+    scheduleEnabled: integer('schedule_enabled', { mode: 'boolean' }).notNull().default(false),
+    /** Au-delà, le tir planifié est coupé : personne n'est là pour l'arrêter. */
+    scheduleMaxMinutes: integer('schedule_max_minutes').notNull().default(30),
+    /** L'heure du dernier tir de la cadence, d'où se compte un intervalle. */
+    lastScheduledAt: timestamp('last_scheduled_at'),
+    /** NULL quand rien n'est prévu : sans cadence, en pause, ou ponctuelle déjà tirée. */
+    nextRunAt: timestamp('next_run_at'),
+    /**
+     * Un service planifié s'arrête à cette cadence (`ScheduleCadence` en JSON) : le
+     * balayage arrête son unité. NULL pour une tâche, qui finit seule, et pour un service
+     * qu'on arrête à la main. Relue quand un agent l'écrit (#260) : la retirer laisse
+     * tourner le service.
+     */
+    stopCadence: text('stop_cadence'),
+    /** Le prochain arrêt ; NULL sans cadence d'arrêt, ou en pause. */
+    nextStopAt: timestamp('next_stop_at'),
+    /**
+     * Où tourne un service : `follow` là où on le lance, `root` à la racine, `branch`
+     * à la racine quand elle est sur `pinned_branch`, `per-worktree` une unité par arbre.
+     * Relu quand un agent l'écrit (#260) : il choisit lequel des arbres du projet, donc
+     * quel code, le service fait tourner.
+     */
+    placement: text('placement').$type<ActionPlacement>().notNull().default('follow'),
+    pinnedBranch: text('pinned_branch'),
     /** Dernière conversation à l'avoir créée ou modifiée par MCP ; NULL depuis l'interface. */
     agentConversationId: text('agent_conversation_id'),
     createdAt: timestamp('created_at').notNull(),
     updatedAt: timestamp('updated_at').notNull(),
   },
-  (t) => [index('idx_project_actions_project').on(t.projectId, t.createdAt)],
+  (t) => [
+    index('idx_project_actions_project').on(t.projectId, t.createdAt),
+    index('idx_project_actions_next_run').on(t.nextRunAt),
+  ],
+)
+
+/**
+ * Les passages d'une action : chaque lancement dans un terminal, son déclencheur, sa
+ * fin et les dernières lignes de sa sortie. L'écran entier reste au terminal, qui
+ * disparaît quand on le ferme ou qu'on relance ; le passage, lui, reste.
+ *
+ * Un service porté par systemd n'en écrit pas : personne n'en voit la fin, et son
+ * histoire est dans son journal.
+ */
+export const actionRuns = sqliteTable(
+  'action_runs',
+  {
+    id: text('id').primaryKey(),
+    actionId: text('action_id')
+      .notNull()
+      .references(() => projectActions.id, { onDelete: 'cascade' }),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    trigger: text('trigger').$type<ActionRunTrigger>().notNull(),
+    /** La session d'où elle a été lancée ; NULL hors session. */
+    conversationId: text('conversation_id').references(() => conversations.id, { onDelete: 'set null' }),
+    /** Le terminal qui l'a jouée, tant qu'il existe ; NULL pour un tir planifié, détaché. */
+    terminalId: text('terminal_id'),
+    cwd: text('cwd').notNull(),
+    status: text('status').$type<ActionRunStatus>().notNull(),
+    exitCode: integer('exit_code'),
+    startedAt: timestamp('started_at').notNull(),
+    /** NULL tant qu'elle tourne, ou quand l'arrêt du daemon l'a emportée. */
+    finishedAt: timestamp('finished_at'),
+    /** Les dernières lignes de sortie, sans couleurs ; NULL sans sortie. */
+    excerpt: text('excerpt'),
+  },
+  (t) => [
+    index('idx_action_runs_action').on(t.actionId, t.startedAt),
+    index('idx_action_runs_project').on(t.projectId, t.startedAt),
+  ],
 )
 
 /**
@@ -1913,6 +2105,7 @@ export type ConversationRow = typeof conversations.$inferSelect
 export type ScheduledTaskRow = typeof scheduledTasks.$inferSelect
 export type ScheduledRunRow = typeof scheduledRuns.$inferSelect
 export type ProjectActionRow = typeof projectActions.$inferSelect
+export type ActionRunRow = typeof actionRuns.$inferSelect
 export type ConversationReadRow = typeof conversationReads.$inferSelect
 export type EventRow = typeof events.$inferSelect
 export type WorktreeRow = typeof worktrees.$inferSelect

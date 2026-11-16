@@ -5,7 +5,8 @@ Suite de [`2026-10-11-colonne`](../2026-10-11-colonne/README.md), qui a arrêté
 laissé la page du vault à l'état de « bon début » (`tour-17/01-page-savoir-v3`).
 
 Rendu par `scripts/vault-prototypes.mjs` depuis `apps/web/src/components/VaultPrototypes.tsx`,
-l'un et l'autre **jetables** : à supprimer avec la carte de portage. Une image par bloc,
+l'un et l'autre **jetables** : retirés par la carte #246, ils restent lisibles dans
+l'historique de git. Une image par bloc,
 clair et sombre, gros plans — la colonne de gauche n'y figure pas, elle est arrêtée.
 
 ## tour-1/ — le parti de la page, et les vues du panneau

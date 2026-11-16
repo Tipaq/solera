@@ -1,6 +1,7 @@
-import { cp, mkdir } from 'node:fs/promises'
+import { appendFile, cp, mkdir, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import type { SessionStore } from '@anthropic-ai/claude-agent-sdk'
 import type { ContentBlock, SoleraEvent } from '@solera/protocol'
 import { toWorkspacePath } from '../paths.js'
 import { editedPath } from './file-edits.js'
@@ -47,14 +48,106 @@ export interface TranscriptEntry {
 }
 
 /**
- * Emplacement du fichier de session, tel que le CLI l'écrit : chaque caractère
- * non alphanumérique du cwd devient un tiret. Le SDK ne fournit pas de lecture du
- * transcript (seulement `listSessions`/`getSessionInfo`), d'où cette résolution.
+ * Où le CLI d'une session range ses transcripts, vu de l'hôte.
+ *
+ * Sur l'hôte, sous `$CLAUDE_CONFIG_DIR` (ou `~/.claude`), au nom du cwd. Dans un dev
+ * container, sous le dossier de configuration que Solera lui monte (`containerEnv`), au
+ * nom du cwd **tel que le conteneur le voit** : `-mnt-c-…` sous Windows natif, quand
+ * l'hôte dirait `C--…` (#154).
  */
-export function transcriptPath(cwd: string, sessionId: string): string {
-  const configDir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
-  const slug = cwd.replace(/[^a-zA-Z0-9]/g, '-')
-  return join(configDir, 'projects', slug, `${sessionId}.jsonl`)
+export interface TranscriptHome {
+  /** Le `CLAUDE_CONFIG_DIR` de la session, en chemin de l'hôte. */
+  configDir: string
+  /** Le cwd de l'hôte tel que le CLI le voit : c'est lui qui nomme le dossier. */
+  cwdInside(hostCwd: string): string
+  /**
+   * Le dossier n'appartient qu'aux sessions d'un conteneur : un transcript absent du
+   * dossier attendu y est cherché par son identifiant dans les autres. Un conteneur
+   * réutilisé sans les montages de Solera voit le projet ailleurs qu'à `cwdInside`.
+   */
+  searchById?: boolean
+}
+
+/** Les transcripts du CLI de l'hôte, relus à chaque appel : les tests changent `CLAUDE_CONFIG_DIR`. */
+export function hostTranscripts(): TranscriptHome {
+  return { configDir: process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), cwdInside: (cwd) => cwd }
+}
+
+/**
+ * Le nom du dossier d'un cwd, tel que le CLI l'écrit : chaque caractère non
+ * alphanumérique devient un tiret.
+ */
+export function transcriptFolderName(cwd: string): string {
+  return cwd.replace(/[^a-zA-Z0-9]/g, '-')
+}
+
+/**
+ * Emplacement du fichier de session, là où le CLI l'écrit pour ce cwd. Le SDK ne fournit
+ * pas de lecture du transcript (seulement `listSessions`/`getSessionInfo`), d'où cette
+ * résolution.
+ */
+export function transcriptPath(cwd: string, sessionId: string, home: TranscriptHome = hostTranscripts()): string {
+  return join(home.configDir, 'projects', transcriptFolderName(home.cwdInside(cwd)), `${sessionId}.jsonl`)
+}
+
+/**
+ * Le fichier de session tel qu'on le trouve : au dossier attendu, et pour un foyer qui
+ * le permet, à défaut dans un autre dossier de projet. Le chemin attendu quand il n'est
+ * nulle part.
+ */
+export async function locateTranscript(cwd: string, sessionId: string, home: TranscriptHome = hostTranscripts()): Promise<string> {
+  const expected = transcriptPath(cwd, sessionId, home)
+  if (!home.searchById || (await isFile(expected))) return expected
+  const projects = join(home.configDir, 'projects')
+  const folders = await readdir(projects).catch(() => [] as string[])
+  for (const folder of folders) {
+    const candidate = join(projects, folder, `${sessionId}.jsonl`)
+    if (await isFile(candidate)) return candidate
+  }
+  return expected
+}
+
+async function isFile(path: string): Promise<boolean> {
+  return stat(path).then(
+    (stats) => stats.isFile(),
+    () => false,
+  )
+}
+
+/**
+ * Le dossier d'un transcript, présenté au SDK comme un `sessionStore` : `getSessionInfo`
+ * et `forkSession` ne lisent sinon que le `CLAUDE_CONFIG_DIR` du serveur, figé à leur
+ * premier appel. La clé de projet qu'il calcule est ignorée : il la tirerait du cwd de
+ * l'hôte, quand le dossier porte celui que le CLI a vu.
+ */
+export function transcriptStore(folder: string): SessionStore {
+  return {
+    load: async ({ sessionId, subpath }) => {
+      if (subpath) return null
+      const entries = await readJsonl(join(folder, `${sessionId}.jsonl`))
+      return entries.length > 0 ? (entries as Awaited<ReturnType<SessionStore['load']>>) : null
+    },
+    append: async ({ sessionId, subpath }, entries) => {
+      if (subpath || entries.length === 0) return
+      await mkdir(folder, { recursive: true })
+      await appendFile(join(folder, `${sessionId}.jsonl`), entries.map((entry) => `${JSON.stringify(entry)}\n`).join(''), {
+        mode: 0o600,
+      })
+    },
+  }
+}
+
+/**
+ * Ce que `getSessionInfo` et `forkSession` reçoivent pour trouver la session : le cwd sur
+ * l'hôte, où le SDK cherche comme le CLI ; ailleurs, le dossier du transcript.
+ */
+export async function sessionLookup(
+  cwd: string,
+  sessionId: string,
+  home: TranscriptHome = hostTranscripts(),
+): Promise<{ dir: string } | { sessionStore: SessionStore }> {
+  if (!home.searchById) return { dir: cwd }
+  return { sessionStore: transcriptStore(dirname(await locateTranscript(cwd, sessionId, home))) }
 }
 
 /**
@@ -69,9 +162,14 @@ export function transcriptPath(cwd: string, sessionId: string): string {
  *
  * Faux quand il n'y avait rien à copier.
  */
-export async function copyTranscript(fromCwd: string, toCwd: string, sessionId: string): Promise<boolean> {
-  const from = transcriptPath(fromCwd, sessionId)
-  const to = transcriptPath(toCwd, sessionId)
+export async function copyTranscript(
+  fromCwd: string,
+  toCwd: string,
+  sessionId: string,
+  home: TranscriptHome = hostTranscripts(),
+): Promise<boolean> {
+  const from = await locateTranscript(fromCwd, sessionId, home)
+  const to = transcriptPath(toCwd, sessionId, home)
   if (from === to) return true
   await mkdir(dirname(to), { recursive: true })
   try {
@@ -91,8 +189,12 @@ export async function copyTranscript(fromCwd: string, toCwd: string, sessionId: 
 }
 
 /** Les entrées du transcript, ou une liste vide si le fichier n'existe pas. */
-export function readTranscript(cwd: string, sessionId: string): Promise<TranscriptEntry[]> {
-  return readJsonl(transcriptPath(cwd, sessionId))
+export async function readTranscript(
+  cwd: string,
+  sessionId: string,
+  home: TranscriptHome = hostTranscripts(),
+): Promise<TranscriptEntry[]> {
+  return readJsonl(await locateTranscript(cwd, sessionId, home))
 }
 
 async function readJsonl(path: string): Promise<TranscriptEntry[]> {
@@ -122,8 +224,9 @@ export async function readSubAgentTranscripts(
   cwd: string,
   sessionId: string,
   entries: TranscriptEntry[],
+  home: TranscriptHome = hostTranscripts(),
 ): Promise<Map<string, TranscriptEntry[]>> {
-  const dir = join(transcriptPath(cwd, sessionId).replace(/\.jsonl$/, ''), 'subagents')
+  const dir = join((await locateTranscript(cwd, sessionId, home)).replace(/\.jsonl$/, ''), 'subagents')
   const threads = new Map<string, TranscriptEntry[]>()
 
   // Un sous-agent peut en lancer un autre, et l'appel ne figure alors que dans le

@@ -6,6 +6,7 @@ import type { TestContext } from 'node:test'
 import { DEFAULT_OPENCODE_CONFIG, type SoleraEvent, type ConversationStatus } from '@solera/protocol'
 import type { RunnerContext } from '../src/agents/types.js'
 import { OpencodeRunner } from '../src/agents/opencode/runner.js'
+import { hostEnvironment } from '../src/environments/host.js'
 
 export const ROOT = 'ses_root'
 
@@ -34,7 +35,7 @@ export function context(overrides: Partial<RunnerContext> = {}) {
   const raw: unknown[] = []
   const statuses: ConversationStatus[] = []
   const ctx: RunnerContext = {
-    conversationId: 'test', cwd: tmpdir(), binary: 'unused', attachmentsRoot: '/attachments', prototypesDir: null,
+    conversationId: 'test', cwd: tmpdir(), binary: 'unused', environment: hostEnvironment, attachmentsRoot: '/attachments', prototypesDir: null,
     config: DEFAULT_OPENCODE_CONFIG, resumeSessionId: null,
     projectOverview: () => null, maskedInstructionRoots: () => [], memoryDir: () => null,
     resolveMcpServers: () => ({ servers: [], failures: [] }), skillRoots: () => [],

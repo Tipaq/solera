@@ -23,7 +23,14 @@ export function instanceCapabilities(profile: InstanceProfile): InstanceCapabili
   }
 }
 
-/** Le profil et ses capacités ; la route y ajoute ce qui se lit en base. */
+/**
+ * Le profil, ses capacités et le fuseau du serveur, celui où le daemon lit un motif
+ * cron ; la route y ajoute ce qui se lit en base.
+ */
 export function instanceInfo(): Omit<InstanceInfo, 'needsSetup'> {
-  return { profile: INSTANCE_PROFILE, capabilities: instanceCapabilities(INSTANCE_PROFILE) }
+  return {
+    profile: INSTANCE_PROFILE,
+    capabilities: instanceCapabilities(INSTANCE_PROFILE),
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  }
 }

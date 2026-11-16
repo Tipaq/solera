@@ -163,7 +163,7 @@ try {
   // `force` : dnd-kit pose aria-disabled sur un en-tête qu'on ne peut pas déplacer,
   // que Playwright lit comme un élément inactif.
   await page.getByRole('link', { name: 'Nimbus', exact: true }).first().click({ button: 'right', force: true })
-  await page.getByRole('menuitem', { name: 'Board' }).waitFor()
+  await page.getByRole('menuitem', { name: 'Tableau' }).waitFor()
   await page.getByRole('menuitem', { name: 'Renommer' }).waitFor()
   await page.screenshot({ path: join(shots, 'context-project.png') })
   await page.keyboard.press('Escape')

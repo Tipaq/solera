@@ -3,6 +3,7 @@ import { and, eq, isNull } from 'drizzle-orm'
 import {
   agentRequests,
   cardBlocks,
+  cardNotes,
   cards,
   conversations,
   projects,
@@ -11,14 +12,16 @@ import {
   type AgentRequestRow,
   type Db,
 } from '@solera/db'
-import type { CardCloseOutcome, CardColumn, CardDraft } from '@solera/protocol'
+import { appendSubtasks, changesBesidesSubtasks, type CardCloseOutcome, type CardColumn, type CardDraft } from '@solera/protocol'
 import { addCardBlock, removeCardBlock } from '../cards/blocks.js'
 import { isCloseTarget, type CardClosure } from '../cards/close.js'
+import { syncCardReferences } from '../cards/create.js'
 import { createDraftCards, type DraftCreation } from '../cards/drafts.js'
 import { recordCardMove } from '../cards/moves.js'
 import { resolveParent, writeCardParent } from '../cards/tree.js'
 import type { Config } from '../config.js'
 import type { EventLog } from '../events/event-log.js'
+import { DESCRIPTION_MAX, subtaskLabels, subtasksAddedNote } from './card-gestures.js'
 import {
   describeCardFilingOutcome,
   describeDraftOutcome,
@@ -126,6 +129,7 @@ export interface ProposedCardChange {
   dueAt?: { from: number | null; to: number | null } | null
   blocks?: { cardId: string }[]
   unblocks?: { cardId: string }[]
+  addSubtasks?: string[]
 }
 
 export type CardFilingAcceptance =
@@ -225,7 +229,22 @@ export async function acceptCardFiling(
           .get()
         if (!exists || reverse) return null
       }
-      return { card, proposed, parentId }
+      // Des sous-tâches qu'une personne a ajoutées entre-temps ne se doublent pas, et
+      // l'ajout se fait sur la description relue : elle a pu changer depuis le dépôt,
+      // et l'écraser défairait son texte.
+      let description: string | undefined
+      let added: string[] = []
+      if (proposed.addSubtasks) {
+        const existing = subtaskLabels(card.description)
+        const add = proposed.addSubtasks.filter((label) => !existing.has(label))
+        if (add.length === 0 && !changesBesidesSubtasks(proposed)) return null
+        if (add.length > 0) {
+          description = appendSubtasks(card.description, add)
+          if (description.length > DESCRIPTION_MAX) return null
+          added = add
+        }
+      }
+      return { card, proposed, parentId, description, added }
     })
     .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
 
@@ -245,8 +264,20 @@ export async function acceptCardFiling(
   const by = { userId }
   const moved: { number: number; fromColumn: CardColumn; toColumn: CardColumn }[] = []
   writeTransaction(db, (tx) => {
-    for (const { card, proposed, parentId } of live) {
+    for (const { card, proposed, parentId, description, added } of live) {
       if (parentId !== undefined) writeCardParent(tx, card, parentId, by)
+      if (description !== undefined) {
+        tx.update(cards).set({ description, updatedAt: now }).where(eq(cards.id, card.id)).run()
+        // La note de `edit_subtasks`, au nom de la personne qui a accordé et rattachée au
+        // fil qui a proposé : c'est l'historique de la description.
+        tx.insert(cardNotes)
+          .values({
+            id: randomUUID(), cardId: card.id, conversationId, userId,
+            body: subtasksAddedNote(added),
+            createdAt: now,
+          })
+          .run()
+      }
       if (proposed.dueAt) tx.update(cards).set({ dueAt: proposed.dueAt.to, updatedAt: now }).where(eq(cards.id, card.id)).run()
       for (const target of proposed.blocks ?? []) {
         addCardBlock(tx, { projectId, sourceId: card.id, targetId: target.cardId, userId })
@@ -261,6 +292,10 @@ export async function acceptCardFiling(
       }
     }
   })
+
+  // Hors de la transaction : la description est la source des backlinks, et un libellé
+  // peut citer une carte.
+  for (const { card, description } of live) if (description !== undefined) syncCardReferences(db, card, description)
 
   const applied = live.map(({ card }) => card.number)
   // Les clôtures après la transaction : elles parlent à git et à la forge, et prennent

@@ -18,8 +18,9 @@ import { SkillLibrary } from '../src/skill-library/store.js'
 /**
  * Une base migrée dans un dossier jetable : un admin, un propriétaire de projets, un
  * membre et un étranger ; deux projets partagés et un privé, tous au propriétaire.
+ * `version` est celle de Solera que les sources croient installée.
  */
-export function harness(t: TestContext) {
+export function harness(t: TestContext, version = 'dev') {
   const dir = mkdtempSync(join(tmpdir(), 'solera-skills-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
   const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
@@ -34,14 +35,14 @@ export function harness(t: TestContext) {
 
   const root = join(dir, 'library')
   const changes: (string | null)[] = []
-  const sources = new SkillSources(db, join(dir, 'sources'))
+  const sources = new SkillSources(db, join(dir, 'sources'), version)
   const library = new SkillLibrary(db, root, (projectId) => changes.push(projectId), sources)
   return { dir, db, root, library, sources, changes }
 }
 
 /** La même bibliothèque derrière les routes, l'utilisateur choisi par en-tête. */
-export async function http(t: TestContext) {
-  const h = harness(t)
+export async function http(t: TestContext, version = 'dev') {
+  const h = harness(t, version)
   const app = Fastify()
   await app.register(multipart, { limits: { files: 1 } })
   app.addHook('preHandler', async (request) => {

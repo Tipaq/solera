@@ -1,5 +1,5 @@
 import { useMemo, useRef, useSyncExternalStore } from 'react'
-import type { CardDto, ConversationDto, ConversationStatus, ProjectDto } from '@solera/protocol'
+import type { ConversationDto, ConversationStatus } from '@solera/protocol'
 import { liveBackground, liveSeq, liveSettledAt, liveStatus, statusVersion, subscribeStatus } from './conversation-status'
 import { isUnread } from './reads'
 import { threadState } from './signals'
@@ -122,41 +122,6 @@ export function useLiveConversations(
       }]
     })
   }, [conversations, states])
-}
-
-/**
- * Ce qui réclame, dans un projet ou dans tous.
- *
- * Quatre demandes et pas un inventaire : « 7 cartes » dit ce qui existe, « 1 attend ta
- * réponse depuis 1 h » dit ce qu'on a à faire. Chaque compte à zéro fait disparaître sa
- * tuile, c'est pour ça qu'ils sont rendus tels quels et non enveloppés.
- */
-export interface Demands {
-  awaiting: LiveConversation[]
-  running: LiveConversation[]
-  /** Cartes en colonne « à relire » : la file d'attente humaine. */
-  review: CardDto[]
-  /** Fichiers non commités du workspace, zéro hors dépôt git. */
-  uncommitted: number
-}
-
-/** Le plus ancien horodatage d'une liste, ou null si elle est vide. */
-export function oldest(entries: LiveConversation[]): number | null {
-  if (entries.length === 0) return null
-  return entries.reduce((min, entry) => Math.min(min, entry.since), Number.POSITIVE_INFINITY)
-}
-
-export function demandsOf(
-  live: LiveConversation[],
-  cards: CardDto[],
-  project: ProjectDto | undefined,
-): Demands {
-  return {
-    awaiting: live.filter((entry) => entry.awaiting),
-    running: live.filter((entry) => entry.running),
-    review: cards.filter((card) => card.column === 'review'),
-    uncommitted: project?.git?.changedFiles ?? 0,
-  }
 }
 
 /**

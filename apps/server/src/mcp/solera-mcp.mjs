@@ -88,7 +88,7 @@ import { createInterface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, posix, resolve, sep, win32 } from 'node:path'
 import Database from 'better-sqlite3'
 
 const DB_PATH = process.env.SOLERA_MCP_DB
@@ -169,6 +169,30 @@ const PROPOSE_CARDS = process.env.SOLERA_MCP_PROPOSE_CARDS === '1'
  * toutes les sessions qui le lient, ne peut être tenu que par le daemon.
  */
 const DESIGN_SYSTEM_STATE = process.env.SOLERA_MCP_DESIGN_SYSTEM ?? ''
+
+/**
+ * La session voit les lecteurs de l'hôte sous `/mnt/<lecteur>` : elle tourne dans un
+ * conteneur, sous Windows natif, et ce process sur l'hôte (#153). Les chemins qu'il lui
+ * rend, et ceux qu'il en reçoit, se traduisent alors comme le daemon les monte
+ * (`containerPathOf` et `hostPathOf`, `environments/devcontainer/paths.ts`).
+ */
+const MOUNTED_DRIVES = process.env.SOLERA_MCP_MOUNTED_DRIVES === '1'
+
+/** Un chemin de l'hôte tel que la session le voit : `C:\…` devient `/mnt/c/…`. */
+function seenPath(onHost) {
+  if (!MOUNTED_DRIVES || typeof onHost !== 'string') return onHost
+  const drive = /^([A-Za-z]):(?:[\\/](.*))?$/.exec(onHost)
+  if (!drive) return onHost
+  return posix.join('/mnt', drive[1].toLowerCase(), ...(drive[2] ?? '').split(/[\\/]/).filter(Boolean))
+}
+
+/** L'inverse : un chemin que la session donne, tel que l'hôte le lit ; tel quel hors de `/mnt/<lecteur>`. */
+function hostPath(seen) {
+  if (!MOUNTED_DRIVES || typeof seen !== 'string') return seen
+  const mounted = /^\/mnt\/([a-z])(?:\/(.*))?$/.exec(posix.normalize(seen))
+  if (!mounted) return seen
+  return win32.join(`${mounted[1].toUpperCase()}:\\`, ...(mounted[2] ?? '').split('/').filter(Boolean))
+}
 
 /** Un Storybook froid démarre en quelques secondes ; un gros DS, en une minute. */
 const DESIGN_SYSTEM_WAIT_MS = 90_000
@@ -532,7 +556,7 @@ const ALL_TOOLS = [
   {
     name: 'list_cards',
     description:
-      "Liste le board de ce projet : les cartes, c'est-à-dire le travail à faire, en cours, à vérifier ou terminé. Une carte est un chantier, distinct des conversations qui l'exécutent : elle leur survit et en porte plusieurs. Appelle cet outil avant d'ouvrir un sujet neuf, pour vérifier que ce qu'on te demande n'est pas déjà décrit dans une carte, et quand l'utilisateur cite une carte par son numéro (`#12`). Rend un résumé par carte — son échéance, sa parente et son état dans « à faire » (non acceptée, à préciser) compris —, pas les descriptions entières : utiliser read_card ensuite pour en lire une.",
+      "Liste le board de ce projet : les cartes, c'est-à-dire le travail à faire, en cours, à vérifier ou terminé. Une carte est un chantier, distinct des conversations qui l'exécutent : elle leur survit et en porte plusieurs. Appelle cet outil avant d'ouvrir un sujet neuf, pour vérifier que ce qu'on te demande n'est pas déjà décrit dans une carte, et quand l'utilisateur cite une carte par son numéro (`#12`). Rend un résumé par carte — son échéance, sa parente, si c'est un jalon et son état dans « à faire » (non acceptée, à préciser) compris —, pas les descriptions entières : utiliser read_card ensuite pour en lire une.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -782,7 +806,7 @@ const ALL_TOOLS = [
   {
     name: 'register_action',
     description:
-      `Crée ou modifie une action du projet : un bouton que l'utilisateur lance d'un clic depuis Solera, dans le worktree de la conversation où il clique. Sert quand l'utilisateur le demande (« ajoute un bouton pour lancer le serveur »), ou de ta propre initiative quand tu mets en place une commande qu'il relancera souvent : serveur de dev, suite de tests, script de debug, seed de base. Pas pour une commande d'un seul usage. Deux natures : \`service\` pour ce qui tourne en continu (porté par une unité systemd solera-app-*, visible dans la page Services, qui survit à cette session) ; \`task\` pour ce qui se termine (joué dans un terminal du panneau, avec son code de sortie). Rien n'est écrit dans le dépôt. Une action créée, ou dont tu changes la commande, la nature ou le dossier, attend que l'utilisateur la valide avant son premier lancement d'un clic. Avec \`id\`, modifie l'action existante (seuls les champs donnés changent).`,
+      `Crée ou modifie une action du projet : un bouton que l'utilisateur lance d'un clic depuis Solera, dans le worktree de la conversation où il clique. Sert quand l'utilisateur le demande (« ajoute un bouton pour lancer le serveur »), ou de ta propre initiative quand tu mets en place une commande qu'il relancera souvent : serveur de dev, suite de tests, script de debug, seed de base. Pas pour une commande d'un seul usage. Deux natures : \`service\` pour ce qui tourne en continu (porté par une unité systemd solera-app-*, visible dans la page Services, qui survit à cette session) ; \`task\` pour ce qui se termine (joué dans un terminal du panneau, avec son code de sortie). Rien n'est écrit dans le dépôt. Une \`task\` peut aussi être planifiée (\`schedule\`) : elle part seule à sa cadence, sans terminal, à la racine du projet (plus son \`subdir\`), et sa sortie finit dans ses passages ; avec \`on_demand: false\`, elle n'a plus de bouton. Un \`service\` planifié démarre à sa cadence, et s'arrête à \`schedule.stop\` s'il en a un. Un \`service\` tourne là où on le lance, ou ailleurs selon \`placement\`. Une action créée, ou dont tu changes la commande, la nature, le dossier, la cadence, le placement ou l'arrêt, attend que l'utilisateur la valide avant son premier lancement, d'un clic comme à sa cadence. Avec \`id\`, modifie l'action existante (seuls les champs donnés changent).`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -800,6 +824,35 @@ const ALL_TOOLS = [
           description:
             "Pour un `service` : l'adresse où l'ouvrir, affichée en lien quand il tourne. `{port}` y est remplacé par le port sur lequel il écoute (ex. `http://mon-hote:{port}`). Elle doit être joignable depuis le navigateur de l'utilisateur : pas `localhost` si Solera tourne sur une autre machine que la sienne ; reprends l'adresse que donnent tes consignes s'il y en a une.",
         },
+        placement: {
+          type: 'string',
+          enum: ['follow', 'root', 'branch', 'per-worktree'],
+          description:
+            "Pour un `service` seulement : où il tourne. `follow` (défaut) : là où on le lance, une seule instance qu'on bascule d'un worktree à l'autre. `root` : toujours à la racine du projet. `branch` : toujours sur la branche `branch`. `per-worktree` : une instance par worktree, chacune sur un port libre reçu dans `PORT` ; son `url` doit alors contenir `{port}`. Une `task` tourne toujours là où on la lance.",
+        },
+        branch: {
+          type: 'string',
+          description: 'Avec `placement: "branch"` : la branche sur laquelle le service tourne toujours.',
+        },
+        schedule: {
+          type: 'object',
+          description: `La planifier. Exactement une cadence, comme schedule_task : \`every_minutes\` (${MIN_AGENT_SCHEDULE_MINUTES} au moins), \`cron\` (cinq champs, heure du serveur) ou \`at\` (date ISO 8601). En plus, au besoin : \`max_duration_minutes\` (coupée au-delà, ${DEFAULT_SCHEDULE_DURATION_MINUTES} par défaut) et \`enabled\` (false met en pause ; seul, en modification, garde la cadence). Pour un \`service\`, \`stop\` : l'heure où l'arrêter, une cadence de la même forme (\`{ cron: '0 20 * * 1-5' }\`), null pour la retirer ; sans elle, il tourne jusqu'à ce qu'on l'arrête. \`null\` retire la planification.`,
+          properties: {
+            every_minutes: { type: 'integer' },
+            cron: { type: 'string' },
+            at: { type: 'string' },
+            max_duration_minutes: { type: 'integer' },
+            enabled: { type: 'boolean' },
+            stop: {
+              type: 'object',
+              properties: { every_minutes: { type: 'integer' }, cron: { type: 'string' }, at: { type: 'string' } },
+            },
+          },
+        },
+        on_demand: {
+          type: 'boolean',
+          description: "Faux : la commande ne part qu'à sa cadence, sans bouton ni run_action. Vrai par défaut ; une commande non planifiée l'est toujours.",
+        },
       },
     },
   },
@@ -815,7 +868,7 @@ const ALL_TOOLS = [
   {
     name: 'run_action',
     description:
-      "Lance une action du projet dans le worktree de cette conversation, comme le ferait un clic de l'utilisateur. Un `service` démarre son unité systemd : la réponse dit s'il tient, ses ports, et comment lire son journal. Une `task` s'ouvre dans un terminal du panneau, sous les yeux de l'utilisateur, mais tu n'en lis pas la sortie : pour exploiter un résultat, exécute plutôt la commande dans ton shell. Une exécution qui tourne encore n'est pas doublée.",
+      "Lance une action du projet dans le worktree de cette conversation, comme le ferait un clic de l'utilisateur. Un `service` démarre son unité systemd : la réponse dit s'il tient, ses ports, et comment lire son journal. Une `task` s'ouvre dans un terminal du panneau, sous les yeux de l'utilisateur, mais tu n'en lis pas la sortie : pour exploiter un résultat, exécute plutôt la commande dans ton shell. Une exécution qui tourne encore dans ce worktree n'est pas doublée. La commande part telle quelle, sans argument ajouté.",
     inputSchema: {
       type: 'object',
       properties: { id: { type: 'string', description: "Identifiant de l'action (voir list_actions)." } },
@@ -861,6 +914,11 @@ const ALL_TOOLS = [
           type: 'integer',
           description: 'Numéro de la carte que la session traite. Elle y est rattachée et passe « en cours » si elle était « à faire ».',
         },
+        confined: {
+          type: 'boolean',
+          description:
+            "La confiner : elle n'écrit que dans son arbre, ne voit ni les identifiants de l'hôte ni les autres dépôts, et tourne sans demandes d'autorisation. Elle ne pourra donc ni pousser ni ouvrir de PR. `false` pour l'environnement du projet tel qu'il est réglé. Omettre pour le réglage du projet. Une session confinée ne lance que des sessions confinées.",
+        },
       },
       required: ['prompt'],
     },
@@ -894,7 +952,7 @@ const ALL_TOOLS = [
   {
     name: 'schedule_task',
     description:
-      "Crée une tâche planifiée dans ce projet : Solera rejouera `prompt` à la cadence donnée, chaque fois dans une session neuve, même quand aucune session n'est ouverte et après un redémarrage. C'est le planificateur durable, commun à tous les CLI ; les boucles propres à une session (`/loop`, `CronCreate`) meurent avec elle. Sert quand l'utilisateur demande un travail récurrent ou différé (« vérifie ça tous les lundis », « relance l'audit demain à 9 h »). Pas de ta propre initiative : une tâche consomme du quota à chaque tir. Les tirs tournent sans personne au clavier, à la racine du projet, avec les permissions par défaut du projet pour ce CLI ; ils n'encombrent pas la liste des sessions, l'utilisateur les retrouve sous la tâche et la gère dans la vue Planification. Donne exactement une cadence parmi `every_minutes`, `cron` et `at`.",
+      "Crée une tâche planifiée dans ce projet : Solera rejouera `prompt` à la cadence donnée, chaque fois dans une session neuve, même quand aucune session n'est ouverte et après un redémarrage. C'est le planificateur durable, commun à tous les CLI ; les boucles propres à une session (`/loop`, `CronCreate`) meurent avec elle. Sert quand l'utilisateur demande un travail récurrent ou différé (« vérifie ça tous les lundis », « relance l'audit demain à 9 h »). Pas de ta propre initiative : une tâche consomme du quota à chaque tir. Les tirs tournent sans personne au clavier, à la racine du projet ou dans un worktree neuf (`worktree_mode`), avec les permissions par défaut du projet pour ce CLI ; ils n'encombrent pas la liste des sessions, l'utilisateur les retrouve sous la tâche et la gère dans la vue Planification. Donne au plus une cadence parmi `every_minutes`, `cron` et `at` ; sans cadence, la tâche ne part qu'à la demande, d'un clic dans l'interface.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -918,6 +976,16 @@ const ALL_TOOLS = [
         at: {
           type: 'string',
           description: 'Date et heure d\'un tir unique, ISO 8601 avec fuseau : `2026-10-12T09:00:00+02:00`.',
+        },
+        on_demand: {
+          type: 'boolean',
+          description: "La tâche se lance aussi d'un clic, en plus de sa cadence. Vrai par défaut ; `false` exige une cadence.",
+        },
+        worktree_mode: {
+          type: 'string',
+          enum: ['root', 'new'],
+          description:
+            "Où s'ouvre chaque tir : `root` à la racine du projet (défaut), `new` dans un worktree neuf, sur une branche nommée d'après la tâche et l'heure, partie de la branche par défaut. `new` pour un tir qui modifie du code : il ne touche pas l'arbre où l'on travaille.",
         },
         agent: {
           type: 'string',
@@ -1206,13 +1274,13 @@ const ALL_TOOLS = [
   {
     name: 'request_card_change',
     description:
-      "Propose de changer une ou plusieurs cartes du board : leur colonne, leur parente, leur échéance ou leurs liens « bloque ». **Ne change rien** : dépose une demande qui apparaît dans cette conversation et attend un clic du propriétaire du projet — c'est lui qui range son board, jamais toi. Sert pour ce que tu ne fais pas seul : passer une carte en terminé ou abandonné (une PR fusionnée et publiée, un chantier qu'une décision a rendu sans objet), toucher à la carte d'une autre session, ou changer l'échéance, la parente ou les blocages d'une carte qui existe déjà. Toutes les colonnes sont permises. Quand le travail d'une carte est fini et opérationnel — sa PR fusionnée et le résultat vérifié —, propose de la **clore** avec `close: true` : le clic la range en terminé, archive toutes ses conversations, la tienne comprise, retire ses worktrees et supprime ses branches fusionnées, sans rien forcer là où du travail n'est pas poussé. Dis dans la raison ce que tu as vérifié. Une carte dont la PR n'est pas fusionnée est refusée. Une carte parente se clôt une fois sa PR vers la branche par défaut fusionnée ; si des enfants restent ouvertes, la clôture les abandonne et la demande les nomme : ne le propose que si l'on t'a dit qu'elles ne se feront pas. Une raison écrite est obligatoire par carte. Une seule demande en attente à la fois, et un seul clic accorde la liste entière : groupe ce qui se décide ensemble plutôt que de déposer carte par carte. L'issue t'arrive en message à ton prochain tour, sans te relancer.",
+      "Propose de changer une ou plusieurs cartes du board : leur colonne, leur parente, leur échéance, leurs liens « bloque », ou de leur ajouter des sous-tâches. **Ne change rien** : dépose une demande qui apparaît dans cette conversation et attend un clic du propriétaire du projet — c'est lui qui range son board, jamais toi. Sert pour ce que tu ne fais pas seul : passer une carte en terminé ou abandonné (une PR fusionnée et publiée, un chantier qu'une décision a rendu sans objet), toucher à la carte d'une autre session, ou changer l'échéance, la parente ou les blocages d'une carte qui existe déjà. Toutes les colonnes sont permises. Quand le travail d'une carte est fini et opérationnel — sa PR fusionnée et le résultat vérifié —, propose de la **clore** avec `close: true` : le clic la range en terminé, archive toutes ses conversations, la tienne comprise, retire ses worktrees et supprime ses branches fusionnées, sans rien forcer là où du travail n'est pas poussé. Dis dans la raison ce que tu as vérifié. Une carte dont la PR n'est pas fusionnée est refusée. Une carte parente se clôt une fois sa PR vers la branche par défaut fusionnée ; si des enfants restent ouvertes, la clôture les abandonne et la demande les nomme : ne le propose que si l'on t'a dit qu'elles ne se feront pas. Une raison écrite est obligatoire par carte. Une seule demande en attente à la fois, et un seul clic accorde la liste entière : groupe ce qui se décide ensemble plutôt que de déposer carte par carte. L'issue t'arrive en message à ton prochain tour, sans te relancer.",
     inputSchema: {
       type: 'object',
       properties: {
         changes: {
           type: 'array',
-          description: `Les changements proposés, de 1 à ${MAX_CARD_CHANGES} cartes. Chacun porte au moins un de column, close, parent, due, blocks, unblocks.`,
+          description: `Les changements proposés, de 1 à ${MAX_CARD_CHANGES} cartes. Chacun porte au moins un de column, close, parent, due, blocks, unblocks, add_subtasks.`,
           items: {
             type: 'object',
             properties: {
@@ -1247,6 +1315,11 @@ const ALL_TOOLS = [
                 type: 'array',
                 items: { type: 'integer' },
                 description: "Cartes qu'elle cessera de bloquer.",
+              },
+              add_subtasks: {
+                type: 'array',
+                items: { type: 'string' },
+                description: `Sous-tâches à ajouter à la carte, une ligne chacune, ${MAX_SUBTASKS} au plus et 300 caractères chacune. Ajoutées sous ses sous-tâches existantes ; une qu'elle porte déjà est refusée.`,
               },
               reason: {
                 type: 'string',
@@ -2126,7 +2199,7 @@ const ACTION_LABELS = { created: 'créé', modified: 'modifié', deleted: 'suppr
  */
 function renderFileEdits(rows, { path, withinMinutes, older }) {
   if (rows.length === 0) {
-    const scope = path ? `n'a touché à « ${path} »` : `n'a modifié de fichier`
+    const scope = path ? `n'a touché à « ${seenPath(path)} »` : `n'a modifié de fichier`
     const head = `Aucune autre session de cet arbre de travail ${scope} dans les ${withinMinutes} dernières minutes.`
     return older === null
       ? `${head} Rien de plus ancien non plus.`
@@ -2155,7 +2228,7 @@ function renderByFile(rows) {
   return rows.map((row) => {
     const where = row.worktree ? `worktree ${row.worktree}` : 'racine du projet'
     const times = row.edits > 1 ? ` (${row.edits} fois)` : ''
-    return `- ${row.path} | ${ACTION_LABELS[row.action] ?? row.action}${times} | ${ago(row.ts)}\n  par ${row.id} (${row.agent}, ${describeActivity(row)}, ${where})\n  ${row.title}`
+    return `- ${seenPath(row.path)} | ${ACTION_LABELS[row.action] ?? row.action}${times} | ${ago(row.ts)}\n  par ${row.id} (${row.agent}, ${describeActivity(row)}, ${where})\n  ${row.title}`
   })
 }
 
@@ -2177,7 +2250,7 @@ function renderBySession(rows) {
     const sorted = [...files].sort((a, b) => b.edits - a.edits)
     const shown = sorted
       .slice(0, FILES_PER_SESSION)
-      .map((file) => `${file.path}${file.edits > 1 ? ` (${file.edits}×)` : ''}`)
+      .map((file) => `${seenPath(file.path)}${file.edits > 1 ? ` (${file.edits}×)` : ''}`)
     const rest = sorted.length - shown.length
     const tail = rest > 0 ? `, et ${rest} autre(s)` : ''
 
@@ -2203,6 +2276,7 @@ function listCards(column) {
               c.due_at      AS dueAt,
               c.accepted_at AS acceptedAt,
               c.to_clarify_since AS toClarifySince,
+              c.milestone   AS milestone,
               m.number      AS parentNumber,
               m.title       AS parentTitle,
               (SELECT COUNT(*) FROM conversations AS v WHERE v.card_id = c.id) AS sessions,
@@ -2228,7 +2302,9 @@ function listActions() {
   return db
     .prepare(
       `SELECT id, label, description, kind, command, subdir, url,
-              approved_at AS approvedAt
+              approved_at AS approvedAt, on_demand AS onDemand, cadence,
+              schedule_enabled AS scheduleEnabled, next_run_at AS nextRunAt,
+              stop_cadence AS stopCadence, placement, pinned_branch AS pinnedBranch
        FROM project_actions
        WHERE project_id = ?
        ORDER BY created_at`,
@@ -2246,9 +2322,46 @@ function renderActions(actions) {
       const where = action.subdir ? ` — dans \`${action.subdir}\`` : ''
       const about = action.description ? `\n  ${action.description}` : ''
       const link = action.url ? `\n  ouvre ${action.url}` : ''
-      return `- « ${action.label} » (${action.kind}, ${status}, id \`${action.id}\`)${where}${about}${link}\n  \`${action.command.replace(/\n/g, ' ⏎ ')}\``
+      const when = action.cadence ? `\n  ${describeActionSchedule(action)}` : ''
+      const placed = action.kind === 'service' && action.placement !== 'follow' ? `\n  ${describeActionPlacement(action)}` : ''
+      return `- « ${action.label} » (${action.kind}, ${status}, id \`${action.id}\`)${where}${about}${link}${when}${placed}\n  \`${action.command.replace(/\n/g, ' ⏎ ')}\``
     })
     .join('\n')
+}
+
+/** Où tourne un service qui ne suit pas, dit comme `register_action` le règle. */
+function describeActionPlacement(action) {
+  if (action.placement === 'root') return 'placement `root` : toujours à la racine du projet'
+  if (action.placement === 'branch') return `placement \`branch\` : toujours sur \`${action.pinnedBranch}\``
+  return 'placement `per-worktree` : une instance par worktree, chacune sur son port'
+}
+
+/** Une cadence lue en base, dite comme `schedule_task` la dit ; null si illisible. */
+function describeCadenceText(raw) {
+  let cadence
+  try {
+    cadence = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  return cadence.kind === 'interval'
+    ? `toutes les ${cadence.minutes} minutes`
+    : cadence.kind === 'cron'
+      ? `motif cron \`${cadence.expression}\``
+      : `une seule fois, le ${new Date(cadence.at).toLocaleString('fr-FR')}`
+}
+
+/** La cadence d'une commande planifiée, et l'arrêt d'un service planifié. */
+function describeActionSchedule(action) {
+  const rule = describeCadenceText(action.cadence)
+  if (rule === null) return 'planifiée (cadence illisible)'
+  const next = action.scheduleEnabled
+    ? action.nextRunAt
+      ? `, prochain tir ${new Date(action.nextRunAt).toLocaleString('fr-FR')}`
+      : ''
+    : ', en pause'
+  const stop = action.stopCadence ? describeCadenceText(action.stopCadence) : null
+  return `planifiée : ${rule}${next}${action.onDemand ? '' : ', sans bouton (à sa cadence seulement)'}${stop ? `, arrêtée ${stop}` : ''}`
 }
 
 function readCard(number) {
@@ -2256,6 +2369,7 @@ function readCard(number) {
     .prepare(
       `SELECT c.id, c.number, c.title, c.column, c.description, c.created_at AS createdAt,
               c.due_at AS dueAt, c.accepted_at AS acceptedAt, c.to_clarify_since AS toClarifySince,
+              c.milestone AS milestone,
               m.number AS parentNumber, m.title AS parentTitle,
               m.column AS parentColumn, m.due_at AS parentDueAt,
               i.url AS issueUrl, i.state AS issueState
@@ -2348,7 +2462,7 @@ function readCard(number) {
 
   card.attachments = db.prepare(
     'SELECT filename, mime_type AS mimeType, size_bytes AS sizeBytes, storage_path AS path FROM attachments WHERE card_id = ? ORDER BY created_at'
-  ).all(card.id)
+  ).all(card.id).map((file) => ({ ...file, path: seenPath(file.path) }))
   return card
 }
 
@@ -2653,6 +2767,18 @@ function cardState(card) {
   return column
 }
 
+/**
+ * Ce qu'est une carte drapeautée : un jalon, ou, sans enfant, l'idée d'un jalon, un
+ * chantier à affiner avant de le découper en cartes.
+ */
+function milestoneLabel(hasChildren) {
+  return hasChildren ? 'jalon' : 'idée de jalon'
+}
+
+function capitalized(text) {
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
 function renderCards(rows, column) {
   const truncated = rows.length > CARD_LIMIT
   const shown = truncated ? rows.slice(0, CARD_LIMIT) : rows
@@ -2674,7 +2800,8 @@ function renderCards(rows, column) {
     const due = row.dueAt ? `, échéance ${dueDate(row.dueAt)}` : ''
     const parent = row.parentNumber ? `, enfant de #${row.parentNumber} « ${row.parentTitle} »` : ''
     const children = row.children > 0 ? `, ${row.children} enfant(s)` : ''
-    return `- #${row.number} [${cardState(row)}] ${row.title}${due}${parent}${children}${sessions}${self}${summary}`
+    const milestone = row.milestone ? `, ${milestoneLabel(row.children > 0)}` : ''
+    return `- #${row.number} [${cardState(row)}] ${row.title}${milestone}${due}${parent}${children}${sessions}${self}${summary}`
   })
 
   const head = `${shown.length} carte(s)${column ? ` en « ${COLUMN_LABELS[column]} »` : ''} :`
@@ -2704,6 +2831,13 @@ function renderCard(card) {
   }
   if (card.toClarifySince) {
     head.push(`À préciser depuis ${ago(card.toClarifySince)} : des questions attendent une réponse avant le code.`)
+  }
+  if (card.milestone) {
+    head.push(
+      card.children.length > 0
+        ? `${capitalized(milestoneLabel(true))} : ses enfants livrent dans sa branche, et sa colonne se déduit de la leur.`
+        : `${capitalized(milestoneLabel(false))} : pas encore d'enfant, elle attend d'être affinée et découpée en cartes.`,
+    )
   }
   if (card.dueAt) head.push(`Échéance : ${dueDate(card.dueAt)}.`)
   if (card.parentNumber) {
@@ -3017,7 +3151,7 @@ async function designSystemManifest(kind) {
   }
   if (response.status === 404) {
     return {
-      error: `Le Storybook du design system (${state.path}) ne publie pas de manifeste de ${kind === 'docs' ? 'pages' : 'composants'}. Il faut Storybook 10.3 ou plus et \`features: { componentsManifest: true }\` dans son \`.storybook/main.ts\`.`,
+      error: `Le Storybook du design system (${seenPath(state.path)}) ne publie pas de manifeste de ${kind === 'docs' ? 'pages' : 'composants'}. Il faut Storybook 10.3 ou plus et \`features: { componentsManifest: true }\` dans son \`.storybook/main.ts\`.`,
     }
   }
   if (!response.ok) return { error: `Le Storybook du design system a répondu ${response.status}.` }
@@ -3043,10 +3177,10 @@ async function designSystemReady() {
     return { error: "Le Storybook du design system n'est pas lancé : Solera le démarre au début de chaque tour. Réessaie au prochain message." }
   }
   if (state.status === 'starting') {
-    return { error: `Le Storybook du design system (${state.path}) démarre encore. Réessaie dans un moment.` }
+    return { error: `Le Storybook du design system (${seenPath(state.path)}) démarre encore. Réessaie dans un moment.` }
   }
   if (state.status === 'failed') {
-    return { error: `Le Storybook du design system (${state.path}) n'a pas pu démarrer. Son journal est ${state.log}.\n\n${state.error ?? ''}` }
+    return { error: `Le Storybook du design system (${seenPath(state.path)}) n'a pas pu démarrer. Son journal est ${seenPath(state.log)}.\n\n${state.error ?? ''}` }
   }
   return { state }
 }
@@ -3078,7 +3212,7 @@ function prototypeScope(state) {
   const own = root && PROJECT_ID ? join(root, PROJECT_ID) : null
   const within = (path, directory) => {
     const absolute = resolve(state.path, path ?? '')
-    return absolute === directory || absolute.startsWith(directory + '/')
+    return absolute === directory || absolute.startsWith(directory + sep)
   }
   return {
     own,
@@ -3422,21 +3556,21 @@ async function showPrototype(args) {
   if (state.hooked === false) {
     return {
       ...text(
-        `Le Storybook du design system (${state.path}) ne charge pas les prototypes : son \`.storybook/main.ts\` doit finir par cette ligne, à la place de son \`export default config\` :\n\n\`\`\`ts\n${DESIGN_SYSTEM_LINE}\n\`\`\`\n\nC'est une modification du DS, pas du projet : demande-la à l'utilisateur plutôt que de la faire.`,
+        `Le Storybook du design system (${seenPath(state.path)}) ne charge pas les prototypes : son \`.storybook/main.ts\` doit finir par cette ligne, à la place de son \`export default config\` :\n\n\`\`\`ts\n${DESIGN_SYSTEM_LINE}\n\`\`\`\n\nC'est une modification du DS, pas du projet : demande-la à l'utilisateur plutôt que de la faire.`,
       ),
       isError: true,
     }
   }
   const requested = typeof args.file === 'string' ? args.file.trim() : ''
   if (!requested) return { ...text('Le paramètre `file` est requis.'), isError: true }
-  const file = resolve(scope.own, requested)
+  const file = resolve(scope.own, hostPath(requested))
   if (!scope.isOwn(file)) {
-    return { ...text(`Un prototype de ce projet vit dans \`${scope.own}\`, et \`${file}\` n'y est pas.`), isError: true }
+    return { ...text(`Un prototype de ce projet vit dans \`${seenPath(scope.own)}\`, et \`${seenPath(file)}\` n'y est pas.`), isError: true }
   }
   try {
     statSync(file)
   } catch {
-    return { ...text(`Aucun fichier \`${file}\`.`), isError: true }
+    return { ...text(`Aucun fichier \`${seenPath(file)}\`.`), isError: true }
   }
 
   const deadline = Date.now() + PROTOTYPE_INDEX_WAIT_MS
@@ -3459,7 +3593,7 @@ async function showPrototype(args) {
     const reason = broken
       ? `Storybook n'a pas su le lire :\n\n${broken.error?.message ?? broken.error?.name ?? ''}`
       : "Storybook ne l'a pas indexé : son nom doit finir par `.stories.tsx` (ou `.ts`, `.jsx`, `.js`), et il doit exporter par défaut un `meta` et au moins une story."
-    return { ...text(`Aucune story dans \`${file}\`. ${reason}\n\nLe journal du Storybook est ${state.log}.`), isError: true }
+    return { ...text(`Aucune story dans \`${seenPath(file)}\`. ${reason}\n\nLe journal du Storybook est ${seenPath(state.log)}.`), isError: true }
   }
 
   const wanted = typeof args.story === 'string' ? args.story.trim() : ''
@@ -3528,7 +3662,7 @@ function renderProjects(rows) {
     `${rows.length} projet(s) :`,
     ...rows.map(
       (row) =>
-        `- ${row.name} (id ${row.id}) — ${row.path}${row.working ? ` — ${row.working} session(s) en train de travailler` : ''}${row.lastActivity ? ` — dernière activité ${ago(row.lastActivity)}` : ' — aucune conversation'}`,
+        `- ${row.name} (id ${row.id}) — ${seenPath(row.path)}${row.working ? ` — ${row.working} session(s) en train de travailler` : ''}${row.lastActivity ? ` — dernière activité ${ago(row.lastActivity)}` : ' — aucune conversation'}`,
     ),
   ].join('\n')
 }
@@ -3781,7 +3915,8 @@ async function callTool(name, args) {
   }
 
   if (name === 'find_file_edits') {
-    const path = typeof args?.path === 'string' && args.path.trim() ? args.path.trim() : null
+    // Le journal garde les chemins tels que l'hôte les lit.
+    const path = typeof args?.path === 'string' && args.path.trim() ? hostPath(args.path.trim()) : null
     const asked = Number.isInteger(args?.within_minutes) ? args.within_minutes : EDIT_MINUTES
     const withinMinutes = Math.min(Math.max(asked, 1), 60 * 24 * 7)
     const rows = findFileEdits({ path, withinMinutes })
@@ -3854,13 +3989,13 @@ async function callTool(name, args) {
     if (!path) return { ...text('Le paramètre `path` est requis.'), isError: true }
     const provisional = args?.provisional === true
 
-    const file = resolve(path)
+    const file = resolve(hostPath(path))
     let data
     try {
       // La taille avant la lecture : un chemin qui désigne par erreur une vidéo ou une
       // archive ne doit pas passer par la mémoire pour être refusé.
       const info = statSync(file)
-      if (!info.isFile()) return { ...text(`${file} n'est pas un fichier.`), isError: true }
+      if (!info.isFile()) return { ...text(`${seenPath(file)} n'est pas un fichier.`), isError: true }
       if (info.size > MAX_PROJECT_IMAGE_BYTES) {
         return {
           ...text(
@@ -3871,13 +4006,13 @@ async function callTool(name, args) {
       }
       data = readFileSync(file)
     } catch (error) {
-      return { ...text(`Lecture de ${file} impossible : ${error.message}`), isError: true }
+      return { ...text(`Lecture de ${seenPath(file)} impossible : ${error.message}`), isError: true }
     }
 
     const mimeType = sniffProjectImage(data)
     if (!mimeType) {
       return {
-        ...text(`${file} n'est pas une image reconnue. Formats acceptés : PNG, JPEG, GIF, WebP, SVG.`),
+        ...text(`${seenPath(file)} n'est pas une image reconnue. Formats acceptés : PNG, JPEG, GIF, WebP, SVG.`),
         isError: true,
       }
     }
@@ -4272,11 +4407,11 @@ async function callTool(name, args) {
     if (name === 'read_memory') {
       if (!file) {
         const files = memoryFiles()
-        if (files.length === 0) return text(`Mémoire vide (${MEMORY_DIR}).`)
+        if (files.length === 0) return text(`Mémoire vide (${seenPath(MEMORY_DIR)}).`)
         const index = readMemoryFile(MEMORY_INDEX)
         return text(
           [
-            `Mémoire ${memoryLabel()}, dans ${MEMORY_DIR} :`,
+            `Mémoire ${memoryLabel()}, dans ${seenPath(MEMORY_DIR)} :`,
             index ? `${MEMORY_INDEX} :\n\n${index.trim()}` : `Pas de ${MEMORY_INDEX}.`,
             `Notes : ${files.filter((candidate) => candidate !== MEMORY_INDEX).join(', ') || 'aucune'}.`,
           ].join('\n\n'),

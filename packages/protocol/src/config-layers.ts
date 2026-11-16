@@ -305,6 +305,58 @@ export function patchConfigLayer(layer: ConfigLayer, patch: ConfigLayerPatch): C
   return next
 }
 
+type LayerScope = ConfigLayerPatch['scope']
+const LAYER_SCOPES: readonly LayerScope[] = ['shared', ...CONFIG_LAYER_AGENTS]
+
+/** L'écart d'une portée : les champs posés ou changés, et ceux rendus à l'héritage. */
+function scopePatch(scope: LayerScope, base: Record<string, unknown>, next: Record<string, unknown>): ConfigLayerPatch | null {
+  const set: Record<string, unknown> = {}
+  for (const [field, value] of Object.entries(next)) {
+    if (!(field in base) || !sameSettingValue(value, base[field])) set[field] = value
+  }
+  const unset = Object.keys(base).filter((field) => !(field in next))
+  if (Object.keys(set).length === 0 && unset.length === 0) return null
+  return { scope, ...(Object.keys(set).length > 0 ? { set } : {}), ...(unset.length > 0 ? { unset } : {}) }
+}
+
+/**
+ * Les changements qui mènent d'un niveau à un autre, tels qu'un `PATCH` les envoie : ce
+ * qu'un écran de brouillon a changé, rejoué sur le serveur par-dessus l'enregistré.
+ *
+ * Les champs communs partent d'abord, parce que les écrire efface leurs exceptions par
+ * CLI ; chaque CLI est ensuite comparé au niveau qui en résulte, pour reposer celles
+ * que `next` garde.
+ */
+export function diffConfigLayers(base: ConfigLayer, next: ConfigLayer): ConfigLayerPatch[] {
+  const patches: ConfigLayerPatch[] = []
+  const shared = scopePatch('shared', base.shared, next.shared)
+  if (shared) patches.push(shared)
+  const after = shared ? patchConfigLayer(base, shared) : base
+  for (const agent of CONFIG_LAYER_AGENTS) {
+    const patch = scopePatch(agent, after[agent], next[agent])
+    if (patch) patches.push(patch)
+  }
+  return patches
+}
+
+/**
+ * Les réglages qu'un brouillon change, un par un : un champ commun compte une fois, quel
+ * que soit le nombre de CLI où son écriture efface une exception ; un champ propre compte
+ * pour son CLI (`codex.model`).
+ */
+export function changedLayerFields(base: ConfigLayer, next: ConfigLayer): string[] {
+  const changed = new Set<string>()
+  for (const scope of LAYER_SCOPES) {
+    const before = base[scope] as Record<string, unknown>
+    const after = next[scope] as Record<string, unknown>
+    for (const field of new Set([...Object.keys(before), ...Object.keys(after)])) {
+      if (field in before === field in after && sameSettingValue(before[field], after[field])) continue
+      changed.add(isSharedField(field) ? field : `${scope}.${field}`)
+    }
+  }
+  return [...changed]
+}
+
 /**
  * Range dans un niveau la configuration complète qu'un écran d'avant l'héritage envoie
  * pour un CLI : le niveau retient ce qui diffère de `below`, les champs partagés en commun

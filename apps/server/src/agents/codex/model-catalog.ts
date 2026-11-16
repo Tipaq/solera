@@ -2,6 +2,7 @@ import type { CollaborationModeMask, Model, ModelListResponse } from '@solera/co
 import { CachedProbe } from '../cached-probe.js'
 import { CodexAppServerClient } from './app-server-client.js'
 import { CLIENT_INFO } from './client-info.js'
+import type { CliLauncher } from '../cli-binary.js'
 
 /**
  * Catalogue des modèles et des modes de collaboration Codex, lus sur l'app-server.
@@ -25,14 +26,14 @@ const CACHE_TTL_MS = 60 * 60 * 1000
 export class CodexModelCatalog {
   private readonly cached = new CachedProbe(CACHE_TTL_MS, () => this.probe())
 
-  constructor(private readonly executable: () => Promise<string>) {}
+  constructor(private readonly cli: CliLauncher) {}
 
   list(): Promise<Listing & { fetchedAt: number }> {
     return this.cached.read()
   }
 
   private async probe(): Promise<Listing> {
-    const client = new CodexAppServerClient({ binary: await this.executable() })
+    const client = new CodexAppServerClient({ binary: await this.cli.executable(), environment: this.cli.environment })
     try {
       await client.initialize(CLIENT_INFO)
 

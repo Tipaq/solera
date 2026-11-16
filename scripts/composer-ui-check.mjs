@@ -155,6 +155,9 @@ try {
       const path = new URL(request.url()).pathname
       const id = path.split('/')[3]
       if (path.endsWith('/models')) return route.fulfill({ json: { models, modes: id === 'codex' ? [{ mode: 'default', label: 'Standard' }, { mode: 'plan', label: 'Plan' }] : [], account: null, fetchedAt: Date.now() } })
+      // L'état de connexion des CLI (#91) : le composer le lit pour dire qu'un Claude
+      // sans compte est déconnecté. Aucun ici, et sa liste doit exister.
+      if (path === '/api/agents/auth') return route.fulfill({ json: { entries: [] } })
       if (path === '/api/mcp/servers') return route.fulfill({ json: { servers: [{ id: 'docs', name: 'Documentation', enabled: true }], soleraServer: true, agentMemory: true, projectFiling: true, cardFiling: true } })
       // La bibliothèque de skills : son interrupteur de session vit avec la liste
       // qu'il commande, dans le menu des skills.

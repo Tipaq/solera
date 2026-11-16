@@ -11,8 +11,6 @@ import { CliInstaller } from '../agents/cli-install.js'
 import type { AttachmentStore } from '../attachments/store.js'
 import type { CardClosure } from '../cards/close.js'
 import type { IssueSources } from '../issues/service.js'
-import { bearerSecret, resolveApiToken } from '../auth/api-tokens.js'
-import { resolveSession } from '../auth/sessions.js'
 import type { EventLog } from '../events/event-log.js'
 import type { PushService } from '../push/push-service.js'
 import type { Notifications } from '../notifications/dispatcher.js'
@@ -23,7 +21,7 @@ import { registerTerminalHub } from '../ws/terminal-hub.js'
 import { registerWebSocketHub } from '../ws/hub.js'
 import { MAX_ATTACHMENT_BYTES } from '@solera/protocol'
 import type { AppContext } from './context.js'
-import { HttpError, registerErrorHandler, unauthorized } from './errors.js'
+import { registerErrorHandler } from './errors.js'
 import { registerApiTokenRoutes } from './routes/api-tokens.js'
 import { registerV1Routes } from './v1/index.js'
 import type { Scheduler } from '../scheduler/scheduler.js'
@@ -40,7 +38,9 @@ import { registerInstructionRoutes } from './routes/instructions.js'
 import { registerMemoryRoutes } from './routes/memory.js'
 import { registerSkillLibraryRoutes } from './routes/skill-library.js'
 import { registerSkillSourceRoutes } from './routes/skill-sources.js'
+import { installSoleraSkills, versionRef } from '../skill-library/solera-skills.js'
 import { SkillSources } from '../skill-library/sources.js'
+import { CURRENT_VERSION } from '../update/version.js'
 import { SkillLibrary } from '../skill-library/store.js'
 import { registerSecretRoutes } from './routes/secrets.js'
 import type { SecretStore } from '../secrets/store.js'
@@ -63,9 +63,11 @@ import type { GrokLoginService } from '../grok-accounts/login.js'
 import type { GrokAccountStore } from '../grok-accounts/store.js'
 import { registerAttachmentRoutes } from './routes/attachments.js'
 import { registerAuthRoutes } from './routes/auth.js'
+import { registerAuthHooks } from './auth-hooks.js'
 import { registerClaudeSessionRoutes } from './routes/claude-sessions.js'
 import { registerCardRoutes } from './routes/cards.js'
 import { registerMilestoneRoutes } from './routes/milestones.js'
+import { registerRefinementRoutes } from './routes/refinement.js'
 import type { MilestoneRuns } from '../milestones/milestone-runs.js'
 import { registerIssueRoutes } from './routes/issues.js'
 import { registerConversationRoutes } from './routes/conversations.js'
@@ -79,6 +81,7 @@ import { registerFsRoutes } from './routes/fs.js'
 import { registerHealthRoutes } from './routes/health.js'
 import { registerPaletteRoutes } from './routes/palette.js'
 import { registerProjectRoutes } from './routes/projects.js'
+import { registerProjectBackgroundRoutes } from './routes/project-background.js'
 import { registerPushRoutes } from './routes/push.js'
 import { registerDecisionRoutes } from './routes/decisions.js'
 import { registerSearchRoutes } from './routes/search.js'
@@ -93,6 +96,7 @@ import { registerUserSettingsRoutes } from './routes/user-settings.js'
 import { registerUserRoutes } from './routes/users.js'
 import { registerWorktreeRoutes } from './routes/worktrees.js'
 import { registerPullRequestRoutes } from './routes/pull-requests.js'
+import { ghForge } from '../reviews/forge.js'
 import { ProjectPullRequests, ghListPullRequests } from '../reviews/pull-requests.js'
 import { registerWebRoutes } from './routes/web.js'
 import { registerFrameGuard } from './frame-guard.js'
@@ -102,25 +106,6 @@ import { registerDesignSystemRelay } from './routes/design-system-relay.js'
 import type { StorybookSupervisor } from '../design-system/storybooks.js'
 import type { WorktreeCleanup } from '../worktrees/cleanup.js'
 import type { WorktreeStatusService } from '../worktrees/status-service.js'
-
-/**
- * Routes accessibles sans session. Tout le reste exige un utilisateur.
- *
- * Le profil de l'instance en fait partie : l'interface l'attend avant de dessiner quoi que
- * ce soit, page de connexion comprise. La création du premier compte aussi : elle se
- * ferme d'elle-même dès qu'un compte existe.
- */
-const PUBLIC_ROUTES = new Set(['/api/auth/login', '/api/auth/setup', '/api/health', '/api/system/instance'])
-
-/**
- * L'API publique, réservée aux jetons.
- *
- * La frontière est nette dans les deux sens : un cookie n'y entre pas, un jeton ne sort
- * pas de ce préfixe. C'est ce qui permet aux DTO de l'interface de bouger sans devenir
- * un contrat public, et ce qui interdit à un jeton volé d'atteindre l'administration
- * des comptes.
- */
-const API_V1_PREFIX = '/api/v1/'
 
 export async function buildApp(
   ctx: AppContext,
@@ -187,50 +172,11 @@ export async function buildApp(
     limits: { files: 1, fileSize: MAX_ATTACHMENT_BYTES },
   })
 
-  // Résolution de l'identité sur toute requête. Les routes décident ensuite si elles
-  // exigent un utilisateur, via requireUser().
-  app.addHook('onRequest', async (request) => {
-    const secret = bearerSecret(request.headers.authorization)
-    const identity = secret ? resolveApiToken(ctx.db, secret) : null
-    if (identity) {
-      request.apiToken = identity.token
-      request.user = identity.user
-      return
-    }
-
-    // Repli sur le cookie même en présence d'un en-tête `Authorization` : un proxy ou
-    // une extension qui en ajoute un ne doit pas rendre l'interface inutilisable.
-    const token = request.cookies[ctx.config.sessionCookie]
-    if (!token) return
-    const user = await resolveSession(ctx.db, token)
-    if (user) request.user = user
-  })
-
-  app.addHook('onRequest', async (request) => {
-    if (!request.url.startsWith('/api/')) return
-    const path = request.url.split('?')[0] ?? request.url
-    if (PUBLIC_ROUTES.has(path) || path === '/api/auth/logout') return
-
-    if (path.startsWith(API_V1_PREFIX)) {
-      if (!request.apiToken) {
-        throw new HttpError(401, 'api_token_required', 'This API requires a bearer token.')
-      }
-      return
-    }
-
-    if (request.apiToken) {
-      throw new HttpError(
-        403,
-        'token_outside_api',
-        'A bearer token only grants access to /api/v1.',
-      )
-    }
-    if (!request.user) throw unauthorized()
-  })
+  registerAuthHooks(app, ctx, sessions.mcpTokens)
 
   registerHealthRoutes(app)
   registerAuthRoutes(app, ctx)
-  registerProjectRoutes(app, ctx, attachments, new CloneJobs(), terminals, registry)
+  registerProjectRoutes(app, ctx, attachments, new CloneJobs(), terminals, registry, sessions.environments)
   registerConversationRoutes(app, ctx, log, sessions, registry, attachments, webhooks, cardClosure)
   registerCheckpointRoutes(app, ctx, sessions)
   registerSessionMessageRoutes(app, ctx, relay)
@@ -259,6 +205,17 @@ export async function buildApp(
   registerInstructionRoutes(app, ctx)
   registerMemoryRoutes(app, ctx)
   registerSkillSourceRoutes(app, ctx, skillLibrary, skillSources)
+  // Les skills de Solera, installés d'office au premier démarrage qui connaît leur source.
+  // Sans l'attendre : le clone passe par le réseau. Seulement pour une version publiée :
+  // sans tag (`dev`, les suites UI qui lancent `src/main.ts`), on clonerait `main` à
+  // chaque base jetable, et un skill de `main` peut citer un outil que ce code n'a pas.
+  if (ctx.config.skills.library && versionRef(CURRENT_VERSION)) {
+    void installSoleraSkills(ctx.db, skillSources, skillLibrary)
+      .then((skills) => {
+        if (skills.length > 0) app.log.info({ skills }, 'skills de Solera installes')
+      })
+      .catch((err: unknown) => app.log.warn({ err }, 'skills de Solera non installes, nouvel essai au prochain demarrage'))
+  }
   registerSecretRoutes(app, ctx, secrets)
   registerGitCredentialRoutes(app, gitCredentials, new RepoCatalog(), new ForgeClient())
   registerClaudeAccountRoutes(app, claudeAccounts, claudeLogin, claudeIdentify)
@@ -268,19 +225,21 @@ export async function buildApp(
   registerWorktreeRoutes(app, ctx, terminals, worktreeStatus, worktreeCleanup)
   // Un jeton GitHub enregistré passe devant `gh`, comme pour la revue ; un jeton qui ne
   // se déchiffre plus laisse `gh` répondre avec le sien.
+  const githubToken = (userId: string): string | undefined => {
+    try {
+      return gitCredentials.resolve(userId, 'github.com')?.token
+    } catch {
+      return undefined
+    }
+  }
   registerPullRequestRoutes(
     app,
     ctx,
-    pullRequests ??
-      new ProjectPullRequests(ctx.db, ghListPullRequests, (userId) => {
-        try {
-          return gitCredentials.resolve(userId, 'github.com')?.token
-        } catch {
-          return undefined
-        }
-      }),
+    pullRequests ?? new ProjectPullRequests(ctx.db, ghListPullRequests, githubToken),
+    { forge: ghForge, worktreeStatus, token: githubToken },
   )
   registerCardRoutes(app, ctx, attachments)
+  registerRefinementRoutes(app, ctx, log)
   if (milestones) registerMilestoneRoutes(app, ctx, milestones)
   if (issues) registerIssueRoutes(app, ctx, issues)
   registerJournalRoutes(app, ctx)
@@ -298,7 +257,8 @@ export async function buildApp(
   registerSttRoutes(app, ctx, secrets)
   registerUserSettingsRoutes(app, ctx, registry)
   registerSystemRoutes(app, ctx)
-  registerServiceRoutes(app, ctx)
+  registerServiceRoutes(app, ctx, sessions, terminals)
+  registerProjectBackgroundRoutes(app, ctx, log)
   registerTreeRoutes(app, ctx)
   registerVaultRoutes(app, ctx, vault, log)
   registerWebRoutes(app)

@@ -3,6 +3,7 @@ import type { AgentUsage, UsageWindow } from '@solera/protocol'
 import { CachedProbe, CachedProbeMap } from '../cached-probe.js'
 import { USAGE_CACHE_TTL_MS } from '../usage-cache.js'
 import { withControlSession } from './control-session.js'
+import type { CliLauncher } from '../cli-binary.js'
 
 /**
  * Consommation du compte Claude, lue par la requête de contrôle qui alimente `/usage`.
@@ -122,7 +123,7 @@ function normalize(payload: unknown): Omit<AgentUsage, 'fetchedAt'> {
 export class ClaudeUsageReader {
   private readonly cached = new CachedProbe(USAGE_CACHE_TTL_MS, () => this.probe())
   /** Résolu à chaque sonde, comme pour le catalogue : voir `ClaudeModelCatalog`. */
-  constructor(private readonly executable: () => Promise<string>) {}
+  constructor(private readonly cli: CliLauncher) {}
 
   read(force = false): Promise<AgentUsage> {
     return this.cached.read(force)
@@ -153,7 +154,7 @@ export class ClaudeUsageReader {
     // Requête de contrôle, sans tour : la lecture ne consomme ni tokens ni quota.
     return withControlSession(
       {
-        executable: this.executable,
+        cli: this.cli,
         cwd: homedir(),
         tag: 'usage',
         timeoutMs: PROBE_TIMEOUT_MS,

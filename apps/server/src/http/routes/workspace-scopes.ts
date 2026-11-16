@@ -1,12 +1,14 @@
 import { eq } from 'drizzle-orm'
-import { conversations, type Db } from '@solera/db'
-import { conversationWorkspace, projectWorkspace } from '../../workspace.js'
+import { conversations, worktrees, type Db } from '@solera/db'
+import { conversationWorkspace, projectWorkspace, worktreeWorkspace } from '../../workspace.js'
 
 /**
- * Les routes du panneau (arborescence, fichiers, git) existent en deux portées : par
- * conversation, où le répertoire est celui du fil, worktree compris, et par projet, où
- * c'est le workspace. Même logique, même contrôle d'accès, seul le résolveur change :
- * chaque module les enregistre en boucle sur cette liste plutôt qu'en deux copies.
+ * Les routes du panneau (arborescence, fichiers, git) existent en trois portées : par
+ * conversation, où le répertoire est celui du fil, worktree compris ; par projet, où
+ * c'est le workspace ; et par worktree (S5, carte #169), pour un arbre sans session, que
+ * Travail et l'Aperçu ouvrent sans passer par un fil. Même logique, même contrôle
+ * d'accès, seul le résolveur change : chaque module les enregistre en boucle sur cette
+ * liste plutôt qu'en trois copies.
  */
 export interface WorkspaceScope {
   base: string
@@ -33,4 +35,10 @@ export const workspaceScopes: readonly WorkspaceScope[] = [
         .get()?.projectId ?? null,
   },
   { base: '/api/projects/:id', cwdOf: projectWorkspace, projectIdOf: (_db, id) => id },
+  {
+    base: '/api/worktrees/:id',
+    cwdOf: worktreeWorkspace,
+    projectIdOf: (db, id) =>
+      db.select({ projectId: worktrees.projectId }).from(worktrees).where(eq(worktrees.id, id)).get()?.projectId ?? null,
+  },
 ]

@@ -172,7 +172,7 @@ try {
 
   // Le .deb : l'installation demande le mot de passe, et ne part pas à la fermeture.
   await page.evaluate(() => window.probe.publish({ status: 'ready', version: '9.9.9', installOnQuit: false }))
-  await settings.getByText(/Son installation demande votre mot de passe/).waitFor()
+  await settings.getByText(/Son installation demande ton mot de passe/).waitFor()
 
   await page.evaluate(() => window.probe.publish({ status: 'installing', version: '9.9.9' }))
   await settings.getByText('Installation de la version 9.9.9 : Solera va se rouvrir de lui-même.').waitFor()

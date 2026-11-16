@@ -86,7 +86,7 @@ React, chargé à côté de celui de l'application.
 
 La règle « les primitives ne savent rien du produit » est tenue par la séparation des
 dépôts : le design system n'a pas Solera parmi ses dépendances, il ne *peut pas* en
-importer du code. Les deux libellés que ses primitives portent sont fournis par
+importer du code. Les libellés que ses primitives portent sont fournis par
 l'application (`UiLabelsProvider`, posé dans `main.tsx`).
 
 ### Le catalogue de Solera
@@ -320,6 +320,10 @@ par `chromium.launch` : Playwright logerait la mémoire partagée de Chromium da
 un `/tmp` presque plein donne une page Vite blanche, en `ERR_INSUFFICIENT_RESOURCES`, à
 une étape au hasard. Une suite qui monte un composant seul prend ses fournisseurs (React
 Query, routeur, `@solera/ui`) par `viteDependency()` (`scripts/checks/vite-deps.mjs`).
+
+Une suite nouvelle se range dans `scripts/ui-suites.mjs`, dans un des lots que la CI
+lance en parallèle (job `ui-batch`), ou hors CI avec sa raison : sinon la CI échoue.
+Hors CI, une douzaine de suites ont cassé sans que personne ne le voie (#258).
 
 ## Ce qui reste à faire avant de montrer Solera à quiconque
 

@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict'
-import { closePanelButton } from './panel.mjs'
+import { closePanelButton, openProjectPanel } from './panel.mjs'
 
 /** Navigation IDE et continuité du contexte d'édition, dans la démo temporaire. */
 export async function checkIde({ page, context, base, project }) {
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.goto(`${base}/p/${project.id}/board`)
-  await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
+  await openProjectPanel(page, base, project)
   const panel = page.locator('[data-panel="workspace"]')
   const picker = page.getByRole('dialog', { name: 'Ouvrir un fichier', exact: true })
   const input = picker.getByRole('combobox', { name: 'Nom ou chemin du fichier', exact: true })
@@ -79,7 +78,7 @@ export async function checkIde({ page, context, base, project }) {
   await page.keyboard.press('Control+Shift+z')
   await (await closePanelButton(page)).click()
   await panel.waitFor({ state: 'hidden' })
-  await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
+  await openProjectPanel(page, base, project, { inPlace: true })
   await code.waitFor()
   await code.focus()
   await page.keyboard.press('Control+z')

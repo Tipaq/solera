@@ -67,7 +67,8 @@ export function registerMemoryRoutes(app: FastifyInstance, ctx: AppContext): voi
     const user = requireUser(request)
     const project = requireProject((request.params as { id: string }).id, user)
     assertOwner(project, user)
-    await deleteMemoryFile(dirOf(project), requireFile(request.params))
+    const keepIndexLine = (request.query as { index?: string }).index === 'keep'
+    await deleteMemoryFile(dirOf(project), requireFile(request.params), keepIndexLine)
     return reply.status(204).send()
   })
 }

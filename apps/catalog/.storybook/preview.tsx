@@ -72,6 +72,10 @@ function CatalogueFrame({ locale, children }: { locale: string; children: ReactN
         labels={{
           cancel: translate('dialog.cancel'),
           selectPlaceholder: translate('common.select.placeholder'),
+          close: translate('common.close'),
+          previousMonth: translate('common.month.previous'),
+          nextMonth: translate('common.month.next'),
+          typeTime: translate('common.time.type'),
         }}
       >
         <TooltipProvider>

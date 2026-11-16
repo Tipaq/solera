@@ -9,6 +9,7 @@ import { purgeExpiredSessions } from './auth/sessions.js'
 import { loadConfig } from './config.js'
 import { AttachmentStore } from './attachments/store.js'
 import { ActionRunner } from './actions/actions.js'
+import { CommandScheduler } from './actions/scheduled.js'
 import { EventLog } from './events/event-log.js'
 import { buildApp } from './http/app.js'
 import { announceToLauncher, openDesktopSession, scrubLauncherEnv } from './instance/desktop.js'
@@ -85,15 +86,15 @@ async function main(): Promise<void> {
   // La relecture forcée de la connexion du CLI : elle confirme une connexion menée depuis
   // l'interface, et rafraîchit le cache que sert `/api/agents/auth`.
   const cliAuth = (agent: 'claude' | 'codex') => () => registry.adapter(agent).auth?.(true) ?? Promise.resolve(UNKNOWN_AUTH)
-  const claudeIdentify = claudeIdentity(() => registry.adapter('claude').cli.executable())
-  const claudeLogin = new ClaudeLoginService(claudeAccounts, () => registry.adapter('claude').cli.executable(), claudeGauges, cliAuth('claude'), claudeIdentify)
+  const claudeIdentify = claudeIdentity(registry.adapter('claude').cli)
+  const claudeLogin = new ClaudeLoginService(claudeAccounts, registry.adapter('claude').cli, claudeGauges, cliAuth('claude'), claudeIdentify)
 
   const codexAccounts = { store: new CodexAccountStore(db), homes: new CodexAccountHomes(config.paths.codexAccounts) }
   // La connexion d'un compte Codex lance l'app-server du CLI, résolu comme pour les
   // conversations : le binaire que Solera gère passe avant celui du PATH.
-  const codexLogin = new CodexLoginService(codexAccounts.homes, codexAccounts.store, () => registry.adapter('codex').cli.executable(), cliAuth('codex'))
+  const codexLogin = new CodexLoginService(codexAccounts.homes, codexAccounts.store, registry.adapter('codex').cli, cliAuth('codex'))
   const grokAccounts = { store: new GrokAccountStore(db), homes: new GrokAccountHomes(config.paths.grokAccounts) }
-  const grokLogin = new GrokLoginService(grokAccounts.homes, grokAccounts.store, () => registry.adapter('grok').cli.executable())
+  const grokLogin = new GrokLoginService(grokAccounts.homes, grokAccounts.store, registry.adapter('grok').cli)
   const sessions = new SessionManager(db, log, config, registry, secrets, claudeAccounts, codexAccounts, grokAccounts)
   const storybooks = new StorybookSupervisor({
     directory: join(config.paths.data, 'design-systems'),
@@ -105,7 +106,7 @@ async function main(): Promise<void> {
   const attachments = new AttachmentStore(db, config.paths.attachments)
   const terminals = new TerminalManager(config)
   // Boutons des projets : commandes jouées dans un terminal ou une unité systemd.
-  const actions = new ActionRunner(db, config, terminals)
+  const actions = new ActionRunner(db, config, terminals, sessions.environments)
   const recovered = sessions.recoverInterrupted()
   const webhooks = new WebhookService(db, log, sessions, config.server.publicUrl)
   // Construit avant l'application, dont les routes remettent ou écartent un message
@@ -113,6 +114,11 @@ async function main(): Promise<void> {
   const relay = new SessionRelay(db, sessions, log)
   // Tâches planifiées par l'utilisateur ou par un agent, tirées dans des sessions neuves.
   const tasks = new TaskScheduler({ db, config }, sessions, registry, log)
+  // Les commandes planifiées, tirées dans la même passe, détachées de tout terminal.
+  // Après l'`ActionRunner`, qui clôt au démarrage les passages qu'un arrêt a emportés.
+  // Un service planifié démarre et s'arrête par l'`ActionRunner`, comme d'un clic.
+  const scheduledCommands = new CommandScheduler(db, config, sessions.environments, { services: actions })
+  tasks.setCommands(scheduledCommands)
 
   // Les fichiers téléversés puis jamais envoyés s'accumuleraient sinon sans limite.
   const orphans = await attachments.purgeOrphans()
@@ -122,6 +128,7 @@ async function main(): Promise<void> {
   // le hub WebSocket lui dira qui regarde quoi.
   const notifications = new Notifications(db, push)
   sessions.setNotifier(notifications)
+  scheduledCommands.setNotifications(notifications)
   // Les décisions que les sessions demandent : déposées et échues par le balayage des
   // demandes d'agent, tranchées par la route. Elles notifient par l'aiguillage.
   const decisions = new Decisions({ db, config }, log, sessions.statusBus, notifications)
@@ -142,6 +149,7 @@ async function main(): Promise<void> {
   // vue Chantiers : une fusion ne le propose plus dans « À décider », réservé à ce qu'un
   // agent demande à une personne, et les propositions d'avant sont retirées ici.
   const worktreeCleanup = new WorktreeCleanup(db, config.paths.data, worktreeStatus, terminals, sessions)
+  tasks.setCleanup(worktreeCleanup)
   decisions.retireWorktreeProposals()
   // Une fusion détectée passe en « Terminé » les cartes des sessions qui vivaient dans l'arbre.
   watchMergedCards(db, worktreeStatus)
@@ -231,6 +239,7 @@ async function main(): Promise<void> {
   issueSources.start(app.log)
   // Après `recoverInterrupted` aussi : un tir coupé par le redémarrage doit se lire
   // « interrompu », pas « en cours » jusqu'à sa durée maximale.
+  scheduledCommands.setLogger(app.log)
   tasks.start(app.log)
 
   /**
@@ -254,6 +263,11 @@ async function main(): Promise<void> {
     })
 
   await app.listen({ host: config.server.host, port: config.server.port })
+  // Sous Linux natif, un dev container joint ce serveur par la passerelle de son réseau
+  // Docker : il y écoutera aussi, au même port, quand un conteneur en aura besoin.
+  sessions.environments.devcontainers?.serve(app.server)
+  // Les conteneurs de sessions confinées qu'un arrêt brutal aurait laissés (#145).
+  void sessions.environments.devcontainers?.sweep()
 
   // L'application de bureau attend cette annonce pour ouvrir sa fenêtre : le serveur
   // répond déjà, et la session de l'utilisateur est prête à poser en cookie.
@@ -296,7 +310,7 @@ async function main(): Promise<void> {
     agentRequests.stop()
     tasks.stop()
     await sessions.stopAll()
-    terminals.shutdown()
+    await terminals.shutdown()
     storybooks.shutdown()
     await app.close()
     // Les derniers fragments de flux encore en tampon, avant que la base se ferme.

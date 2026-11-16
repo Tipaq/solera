@@ -12,14 +12,16 @@ import { z } from 'zod'
  * Une sorte nouvelle s'ajoute ici, à `notificationPrefsSchema` et à son défaut :
  * l'aiguillage du serveur et l'écran des réglages la prennent alors sans autre
  * changement. `decision` est une décision qu'une session demande (`request_decision`).
+ * `scheduleFailed` : une commande planifiée a échoué, alors que personne ne la regardait.
  */
-export const notificationKindSchema = z.enum(['decision', 'cliRequest', 'turnCompleted'])
+export const notificationKindSchema = z.enum(['decision', 'cliRequest', 'turnCompleted', 'scheduleFailed'])
 export type NotificationKind = z.infer<typeof notificationKindSchema>
 
 export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   decision: true,
   cliRequest: true,
   turnCompleted: true,
+  scheduleFailed: true,
 }
 
 /**
@@ -30,6 +32,7 @@ export const notificationPrefsSchema = z.object({
   decision: z.boolean().default(true).catch(true),
   cliRequest: z.boolean().default(true).catch(true),
   turnCompleted: z.boolean().default(true).catch(true),
+  scheduleFailed: z.boolean().default(true).catch(true),
 })
 export type NotificationPrefs = z.infer<typeof notificationPrefsSchema>
 

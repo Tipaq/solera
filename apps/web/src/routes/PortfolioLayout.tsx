@@ -1,109 +1,87 @@
-import { Flag, FolderPlus, History, Layers, Plus, SquareKanban } from 'lucide-react'
+import { Flag, FolderKanban, Layers, Plus, SquareKanban, Target, Zap } from 'lucide-react'
 import { useMemo } from 'react'
-import { Outlet, useMatch, useNavigate } from 'react-router-dom'
-import { CARD_CLOSED_COLUMNS } from '@solera/protocol'
+import { Outlet, useNavigate } from 'react-router-dom'
 import { Button } from '@solera/ui'
-import { HeaderBand } from '../components/HeaderBand'
-import { ProjectTabs, type ViewTab } from '../components/project/ProjectTabs'
+import { PortfolioCardSheetHost } from '../components/cards/PortfolioCardSheetHost'
+import { PlaceShell, type PlaceTab } from '../components/places/PlaceShell'
+import { actionsTabBadge } from '../lib/actions-tab'
+import { useActionsStatus } from '../lib/automations-query'
 import { useAllCards } from '../lib/cards'
-import { useTranslate } from '../lib/i18n'
+import { useTranslate, pluralOf } from '../lib/i18n'
+import { openLeafCount } from '../lib/place'
 import { usePortfolioAskingCount } from '../lib/portfolio'
 import { useProjects } from '../lib/projects'
+import { openSettings } from '../lib/settings-dialog'
 
 /**
- * La coque du portefeuille : la même grammaire qu'un projet, **un cran au-dessus**.
+ * La coque du portefeuille : la même qu'un projet (`PlaceShell`), **un cran au-dessus**
+ * (`coque.md` PF-1 à PF-4).
  *
- * C'est la cinquième décision de l'audit du 2026-10-14, et elle rend deux choses. Les
- * projets d'abord : serrés dans une colonne de 22 rem à côté d'une liste de cartes, ils
- * passaient au second plan, alors que c'est leur page. Le transversal ensuite : *Travail*
- * et le board global ont désormais leur propre largeur au lieu de prendre celle des
- * projets — et c'est ce qui a permis d'écarter un cinquième lieu « Travail », le
- * transversal appartenant à la page qui montre déjà tous les projets. *Travail* s'est
- * depuis fondu dans l'Activité (#117), la même liste que celle d'un projet.
+ * La bande porte un seul geste, « + Projet », le même sur toutes les vues ; une
+ * conversation se lance depuis la barre latérale. La rangée ne porte que des vues —
+ * Aperçu, Travail, Tableau, Jalons, Actions —, avec la règle des comptes d'un projet :
+ * gris pour un inventaire (Tableau). Pas d'onglet Réglages de projet : au bout, ceux de
+ * l'instance, qui s'ouvrent en fenêtre.
  *
- * Pas de `⋯` dans la bande, à la différence d'un projet : un portefeuille n'a pas de
- * gestes à soi. Un menu n'aurait porté que les vues, que la rangée dit déjà.
+ * Travail porte le compte ambre de ce qui te demande quelque chose, dans tous les
+ * projets ; Actions, celui d'un projet pris sur tous (ACT-2) : ambre « à relire »
+ * d'abord, sinon vert « en marche ».
+ *
+ * La fiche d'une carte s'ouvre sur place, par-dessus la vue (`?fiche=<projet>:<N>`) :
+ * son hôte est posé ici, une fois pour toutes les vues.
  */
 export function PortfolioLayout() {
   const navigate = useNavigate()
   const t = useTranslate()
 
   const { data: projects } = useProjects()
-  const visible = useMemo(
-    () => (projects ?? []).filter((project) => !project.archivedAt),
-    [projects],
-  )
+  const visible = useMemo(() => (projects ?? []).filter((project) => !project.archivedAt), [projects])
   const { cards } = useAllCards(visible)
+  const open = openLeafCount(cards)
   const asking = usePortfolioAskingCount()
-  const onProjects = useMatch('/projects') !== null
+  const actions = actionsTabBadge(useActionsStatus(null))
 
-  const openCards = cards.filter((card) => !CARD_CLOSED_COLUMNS.includes(card.column))
-
-  const tabs: ViewTab[] = [
+  const tabs: PlaceTab[] = [
+    { to: '/projects', end: true, label: t('project.view.overview'), icon: <Target size={15} /> },
     {
-      to: '/projects',
-      end: true,
-      label: t('place.projects.title'),
-      icon: <SquareKanban size={15} />,
-      count: visible.length,
-    },
-    {
-      to: '/projects/activity',
-      label: t('project.view.activity'),
+      to: '/projects/travail',
+      label: t('project.view.travail'),
       icon: <Layers size={15} />,
-      // Ce qui te demande quelque chose, comme l'onglet d'un projet : une demande, pas
-      // un inventaire, et la seule teinte d'alerte de la rangée.
       count: asking,
       tone: 'caution',
+      countTitle: t(pluralOf(asking) === 'one' ? 'place.count.asking.one' : 'place.count.asking.many', { count: asking }),
     },
     {
       to: '/projects/board',
       label: t('project.board.title'),
       icon: <SquareKanban size={15} />,
-      count: openCards.length,
+      count: open,
+      countTitle: t(pluralOf(open) === 'one' ? 'place.count.openCards.one' : 'place.count.openCards.many', { count: open }),
     },
+    { to: '/projects/timeline', label: t('project.view.timeline'), icon: <Flag size={15} /> },
     {
-      to: '/projects/timeline',
-      label: t('project.view.timeline'),
-      icon: <Flag size={15} />,
-    },
-    {
-      to: '/projects/journal',
-      label: t('portfolio.view.journal'),
-      icon: <History size={15} />,
+      to: '/projects/actions',
+      label: t('project.view.actions'),
+      icon: <Zap size={15} />,
+      ...(actions ? { count: actions.count, tone: actions.tone, countTitle: t(actions.countTitle, { count: actions.count }) } : {}),
     },
   ]
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <HeaderBand>
-        <SquareKanban size={16} className="shrink-0 text-ink-faint" />
-        <h1 className="min-w-0 flex-1 truncate text-sm font-medium">{t('place.projects.title')}</h1>
-        <Button
-          size="sm"
-          aria-label={t('shell.conversation.new')}
-          icon={<Plus size={16} />}
-          onClick={() => navigate('/c/new')}
-        >
-          <span className="hidden sm:inline">{t('board.newConversation.short')}</span>
+    <PlaceShell
+      icon={<FolderKanban size={16} className="shrink-0 text-ink-faint" />}
+      title={t('place.projects.title')}
+      label={t('portfolio.views')}
+      tabs={tabs}
+      settings={{ onOpen: () => openSettings(), label: t('place.settings.instance') }}
+      actions={
+        <Button size="sm" aria-label={t('portfolio.action.newProjectLabel')} icon={<Plus size={16} />} onClick={() => navigate('/projects/new')}>
+          <span className="hidden sm:inline">{t('portfolio.action.newProject')}</span>
         </Button>
-      </HeaderBand>
-
-      <ProjectTabs
-        label={t('portfolio.views')}
-        tabs={tabs}
-        action={
-          onProjects ? (
-            <Button size="sm" icon={<FolderPlus size={15} />} onClick={() => navigate('/projects/new')}>
-              {t('portfolio.action.newProject')}
-            </Button>
-          ) : null
-        }
-      />
-
-      <div className="relative min-h-0 min-w-0 flex-1 overflow-clip">
-        <Outlet />
-      </div>
-    </div>
+      }
+    >
+      <Outlet />
+      <PortfolioCardSheetHost />
+    </PlaceShell>
   )
 }

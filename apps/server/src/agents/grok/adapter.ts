@@ -11,7 +11,6 @@ import {
   type ProjectCommandsDto,
 } from '@solera/protocol'
 import type { Config } from '../../config.js'
-import { CliBinary, resolveBinary } from '../cli-binary.js'
 import type { EventLog } from '../../events/event-log.js'
 import { CLIENT_INFO } from '../codex/client-info.js'
 import { ForkError, type AgentAdapter, type DescribeEditArgs, type ForkTarget } from '../registry.js'
@@ -23,6 +22,8 @@ import { GrokCatalog } from './catalog.js'
 import { grokProbe } from './launch.js'
 import { GrokRunner } from './runner.js'
 import { describeEdit } from './tools.js'
+import { hostEnvironment } from '../../environments/host.js'
+import { CliBinary, resolveBinary } from '../cli-binary.js'
 
 /**
  * L'installeur officiel (`curl -fsSL https://x.ai/cli/install.sh | bash`) pose le
@@ -65,9 +66,9 @@ export class GrokAdapter implements AgentAdapter {
 
   constructor(config: Config) {
     this.binary = configuredBinary(config.agents.grok.binary, config.paths.agents)
-    this.cli = new CliBinary('grok', this.binary, config.agents.grok.enabled, config.paths.agents)
-    this.catalog = new GrokCatalog(() => this.cli.executable())
-    this.usageReader = new GrokUsageReader(() => this.cli.executable())
+    this.cli = new CliBinary('grok', this.binary, config.agents.grok.enabled, config.paths.agents, hostEnvironment)
+    this.catalog = new GrokCatalog(this.cli)
+    this.usageReader = new GrokUsageReader(this.cli)
   }
 
   createRunner(ctx: RunnerContext): AgentRunner {
@@ -96,13 +97,19 @@ export class GrokAdapter implements AgentAdapter {
   async fork(target: ForkTarget, cut: unknown): Promise<string> {
     const { targetPromptIndex } = cut as GrokForkCut
     // Dans le home du compte de la conversation : c'est là que Grok cherche la session.
-    const client = grokProbe({ binary: await this.cli.executable(), cwd: target.cwd, env: target.accountEnv })
+    const client = grokProbe({
+      binary: await target.cli.executable(),
+      environment: target.cli.environment,
+      cwd: target.cwd,
+      env: target.accountEnv,
+    })
     try {
       await client.initialize(CLIENT_INFO)
       const forked = await client.request<{ newSessionId?: unknown }>('_x.ai/session/fork', {
         sourceSessionId: target.agentSessionId,
-        sourceCwd: target.cwd,
-        newCwd: target.cwd,
+        // Le dossier tel que le CLI le voit, comme à l'ouverture de la session (#152).
+        sourceCwd: target.cli.environment.pathInside(target.cwd),
+        newCwd: target.cli.environment.pathInside(target.cwd),
         ...(targetPromptIndex === null ? {} : { targetPromptIndex }),
       })
       if (typeof forked.newSessionId !== 'string') throw new Error('no session id in the response')

@@ -16,11 +16,16 @@ import { chromium } from 'playwright'
  * Quand `/dev/shm` a de la place, on la lui rend : c'est l'endroit fait pour, et il ne
  * dépend plus de ce que les autres process laissent dans `/tmp`.
  */
-export function launchBrowser(options = {}) {
+export function launchBrowser({ scrollbars = false, ...options } = {}) {
   return chromium.launch({
     channel: 'chromium',
     chromiumSandbox: true,
-    ignoreDefaultArgs: roomyDevShm() ? ['--disable-dev-shm-usage'] : [],
+    ignoreDefaultArgs: [
+      ...roomyDevShm() ? ['--disable-dev-shm-usage'] : [],
+      // Sans barres, une gouttière réservée mesure 0 px : une suite qui vérifie que rien
+      // ne bouge quand la barre paraît doit la voir paraître.
+      ...scrollbars ? ['--hide-scrollbars'] : [],
+    ],
     ...options,
   })
 }

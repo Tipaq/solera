@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { parseSessionLimit, type SessionLimit } from './sidebar-budget'
 
 /**
  * Ce que la colonne de gauche montre : les lieux décrochables, et trois détails.
@@ -122,5 +123,40 @@ export function useProjectFocus(): ProjectFocus {
     },
     currentProjectFocus,
     currentProjectFocus,
+  )
+}
+
+// --- « Sessions dans la sidebar » (SID-6) --------------------------------------------
+
+/**
+ * Combien de sessions chaque liste de la colonne montre : ajusté à la hauteur (défaut)
+ * ou 10 / 20 / 50. Du même magasin local que le reste, pour la même raison : la hauteur
+ * d'écran n'est pas la même d'un poste à l'autre. Le défaut ne laisse rien derrière lui.
+ */
+const SESSION_LIMIT_KEY = 'solera.display.sessionLimit'
+
+let sessionLimit = parseSessionLimit(localStorage.getItem(SESSION_LIMIT_KEY))
+const sessionLimitListeners = new Set<() => void>()
+
+export function currentSessionLimit(): SessionLimit {
+  return sessionLimit
+}
+
+export function setSessionLimit(value: SessionLimit): void {
+  if (sessionLimit === value) return
+  if (value === 'fit') localStorage.removeItem(SESSION_LIMIT_KEY)
+  else localStorage.setItem(SESSION_LIMIT_KEY, String(value))
+  sessionLimit = value
+  for (const listener of sessionLimitListeners) listener()
+}
+
+export function useSessionLimit(): SessionLimit {
+  return useSyncExternalStore(
+    (listener) => {
+      sessionLimitListeners.add(listener)
+      return () => sessionLimitListeners.delete(listener)
+    },
+    currentSessionLimit,
+    currentSessionLimit,
   )
 }

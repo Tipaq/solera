@@ -153,6 +153,15 @@ skill_sources
   - `anthropics/skills`, sous-dossier `skills` ;
   - `openai/skills`, sous-dossier `skills/.curated`. Pas `.system`, qui doublonnerait les
     skills intégrés à Codex.
+- Une troisième, `Tipaq/solera` (`builtin:solera-skills`, migration 0080), livre les
+  skills écrits pour Solera depuis le dossier `skills/` du dépôt, dont le `README.md` dit
+  ce qui y a sa place. Sa `ref` vide veut dire « le tag de la version installée »
+  (`skill-library/solera-skills.ts`) : un skill de `main` pourrait citer un outil MCP que
+  la release qui tourne n'a pas. Ses skills de premier rang sont installés d'office dans
+  la portée globale au premier démarrage d'une version publiée, une seule fois (marque
+  `solera_skills_installed` dans `app_settings`) ; un homonyme déjà dans la bibliothèque
+  est gardé. Une version sans tag (`dev`, les suites UI) ne les installe pas : elle
+  clonerait `main`.
 
 ### Configuration
 

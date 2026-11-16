@@ -88,6 +88,48 @@ try {
       throw error
     }
   }
+  // Ce que le navigateur attend encore, et ce qu'il a perdu : une navigation qui bloque
+  // sur `load` (#263) le dit elle-même. Le CDP distingue une requête qui attend encore un
+  // socket (pas d'`ExtraInfo` : la file des 6 connexions par hôte), une requête partie
+  // sans réponse (Vite ne rend pas) et une réponse en cours ; les journaux de Vite suivent.
+  const network = await context.newCDPSession(page)
+  await network.send('Network.enable')
+  const inFlight = new Map()
+  let failed = []
+  network.on('Network.requestWillBeSent', ({ requestId, request }) => {
+    inFlight.set(requestId, { url: request.url, since: Date.now(), state: 'sans socket' })
+  })
+  network.on('Network.requestWillBeSentExtraInfo', ({ requestId }) => {
+    const entry = inFlight.get(requestId)
+    if (entry && entry.state === 'sans socket') entry.state = 'partie, sans réponse'
+  })
+  network.on('Network.responseReceived', ({ requestId }) => {
+    const entry = inFlight.get(requestId)
+    if (entry) entry.state = 'réponse en cours'
+  })
+  network.on('Network.loadingFinished', ({ requestId }) => inFlight.delete(requestId))
+  network.on('Network.loadingFailed', ({ requestId, errorText, canceled }) => {
+    const entry = inFlight.get(requestId)
+    inFlight.delete(requestId)
+    if (entry && !canceled) failed.push(`${errorText} ${entry.url}`)
+  })
+  const explained = async (label, navigate) => {
+    failed = []
+    try {
+      await navigate()
+    } catch (error) {
+      const now = Date.now()
+      const pending = [...inFlight.values()].sort((a, b) => a.since - b.since)
+      const states = Object.entries(Object.groupBy(pending, (entry) => entry.state)).map(([state, entries]) => `${entries.length} ${state}`)
+      console.error(`${label} : ${pending.length} requêtes en vol (${states.join(', ')}), ${failed.length} en échec`)
+      for (const entry of pending.slice(0, 20)) console.error(`${Math.round((now - entry.since) / 1000)} s ${entry.state} ${entry.url}`)
+      for (const line of failed.slice(-20)) console.error(line)
+      console.error(`--- Vite ---\n${vite.diagnostics}`)
+      await page.screenshot({ path: join(shots, 'echec-navigation.png') }).catch(() => {})
+      throw error
+    }
+  }
+  const open = (url) => explained(`goto ${url}`, () => page.goto(url))
   const button = (name) => page.getByRole('button', { name, exact: true })
   const settings = async () => (await context.request.get(`${base}/api/me/settings`)).json()
   /** Les réglages s'écrivent au clic, sans « Continuer » : on attend que la route l'ait pris. */
@@ -103,7 +145,7 @@ try {
   // Une base sans compte : pas de page de connexion, la visite commence par le créer.
   const instance = await (await context.request.get(`${base}/api/system/instance`)).json()
   assert.equal(instance.needsSetup, true)
-  await page.goto(base + '/')
+  await open(base + '/')
   await heading('Créer le premier compte')
   assert.equal(await page.getByRole('button', { name: 'Se connecter', exact: true }).count(), 0)
   assert.ok(await button('Créer le compte').isDisabled(), 'pas de compte sans les trois champs')
@@ -196,13 +238,13 @@ try {
   await page.getByRole('complementary').first().waitFor()
   assert.equal((await settings()).onboarding.pending, false)
   await page.getByText('Dans Solera', { exact: true }).first().waitFor()
-  await page.reload()
+  await explained('reload', () => page.reload())
   await page.waitForURL(/\/projects\/new$/)
 
   // Rejouée, elle rouvre à sa première étape ; « Passer la visite » mène au récapitulatif.
   const replay = await context.request.patch(`${base}/api/me/settings`, { data: { onboarding: { pending: true } } })
   assert.ok(replay.ok())
-  await page.goto(base + '/')
+  await open(base + '/')
   await page.waitForURL(/\/bienvenue$/)
   await heading('Bienvenue, Tim')
   await button('Passer la visite').click()
@@ -213,7 +255,7 @@ try {
   // Au téléphone : la progression en tête, et rien ne déborde.
   await context.request.patch(`${base}/api/me/settings`, { data: { onboarding: { pending: true, step: 4 } } })
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto(base + '/')
+  await open(base + '/')
   await page.getByText(/^Étape 5 sur 9/).waitFor()
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   assert.ok(overflow <= 0, `débordement horizontal de ${overflow} px`)

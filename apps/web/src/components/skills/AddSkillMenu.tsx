@@ -5,7 +5,7 @@ import { skillDescriptionSchema, skillNameSchema, type LibrarySkillScope } from 
 import { ApiRequestError } from '../../lib/api'
 import { useTranslate } from '../../lib/i18n'
 import { useCreateLibrarySkill, useImportLibrarySkill } from '../../lib/skill-library'
-import { Banner, Button, Menu, MenuItem } from '@solera/ui'
+import { Banner, Button, Menu, MenuItem, cx } from '@solera/ui'
 import { CatalogDialog } from './CatalogDialog'
 import { LocalSkillsDialog } from './LocalSkillsDialog'
 import { DescriptionField, NameField, SkillDialog } from './SkillDialog'
@@ -19,7 +19,18 @@ const errorOf = (error: unknown): string | null => (error instanceof ApiRequestE
  * Les quatre façons de faire entrer un skill dans une portée : l'écrire, importer une
  * archive, importer un dossier, ou reprendre un skill déjà présent sur la machine.
  */
-export function AddSkillMenu({ scope, projectId }: { scope: LibrarySkillScope; projectId: string | null }) {
+export function AddSkillMenu({
+  scope,
+  projectId,
+  variant = 'primary',
+  align = 'end',
+}: {
+  scope: LibrarySkillScope
+  projectId: string | null
+  /** `ghost` sous une liste à plat (Réglages du projet), `primary` en tête d'une page. */
+  variant?: 'primary' | 'ghost'
+  align?: 'start' | 'end'
+}) {
   const t = useTranslate()
   const navigate = useNavigate()
   const importSkill = useImportLibrarySkill()
@@ -54,10 +65,10 @@ export function AddSkillMenu({ scope, projectId }: { scope: LibrarySkillScope; p
   }
 
   return (
-    <div className="flex flex-col items-end gap-2">
+    <div className={cx('flex flex-col gap-2', align === 'end' ? 'items-end' : 'items-start')}>
       <Menu
         trigger={
-          <Button size="sm" icon={<Plus size={14} />} disabled={importSkill.isPending}>
+          <Button size="sm" variant={variant} icon={<Plus size={14} />} disabled={importSkill.isPending}>
             {importSkill.isPending ? t('skills.add.importing') : t('skills.add.action')}
           </Button>
         }

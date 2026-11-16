@@ -104,8 +104,18 @@ export function threadAt(
   path: string,
   ts: number,
 ): ThreadRefDto | null {
-  const candidates = threads.filter(
-    (thread) => thread.path === path && ts >= thread.from && ts <= thread.to + GRACE_MS,
-  )
-  return candidates.length === 1 ? ref(candidates[0] as ThreadWindow, false) : null
+  const candidates = threadsAt(threads, path, ts)
+  return candidates.length === 1 ? (candidates[0] as ThreadRefDto) : null
+}
+
+/**
+ * Tous les fils qui travaillaient dans ce répertoire à cette heure-là.
+ *
+ * Le repli du tiroir d'un commit quand `threadAt` se tait : plutôt que rien, la liste
+ * de ceux qui ont pu l'écrire, chacun marqué comme une déduction.
+ */
+export function threadsAt(threads: ThreadWindow[], path: string, ts: number): ThreadRefDto[] {
+  return threads
+    .filter((thread) => thread.path === path && ts >= thread.from && ts <= thread.to + GRACE_MS)
+    .map((thread) => ref(thread, false))
 }

@@ -97,6 +97,24 @@ l'événement `turn.completed`. `thread/rollback` n'existe plus depuis 0.156.0. 
 la fin du fil n'indique aucun tour ; un fork avant le premier tour terminé est refusé,
 la branche n'aurait rien à reprendre.
 
+## Comptes
+
+Chaque compte de Solera a son `CODEX_HOME` sous `<données>/codex-accounts/<id>`, sans
+aucun lien vers `~/.codex` (ADR 0001). Solera y recopie à chaque lancement `config.toml`
+sans ce qui peut porter un secret (un serveur MCP qui en portait est retiré en entier),
+`AGENTS.md`, `AGENTS.override.md`, `rules/` et `skills/` hors `.system`. La connexion
+(`auth.json`) et les mémoires restent celles du compte. Un fil qui ne choisit aucun
+compte part sur le premier compte connecté, comme chez Claude. Aucune session ne tourne
+sur la connexion du CLI (#147) : un fil qui la désigne encore part sur le premier compte
+connecté, et sans compte connecté le lancement est refusé.
+
+Un thread change de compte par copie de son fichier, au même chemin relatif
+(`sessions/AAAA/MM/JJ/rollout-<date>-<id>.jsonl`), depuis le home qui en a la version la
+plus récente. Sondé sur 0.167.0 : sans le fichier, `thread/resume` répond `no rollout
+found for thread id` ; copié au même chemin, il reprend sans que la base du home connaisse
+le thread ; copié sous un autre nom, il est refusé (`does not have a canonical rollout
+file name`). Le fork tourne dans le home du compte de la conversation.
+
 ## Vérification et mise à jour
 
 ```sh

@@ -31,5 +31,6 @@ test('des réglages écrits avant les sortes de notifications les reçoivent tou
     decision: true,
     cliRequest: true,
     turnCompleted: false,
+    scheduleFailed: true,
   })
 })

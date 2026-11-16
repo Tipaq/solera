@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { openProjectPanel } from './panel.mjs'
 
 /**
  * Sons, vidéos et modèles 3D dans l'éditeur, avec des fixtures fabriquées sur place :
@@ -31,8 +32,7 @@ export async function checkMedia({ page, context, base, project }) {
   assert.equal((await context.request.get(raw('media-check/tone.txt'))).status(), 415, 'Only listed extensions are served raw')
 
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.goto(`${base}/p/${project.id}/board`)
-  await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
+  await openProjectPanel(page, base, project)
   const panel = page.locator('[data-panel="workspace"]')
   const showTree = panel.getByRole('button', { name: "Afficher l'arborescence", exact: true })
   if (await showTree.count()) await showTree.click()

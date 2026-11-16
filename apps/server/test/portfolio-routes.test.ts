@@ -8,10 +8,12 @@ import { fileURLToPath } from 'node:url'
 import Fastify from 'fastify'
 import { eq } from 'drizzle-orm'
 import { openDatabase, projects, runMigrations, users, type ProjectRow } from '@solera/db'
-import type { PortfolioPullRequestsDto, PortfolioWorktreeStatusDto, ProjectPullRequestListDto, WorktreeStatusListDto } from '@solera/protocol'
+import type { MilestoneRunDto, PortfolioMilestoneRunsDto, PortfolioPullRequestsDto, PortfolioWorktreeStatusDto, ProjectPullRequestListDto, WorktreeStatusListDto } from '@solera/protocol'
 import { registerErrorHandler } from '../src/http/errors.js'
+import { registerMilestoneRoutes } from '../src/http/routes/milestones.js'
 import { registerPullRequestRoutes } from '../src/http/routes/pull-requests.js'
 import { registerWorktreeRoutes } from '../src/http/routes/worktrees.js'
+import type { MilestoneRuns } from '../src/milestones/milestone-runs.js'
 import type { ProjectPullRequests } from '../src/reviews/pull-requests.js'
 import type { WorktreeStatusService } from '../src/worktrees/status-service.js'
 
@@ -56,9 +58,9 @@ async function harness(t: TestContext) {
   project('broken')
 
   const worktreeStatus = {
-    async get(row: ProjectRow): Promise<WorktreeStatusListDto> {
+    async sized(row: ProjectRow): Promise<WorktreeStatusListDto> {
       if (row.id === 'broken') throw new Error('calcul en échec')
-      return { base: 'main', computedAt: 1, fresh: true, worktrees: [], branches: [] }
+      return { base: 'main', computedAt: 1, fresh: true, worktrees: [], branches: [], branchesPending: false, rootSizeBytes: 1024, sizesPending: false }
     },
   } as unknown as WorktreeStatusService
   const pullRequests = {
@@ -74,7 +76,13 @@ async function harness(t: TestContext) {
   })
   registerErrorHandler(app)
   registerWorktreeRoutes(app, { db, config: {} } as never, {} as never, worktreeStatus, {} as never)
-  registerPullRequestRoutes(app, { db, config: {} } as never, pullRequests)
+  registerPullRequestRoutes(app, { db, config: {} } as never, pullRequests, { forge: {} as never, worktreeStatus, token: () => undefined })
+  // Un jalon lancé dans chaque projet, sauf `plain` : la route ne garde que ceux qu'on voit.
+  const milestones = {
+    activeRuns: (projectId: string) => (projectId === 'plain' ? [] : [{ id: `run-${projectId}`, projectId }]),
+    read: (run: { id: string }) => ({ id: run.id, state: 'running' }) as MilestoneRunDto,
+  } as unknown as MilestoneRuns
+  registerMilestoneRoutes(app, { db, config: {} } as never, milestones)
   t.after(() => app.close())
 
   const read = async <T>(url: string) => {
@@ -89,6 +97,15 @@ test('les arbres du portefeuille : les projets visibles et non archivés, sans c
   const { status, body } = await read<PortfolioWorktreeStatusDto>('/api/worktrees/status')
   assert.equal(status, 200)
   assert.deepEqual(Object.keys(body.projects).sort(), ['mine', 'shared'])
+  assert.equal(body.projects.mine?.rootSizeBytes, 1024, 'servie avec les tailles déjà mesurées')
+})
+
+test('les jalons lancés du portefeuille : ceux des projets visibles et non archivés, d’une requête', async (t) => {
+  const { read } = await harness(t)
+  const { status, body } = await read<PortfolioMilestoneRunsDto>('/api/milestones/active')
+  assert.equal(status, 200)
+  assert.deepEqual(Object.keys(body.projects).sort(), ['broken', 'mine', 'shared'], 'un projet sans jalon lancé n’y figure pas')
+  assert.deepEqual(body.projects.mine?.map((run) => run.id), ['run-mine'])
 })
 
 test('les PR du portefeuille : le même tri, et un projet en échec ne fait pas tomber les autres', async (t) => {

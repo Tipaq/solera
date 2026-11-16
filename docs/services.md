@@ -1,7 +1,7 @@
 # Services
 
 The **Services** entry opens `/services`: what is running because of this Solera
-server, refreshed every five seconds, in three lists.
+server, refreshed every five seconds: the execution environments, then three lists.
 
 1. **Permanent apps**: systemd user units named `solera-app-*`, which agents create
    for what must stay online (see below).
@@ -18,6 +18,51 @@ Each entry shows its shortened command line, PID, elapsed time, memory, ports, a
 the project and conversation it belongs to when known. A command whose attribution
 differs from its launcher's (a terminal command carrying an agent's marker, say)
 repeats it on its own line.
+
+## Environments
+
+Above the three lists, **Environments** shows the execution environments of sessions
+(ADR 0001): each project's dev container, and the sandbox of every confined session
+or terminal (one each). The confined container (#145) will join as a third kind;
+the DTO (`ServiceEnvironmentDto`) already carries a `kind` and an `engine`.
+
+For each: type, project, the sessions and terminals running in it, state (starting,
+running, stopped, failed with its cause), CPU, memory, disk and listening ports.
+Sessions and terminals are folded under their environment instead of *Agents and
+terminals*: their launcher on the host is only the `docker exec` or bwrap client.
+Usage is displayed, never capped.
+
+Where the numbers come from (`services/environments.ts`):
+
+- **Dev container**: Docker owns its processes, so `/proc` cannot see them. A project's
+  container is the one whose `devcontainer.local_folder` label is its workspace (the
+  one Solera started first, else a running one); its docker-compose companions count
+  in its usage. `docker stats --no-stream` gives CPU and memory, `docker ps -s` the
+  written layer and the image (re-read once a minute, it walks the layer), the
+  container's own `/proc/net/tcp*` its listening ports, and `docker top` whether a
+  VS Code server is attached. The ports Solera serves on the host for the web
+  preview (#141) show next to them, as `5173 → localhost:5174` when the host port
+  differs, in red with the cause when the port could not be served. The state merges Docker's with what Solera knows:
+  a `devcontainer up` in progress is *starting*, a failed one is *failed* with its
+  message even when no container exists. A container that exited on `docker stop`
+  (137, 143) is *stopped*, not failed.
+- **Sandbox**: its processes are children of Solera, so its usage is the sum of the
+  process entries rooted at the pids `ConfinedEnvironment` launched. Disk is the
+  size of its private home and tmp.
+
+Actions (`POST /api/services/environments/:id/stop|restart|rebuild`): a dev
+container can be stopped, restarted (`docker stop`/`restart`, compose companions
+included) and rebuilt (`devcontainer up --remove-existing-container`, in the
+background; the row shows *starting*). Its log (`GET …/log`) is the last
+`devcontainer up` Solera ran, then the tail of `docker logs`. Before any of these,
+the sessions running in it are terminated and its terminals' shells killed (their
+tabs stay): a session restarts on its next message, and Solera re-runs `up` for it.
+Stopping a sandbox stops its session or terminal. The page asks for confirmation
+when someone uses the environment (Solera sessions and terminals, VS Code if
+attached), and always before a rebuild.
+
+From a session, the environment pill in the header links to
+`/services?environment=<id>&session=<id>`, which scrolls to and highlights the row.
 
 ## Command lines
 

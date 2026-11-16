@@ -31,6 +31,7 @@ import { ForgeError, type Forge, type PullRequest } from '../src/reviews/forge.j
 import { ESCALATION_OPTIONS } from '../src/reviews/reviews.js'
 import { AgentRequests } from '../src/sessions/agent-requests.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
+import { Environments } from '../src/environments/environments.js'
 
 /**
  * La revue d'une PR de carte (#68), de `request_review` au verdict et au plafond.
@@ -144,6 +145,8 @@ async function harness(t: TestContext, { parent = false }: { parent?: boolean } 
     },
     // La création d'un fil résout les défauts du CLI (#120) : rien à résoudre ici.
     resolveDefaults: async (config: AgentConfig) => config,
+    // La session prend l'environnement du projet, l'hôte ici.
+    environments: new Environments(db),
   } as unknown as SessionManager
   const registry = { adapter: () => ({ resolveDefaults: async (config: unknown) => config }) } as unknown as AgentRegistry
   const ctx = { db, config: { mcp: { decisions: true } } as unknown as Config }

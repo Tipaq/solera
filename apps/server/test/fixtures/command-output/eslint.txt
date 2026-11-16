@@ -1,0 +1,14 @@
+
+/home/alex/nimbus/lint/a.js
+  1:7   error    'unused' is assigned a value but never used  no-unused-vars
+  2:5   error    'x' is not defined                           no-undef
+  2:7   warning  Expected '===' and instead saw '=='          eqeqeq
+  2:15  error    Unexpected 'debugger' statement              no-debugger
+
+/home/alex/nimbus/lint/b.js
+  1:1   warning  Unexpected var, use let or const instead  no-var
+  1:12  error    'console' is not defined                  no-undef
+
+✖ 6 problems (4 errors, 2 warnings)
+  0 errors and 1 warning potentially fixable with the `--fix` option.
+

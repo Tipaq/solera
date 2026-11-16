@@ -72,7 +72,7 @@ function parseRange(header: string | undefined, size: number): { start: number; 
  * événement. Rien n'est journalisé ici.
  */
 export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void {
-  // Deux portées, conversation et projet : voir `workspace-scopes.ts`.
+  // Trois portées, conversation, projet et worktree : voir `workspace-scopes.ts`.
   for (const { base, cwdOf } of workspaceScopes) {
     /** Tout compte qui voit le projet peut lire et écrire, y compris partagé. */
     const workspaceOf = (id: string, userId: string): string => cwdOf(ctx.db, id, userId)
