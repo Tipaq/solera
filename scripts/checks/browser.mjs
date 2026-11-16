@@ -1,5 +1,7 @@
 import { statfsSync } from 'node:fs'
 import { chromium } from 'playwright'
+// Les signaux passent par lui, d'où `handleSIG*: false` plus bas.
+import './cleanup.mjs'
 
 /**
  * Le Chromium des suites d'interface.

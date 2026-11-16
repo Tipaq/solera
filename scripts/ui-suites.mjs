@@ -104,7 +104,7 @@ const problems = [
   ...ranked.filter((name) => !onDisk.includes(name)).map((name) => `${name} : scripts/${name}-ui-check.mjs n'existe pas`),
   ...ranked.filter((name, i) => ranked.indexOf(name) !== i).map((name) => `${name} : rangée deux fois`),
   ...onDisk
-    .filter((name) => !readFileSync(join(root, 'scripts', `${name}-ui-check.mjs`), 'utf8').includes("'./checks/cleanup.mjs'"))
+    .filter((name) => !/^import .*['"]\.\/checks\/cleanup\.mjs['"]/m.test(readFileSync(join(root, 'scripts', `${name}-ui-check.mjs`), 'utf8')))
     .map((name) => `${name} : n'importe pas ./checks/cleanup.mjs, et laisserait serveur et Vite orphelins si on la tue (#266)`),
 ]
 if (problems.length) {

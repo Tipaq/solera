@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { rmSync } from 'node:fs'
 import { constants } from 'node:os'
 
@@ -37,16 +37,13 @@ export function receivedSignal() {
 }
 
 function descendants() {
-  let table
-  try {
-    table = execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8' })
-  } catch {
-    return []
-  }
+  const table = spawnSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8' })
+  if (table.status !== 0) return []
   const children = new Map()
-  for (const line of table.split('\n')) {
+  for (const line of table.stdout.split('\n')) {
     const [pid, ppid] = line.trim().split(/\s+/).map(Number)
-    if (!pid) continue
+    // Le `ps` qui vient de lister est lui aussi un enfant de la suite.
+    if (!pid || pid === table.pid) continue
     if (!children.has(ppid)) children.set(ppid, [])
     children.get(ppid).push(pid)
   }
@@ -67,7 +64,7 @@ function killDescendants(signal) {
     try {
       process.kill(pid, signal)
     } catch {
-      // Déjà parti, ou le `ps` qui vient de lister.
+      // Déjà parti.
     }
   }
 }
