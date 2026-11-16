@@ -17,9 +17,8 @@ import { launchBrowser } from './checks/browser.mjs'
  * comptent dans la barre et sur leur catégorie, qu'Annuler les efface, qu'Enregistrer
  * les envoie en **un seul** `PATCH` qui ne porte qu'elles, sans perdre un geste fait
  * pendant l'attente ; que la recherche s'ouvre par `/`, choisit au clavier et amène le
- * réglage à l'écran ; que le menu suit la
- * lecture et qu'un clic y fixe l'élément choisi ; que la Zone de danger retire
- * vraiment le projet ; que les consignes changent de mode, écrivent `AGENTS.md` dans le
+ * réglage à l'écran ; que le menu suit la lecture et qu'un clic y fixe l'élément
+ * choisi ; que la Zone de danger retire vraiment le projet ; que les consignes changent de mode, écrivent `AGENTS.md` dans le
  * dépôt et disent ce que chaque CLI en lit ; que la mémoire montre l'état de son index,
  * le répare, modifie, supprime (en gardant ou non la ligne d'index) et crée des notes ;
  * que les skills mènent à leur éditeur ; que les Intégrations se branchent et se
@@ -324,20 +323,22 @@ try {
   await until(() => barButton('Enregistrer').isDisabled(), Boolean, 'enregistrement en cours')
   await choose(choiceLabel)
   await row('cap').getByRole('textbox').fill('Changé pendant l’enregistrement')
+  // Le champ parti, retouché pendant l'attente : la nouvelle valeur reste à envoyer.
+  await row('name').getByRole('textbox').fill('Nimbus après')
   assert.equal(agentPatches.length, 1, 'Les gestes faits pendant l’attente ne sont pas encore partis')
   await firstSave
   await page.unroute(projectPatch)
-  await bar.filter({ hasText: '2 modifications non enregistrées' }).waitFor()
+  await bar.filter({ hasText: '3 modifications non enregistrées' }).waitFor()
   assert.equal((await reread()).name, 'Nimbus pendant')
+  assert.equal(await row('name').getByRole('textbox').inputValue(), 'Nimbus après')
   assert.equal(await row('cap').getByRole('textbox').inputValue(), 'Changé pendant l’enregistrement')
   await decisions.getByRole('img', { name: 'Modifié, pas encore enregistré' }).waitFor()
-  assert.equal(await row('name').getByRole('img', { name: 'Modifié, pas encore enregistré' }).count(), 0)
   await barButton('Enregistrer').click()
-  await page.getByText('2 réglages enregistrés.', { exact: true }).waitFor()
+  await page.getByText('3 réglages enregistrés.', { exact: true }).waitFor()
   assert.deepEqual(agentPatches, [
     { name: 'Nimbus pendant' },
-    { cap: 'Changé pendant l’enregistrement', configLayer: [{ scope: 'shared', set: { decisions: value } }] },
-  ], 'Le geste fait pendant l’attente part au tour suivant')
+    { cap: 'Changé pendant l’enregistrement', name: 'Nimbus après', configLayer: [{ scope: 'shared', set: { decisions: value } }] },
+  ], 'Les gestes faits pendant l’attente partent au tour suivant')
   assert.equal((await reread()).configLayer.shared.decisions, value)
   page.off('request', onPatch)
 

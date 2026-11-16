@@ -91,13 +91,14 @@ export function settingsPatchOf(base: SettingsBase, edits: SettingsEdits): Recor
 }
 
 /**
- * Le brouillon une fois `sent` enregistré : ce qui est parti s'en retire, tel qu'il est
- * parti. Un champ modifié pendant l'enregistrement y reste, pour partir au suivant.
+ * Le brouillon une fois enregistré le `PATCH` tiré de `base` et `sent` : ce qui est parti
+ * s'en retire, tel qu'il est parti. Un champ modifié pendant l'enregistrement y reste,
+ * pour partir au suivant, comme celui que le `PATCH` n'a pas porté.
  */
-export function unsentEdits(current: SettingsEdits, sent: SettingsEdits): SettingsEdits {
+export function unsentEdits(current: SettingsEdits, base: SettingsBase, sent: SettingsEdits): SettingsEdits {
   const rest: SettingsEdits = { ...current }
-  for (const field of Object.keys(sent) as SettingsField[]) {
-    if (field in current && current[field] === sent[field]) delete rest[field]
+  for (const field of changedFields(base, sent)) {
+    if (current[field] === sent[field]) delete rest[field]
   }
   return rest
 }

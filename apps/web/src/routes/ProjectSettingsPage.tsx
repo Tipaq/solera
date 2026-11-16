@@ -99,24 +99,26 @@ function useSettingsDraft(project: ProjectDto) {
     count,
     reset: () => {
       update.reset()
+      setNotice(null)
       setEdits({})
       agentLayer.clear()
     },
     save: async () => {
-      const configLayer = agentLayer.body()
-      const sentLayer = agentLayer.sent()
+      const layer = agentLayer.take()
+      const configLayer = layer.body
       // L'enregistré relu (la mutation attend l'invalidation) avant d'effacer le brouillon :
       // sinon les champs repasseraient un instant par les anciennes valeurs. Seul ce qui est
       // parti s'efface : un geste fait pendant l'attente reste dans le brouillon (#285).
       await update.mutateAsync({ id: project.id, ...settingsPatchOf(base, edits), ...(configLayer.length > 0 ? { configLayer } : {}) })
-      setEdits((current) => unsentEdits(current, edits))
-      agentLayer.settle(sentLayer)
+      setEdits((current) => unsentEdits(current, base, edits))
+      layer.settle()
       setNotice(t(count > 1 ? 'projectSettings.save.done.other' : 'projectSettings.save.done.one', { count: String(count) }))
     },
     busy: update.isPending,
     error: update.error instanceof ApiRequestError ? update.error.message : null,
     problem: problem ? t(`projectSettings.problem.${problem}` as MessageKey, { max: String(PROJECT_CAP_MAX) }) : null,
-    notice,
+    // Des gestes restés au brouillon gardent la barre : le retour d'avant ne ressort pas après.
+    notice: count > 0 ? null : notice,
     environments,
     devcontainer,
     agentLayer,
