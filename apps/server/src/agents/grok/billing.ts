@@ -3,6 +3,7 @@ import { CachedProbe, CachedProbeMap } from '../cached-probe.js'
 import { CLIENT_INFO } from '../codex/client-info.js'
 import { grokProbe } from './launch.js'
 import { fields } from './tools.js'
+import type { CliLauncher } from '../cli-binary.js'
 
 /**
  * Consommation d'un compte Grok, lue par l'extension `_x.ai/billing` d'un
@@ -74,8 +75,8 @@ export function toGrokUsage(response: unknown): GrokUsage {
  * Lit la consommation du compte connecté dans `home` (`GROK_HOME`), à défaut celle de la
  * connexion du CLI. Sans connexion, Grok refuse la requête : l'erreur remonte.
  */
-export async function readGrokBilling(binary: string, home?: string): Promise<GrokUsage> {
-  const client = grokProbe({ binary, home })
+export async function readGrokBilling(cli: CliLauncher, home?: string): Promise<GrokUsage> {
+  const client = grokProbe({ binary: await cli.executable(), environment: cli.environment, home })
   const timeout = setTimeout(() => client.close(), PROBE_TIMEOUT_MS)
   try {
     await client.initialize(CLIENT_INFO)
@@ -102,7 +103,7 @@ export class GrokUsageReader {
   })
   private readonly homes = new Map<string, string>()
 
-  constructor(private readonly executable: () => Promise<string>) {}
+  constructor(private readonly cli: CliLauncher) {}
 
   read(force = false): Promise<AgentUsage> {
     return this.cached.read(force)
@@ -119,7 +120,7 @@ export class GrokUsageReader {
 
   private async probe(home?: string): Promise<GrokUsage> {
     try {
-      return await readGrokBilling(await this.executable(), home)
+      return await readGrokBilling(this.cli, home)
     } catch {
       return NO_LIMITS
     }

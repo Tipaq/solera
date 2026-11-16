@@ -3,7 +3,7 @@ import { EyeOff } from 'lucide-react'
 import type { AgentAvailabilityDto } from '@solera/protocol'
 import { Button, IconButton } from '@solera/ui'
 import { useInstallAgent } from '../lib/agents'
-import { useTranslate } from '../lib/i18n'
+import { useTranslate, pluralOf } from '../lib/i18n'
 import { AGENT_LABELS } from './AgentIcon'
 
 /** Où en est une installation : son départ, et ce que npm a déjà reçu. */
@@ -118,7 +118,7 @@ export function AgentInstallProgress({ label, version, progress }: { label: stri
         {progress.current
           ? t('agent.install.progress.fetch', { file: progress.current })
           : t('agent.install.progress.resolving')}
-        {progress.fetched > 0 ? ` · ${t(progress.fetched === 1 ? 'agent.install.progress.files.one' : 'agent.install.progress.files.other', { count: progress.fetched })}` : null}
+        {progress.fetched > 0 ? ` · ${t(`agent.install.progress.files.${pluralOf(progress.fetched)}`, { count: progress.fetched })}` : null}
       </p>
       <p className="text-xs text-ink-faint">{t('agent.install.progress.hint')}</p>
     </div>

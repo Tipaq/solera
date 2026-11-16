@@ -115,6 +115,13 @@ administrator to set defaults for all projects. Use a project's instructions
 panel for exceptions or project-specific ports. In repository mode, those project
 instructions live in `AGENTS.md` or `CLAUDE.md`; see [how instructions work](solera-md.md).
 
+A session running in the project's dev container is no exception. Solera serves
+the container's ports (its `forwardPorts`, and any port a process starts listening
+on) on the host's loopback only, `127.0.0.1` and `::1`, so remote access exposes
+nothing more than before. When a port is already taken on the host, it is served
+under another number, and the web view says which. To share such a preview
+remotely, point Tailscale Serve at the **host** port the web view shows.
+
 Copy this template after replacing the hostname and confirming the port allocation.
 The hostname is a placeholder, not a working address. Use the host running the
 preview; a separate VM or container may need additional routing.

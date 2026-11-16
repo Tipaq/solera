@@ -10,6 +10,7 @@ import type {
 import { CodexAppServerClient } from '../agents/codex/app-server-client.js'
 import { CLIENT_INFO } from '../agents/codex/client-info.js'
 import type { AgentAuth } from '../agents/auth.js'
+import type { CliLauncher } from '../agents/cli-binary.js'
 import { agentProcessEnv } from '../agents/process-env.js'
 import { userCodexHome, type CodexAccountHomes } from './homes.js'
 import type { CodexAccountIdentity, CodexAccountStore } from './store.js'
@@ -56,7 +57,7 @@ export class CodexLoginService {
   constructor(
     private readonly homes: CodexAccountHomes,
     private readonly store: CodexAccountStore,
-    private readonly binary: () => Promise<string>,
+    private readonly cli: CliLauncher,
     private readonly cliAuth: (() => Promise<AgentAuth>) | null = null,
   ) {}
 
@@ -169,11 +170,12 @@ export class CodexLoginService {
     pending.client.close()
   }
 
-  async forget(accountId: string): Promise<void> {
+  async forget(accountId: string, ownerId: string): Promise<void> {
     await this.cancel(accountId)
     this.outcomes.delete(accountId)
-    // Sans suivre les liens : le home n'a de réel que `auth.json` et ce que Codex y a
-    // écrit, et `rm` n'entre pas dans une cible de lien symbolique.
+    // Les conversations nées sur ce compte n'existent que dans son home : elles sont mises
+    // de côté avant qu'il disparaisse, pour qu'un fil se reprenne encore sur un autre.
+    this.homes.keepConversations(accountId, ownerId)
     await rm(this.homes.path(accountId), { recursive: true, force: true })
   }
 
@@ -216,7 +218,8 @@ export class CodexLoginService {
     const home = accountId === CLI ? userCodexHome() : this.homes.ensure(accountId)
     if (accountId === CLI) mkdirSync(home, { recursive: true })
     const client = new CodexAppServerClient({
-      binary: await this.binary(),
+      binary: await this.cli.executable(),
+      environment: this.cli.environment,
       cwd: home,
       env: accountId === CLI ? agentProcessEnv() : agentProcessEnv({ CODEX_HOME: home }),
       onNotification,

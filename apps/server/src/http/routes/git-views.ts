@@ -1,10 +1,13 @@
 import type { FastifyInstance } from 'fastify'
 import {
   commitHashSchema,
+  compareQuerySchema,
   filePathQuerySchema,
   graphQuerySchema,
   type BlameDto,
   type CommitDetailDto,
+  type CommitTurnDto,
+  type CompareDto,
   type ConflictsDto,
   type FileHistoryDto,
   type GitHeadDto,
@@ -15,7 +18,7 @@ import {
   type RefsDto,
   type ThreadRefDto,
 } from '@solera/protocol'
-import { readCommitDiff, readGitHead } from '../../git.js'
+import { readCommitDiff, readGitHead, readRangeDiff } from '../../git.js'
 import { readConflicts } from '../../git-conflicts.js'
 import {
   agentOf,
@@ -31,7 +34,8 @@ import {
   type GraphWindow,
 } from '../../git-graph.js'
 import { readWriteState } from '../../git-write.js'
-import { readThreadWindows, threadAt, threadByPath, type ThreadWindow } from '../../git-threads.js'
+import { readThreadWindows, threadAt, threadByPath, threadsAt, type ThreadWindow } from '../../git-threads.js'
+import { findCommitTurn, resolveCommit } from '../../commit-turn.js'
 import { projectWorkspace } from '../../workspace.js'
 import type { AppContext } from '../context.js'
 import { badRequest } from '../errors.js'
@@ -189,7 +193,7 @@ const isFiltered = (query: GraphQuery): boolean =>
  * ici serait une écriture sans ces trois-là.
  */
 export function registerGitViewRoutes(app: FastifyInstance, ctx: AppContext): void {
-  // Deux portées, conversation et projet : voir `workspace-scopes.ts`.
+  // Trois portées, conversation, projet et worktree : voir `workspace-scopes.ts`.
   for (const { base, cwdOf, projectIdOf } of workspaceScopes) {
     /**
      * Le graphe du dépôt : la destination *Graphe*, et la destination *Recherche*.
@@ -299,6 +303,9 @@ export function registerGitViewRoutes(app: FastifyInstance, ctx: AppContext): vo
           .filter((name) => name.startsWith('refs/heads/'))
           .map((name) => name.slice('refs/heads/'.length))
         const only = locals.length === 1 ? worktrees.get(locals[0] as string) : undefined
+        const thread = (only ? byPath.get(only) ?? null : null) ?? threadAt(threads, rootPath, facts.entry.ts)
+        // `threadAt` se tait quand ils sont zéro ou plusieurs : ce sont alors les candidats.
+        const candidates = thread ? [] : threadsAt(threads, rootPath, facts.entry.ts)
 
         return {
           hash: facts.entry.hash,
@@ -317,8 +324,8 @@ export function registerGitViewRoutes(app: FastifyInstance, ctx: AppContext): vo
           containedIn: facts.containedIn.map((name) =>
             name.replace(/^refs\/(heads|remotes|tags)\//, ''),
           ),
-          thread: (only ? byPath.get(only) ?? null : null)
-            ?? threadAt(threads, rootPath, facts.entry.ts),
+          thread,
+          threadCandidates: candidates,
           files: diff.files,
           patch: diff.patch,
           truncated: diff.truncated,
@@ -327,6 +334,33 @@ export function registerGitViewRoutes(app: FastifyInstance, ctx: AppContext): vo
         if (err instanceof Error && 'statusCode' in err) throw err
         throw badRequest('git_failed', err instanceof Error ? err.message : String(err))
       }
+    })
+
+    /**
+     * Le tour qui a produit le commit : la provenance « a écrit ce commit » au tour
+     * près, lue dans les points de reprise. Voir `commit-turn.ts`.
+     *
+     * À part du détail : elle parcourt les captures de tout le dépôt, et le panneau git
+     * ouvre des commits sans en avoir besoin.
+     */
+    app.get(`${base}/commits/:hash/turn`, async (request): Promise<CommitTurnDto | null> => {
+      const user = requireUser(request)
+      const { id, hash } = request.params as { id: string; hash: string }
+      const cwd = cwdOf(ctx.db, id, user.id)
+      const projectId = projectIdOf(ctx.db, id)
+
+      const parsed = commitHashSchema.safeParse(hash)
+      if (!parsed.success) throw badRequest('bad_commit', 'This is not a commit hash.')
+
+      let commit
+      try {
+        commit = await resolveCommit(cwd, parsed.data)
+        if (commit && projectId) return await findCommitTurn(ctx.db, cwd, projectId, commit)
+      } catch (err) {
+        throw badRequest('git_failed', err instanceof Error ? err.message : String(err))
+      }
+      if (!commit) throw badRequest('bad_commit', 'This commit does not exist.')
+      return null
     })
 
     /**
@@ -497,6 +531,27 @@ export function registerGitViewRoutes(app: FastifyInstance, ctx: AppContext): vo
         throw badRequest('git_failed', err instanceof Error ? err.message : String(err))
       }
     })
-
   }
+
+  /**
+   * Le diff d'une branche avec la base (S6) : le tiroir « Diff avec la base » d'une
+   * branche sans arbre. Par projet seulement : une branche se lit dans le dépôt, sans
+   * dossier à elle, et l'arbre d'une branche sortie a déjà son panneau.
+   */
+  app.get('/api/projects/:id/compare', async (request): Promise<CompareDto> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const cwd = projectWorkspace(ctx.db, id, user.id)
+    const parsed = compareQuerySchema.safeParse(request.query)
+    if (!parsed.success) throw badRequest('bad_ref', parsed.error.issues[0]?.message ?? 'Invalid reference.')
+
+    let diff
+    try {
+      diff = await readRangeDiff(cwd, parsed.data.base, parsed.data.head)
+    } catch (err) {
+      throw badRequest('git_failed', err instanceof Error ? err.message : String(err))
+    }
+    if (!diff) throw badRequest('bad_ref', 'This reference does not exist.')
+    return diff
+  })
 }

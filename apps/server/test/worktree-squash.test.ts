@@ -137,7 +137,7 @@ test('une PR fusionnée par squash rend la branche fusionnée, même après que 
   assert.deepEqual([byName['feat/closed']!.state, byName['feat/closed']!.conflicts], ['unmerged', true])
   assert.deepEqual([byName['feat/no-pr']!.state, byName['feat/no-pr']!.conflicts], ['unmerged', true])
   // Une branche libre, sans arbre, se juge de même.
-  assert.deepEqual(list.branches, [{ name: 'feat/loose', merged: true }])
+  assert.deepEqual(list.branches.map(({ name, merged }) => ({ name, merged })), [{ name: 'feat/loose', merged: true }])
 })
 
 test('sans forge, le contenu juge seul : le squash rattrapé par la base reste à fusionner', async (t) => {
@@ -149,7 +149,7 @@ test('sans forge, le contenu juge seul : le squash rattrapé par la base reste �
     const list = await new WorktreeStatusService(db, new EventLog(db), source).get(project)
     const squashed = list.worktrees.find((tree) => tree.name === 'feat/squashed')!
     assert.deepEqual([squashed.state, squashed.mergedPullRequest], ['unmerged', null])
-    assert.deepEqual(list.branches, [{ name: 'feat/loose', merged: false }])
+    assert.deepEqual(list.branches.map(({ name, merged }) => ({ name, merged })), [{ name: 'feat/loose', merged: false }])
   }
 })
 

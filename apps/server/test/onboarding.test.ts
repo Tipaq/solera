@@ -59,6 +59,8 @@ test('premier compte : créé une seule fois, administrateur, visite armée, ses
 
   const before = await app.inject({ url: '/api/system/instance' })
   assert.equal(before.json<InstanceInfo>().needsSetup, true)
+  // Le fuseau où un motif cron est lu, pour que l'aperçu d'une planification parle la même heure.
+  assert.equal(before.json<InstanceInfo>().timeZone, Intl.DateTimeFormat().resolvedOptions().timeZone)
 
   const created = await setup(app)
   assert.equal(created.statusCode, 201, created.body)

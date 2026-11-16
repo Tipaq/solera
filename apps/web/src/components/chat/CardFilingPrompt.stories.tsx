@@ -104,6 +104,26 @@ export const AutresChamps: Story = {
   },
 }
 
+/** Un ajout au jalon rangé en sous-tâches d'une carte qui existe (#185). */
+export const SousTaches: Story = {
+  name: 'Sous-tâches ajoutées',
+  args: {
+    filing: {
+      ...meta.args.filing,
+      cards: [
+        {
+          cardId: 'k7',
+          number: 196,
+          title: '« À régler avant de partir » et « Ajouter au jalon »',
+          fromColumn: 'todo',
+          addSubtasks: ['Raccourci ⌘↵ dans le tiroir', 'Infobulle du pied quand l’ajout est vide'],
+          reason: 'L’ajout parle du tiroir « Ajouter au jalon », que #196 construit.',
+        },
+      ],
+    },
+  },
+}
+
 /**
  * Accordée, mais une carte avait changé d'échéance entre le dépôt et le clic : elle sort
  * du lot, et la ligne le dit.

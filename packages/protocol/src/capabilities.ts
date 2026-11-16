@@ -32,6 +32,13 @@ export interface AgentCapabilities {
    * Codex n'a pas de commandes en `/` ; ses compétences en `$` arrivent au premier tour.
    */
   draftCommands: boolean
+  /**
+   * L'agent principal sait écrire à un de ses sous-agents, en cours ou terminé, par son nom
+   * ou son identifiant (`SendMessage` de Claude Code). Aucun CLI n'accepte de message
+   * adressé directement à un sous-agent depuis son flux : l'onglet Agent passe donc par
+   * l'agent principal, qui relaie.
+   */
+  relaySubAgentMessage: boolean
 }
 
 export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
@@ -41,6 +48,7 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
     cliSessions: true,
     stopBackgroundTask: true,
     draftCommands: true,
+    relaySubAgentMessage: true,
   },
   codex: {
     steer: true,
@@ -48,6 +56,7 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
     cliSessions: false,
     stopBackgroundTask: false,
     draftCommands: false,
+    relaySubAgentMessage: false,
   },
   // `steer` vrai, sondé sur opencode 1.18.25 : un `prompt_async` envoyé pendant un tour
   // est pris à l'étape suivante du même tour, sans passage par `idle`. Le mode plan
@@ -58,6 +67,7 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
     cliSessions: false,
     stopBackgroundTask: false,
     draftCommands: true,
+    relaySubAgentMessage: false,
   },
   // Grok Build parle ACP, plus ses extensions `_x.ai/…` : `interject` glisse un message
   // dans le tour en cours, `exit_plan_mode` soumet le plan (sondé sur 1.0.62). Ses
@@ -68,5 +78,6 @@ export const AGENT_CAPABILITIES: Record<AgentKind, AgentCapabilities> = {
     cliSessions: false,
     stopBackgroundTask: false,
     draftCommands: true,
+    relaySubAgentMessage: false,
   },
 }

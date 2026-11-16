@@ -5,7 +5,7 @@ import { SectionHeader } from '../components/settings/SectionHeader'
 import { ApiRequestError } from '../lib/api'
 import { useAppSettings, useRunArchivePass, useUpdateAppSettings } from '../lib/app-settings'
 import { cronNextRuns, cronToHuman } from '../lib/cron'
-import { locale, useTranslate, type MessageKey } from '../lib/i18n'
+import { locale, useTranslate, type MessageKey, pluralOf } from '../lib/i18n'
 import { useCurrentUser } from '../lib/session'
 
 /**
@@ -152,7 +152,7 @@ export function ArchivingSettingsPage() {
               {run.data ? (
                 <span className="text-xs text-ink-faint">
                   {run.data.archived > 0
-                    ? t(run.data.archived === 1 ? 'archiving.run.done.one' : 'archiving.run.done.other', { count: String(run.data.archived) })
+                    ? t(`archiving.run.done.${pluralOf(run.data.archived)}`, { count: String(run.data.archived) })
                     : t('archiving.run.none')}
                 </span>
               ) : null}

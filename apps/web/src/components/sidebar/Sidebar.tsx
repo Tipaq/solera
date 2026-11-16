@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import type { ConversationDto } from '@solera/protocol'
 import { useAllConversations } from '../../lib/conversations'
 import { useRefreshLists, useStatusFeed } from '../../lib/conversation-status'
-import { useDisplaySettings, useProjectFocus } from '../../lib/display-settings'
+import { useDisplaySettings, useProjectFocus, useSessionLimit } from '../../lib/display-settings'
 import { useTranslate } from '../../lib/i18n'
 import { useProjects, useReorderProjects } from '../../lib/projects'
 import { unreadNow } from '../../lib/reads'
@@ -17,12 +17,13 @@ import { Logo } from '../Logo'
 import { PullToRefresh } from '../PullToRefresh'
 import { SidebarActivity } from '../SidebarActivity'
 import { AccountMenu } from './AccountMenu'
+import { SidebarFitBudget, useFitBudget } from './fit-budget'
 import { PlaceKnowledge } from './PlaceKnowledge'
 import { PlacePlanned } from './PlacePlanned'
 import { PlaceProjects, useFocusFollowsConversation } from './PlaceProjects'
 import { PlaceThreads } from './PlaceThreads'
 import { PLACE_ICONS, PLACE_LABELS, SidebarPlaces, type PlaceSpec } from './SidebarPlaces'
-import { cx, IconButton } from '@solera/ui'
+import { IconButton } from '@solera/ui'
 
 const EMPTY: ConversationDto[] = []
 
@@ -33,12 +34,12 @@ const SEARCH_HINT = navigator.userAgent.includes('Mac') ? '⌘ K' : 'Ctrl K'
  * La colonne de gauche.
  *
  * De haut en bas, et **toujours visible** : logo et repli · *Rechercher* ·
- * *Nouvelle conversation* · la liste verticale des lieux · l'Activité, ce qui t'attend
- * en tête (#121) · puis la **zone basse, seule partie variable et seule partie qui
- * défile** · le compte en une ligne.
+ * *Nouvelle conversation* · puis un seul bloc qui défile : la liste verticale des lieux,
+ * l'Activité, ce qui t'attend en tête (#121), et la zone basse du lieu · le compte en
+ * une ligne.
  *
- * Le haut est fixe par construction : c'est ce qui garde les lieux et leurs compteurs
- * sous les yeux quoi qu'il arrive en dessous.
+ * Combien de sessions chaque liste montre suit le réglage « Sessions dans la sidebar » :
+ * en « Ajuster à la hauteur », la colonne le mesure pour ne pas défiler.
  */
 export function Sidebar({
   onNavigate,
@@ -72,6 +73,10 @@ export function Sidebar({
   const { data: vaultState } = useVaultState(display.knowledge)
   const reorderProjects = useReorderProjects()
   const scroller = useRef<HTMLDivElement>(null)
+  const content = useRef<HTMLDivElement>(null)
+  // « Ajuster à la hauteur » ne se mesure qu'au large : au téléphone, il vaut 10.
+  const fit = useSessionLimit() === 'fit' && wide
+  const { budget: fitBudget, activityCollapsed } = useFitBudget(scroller, content, fit)
   useStatusFeed()
   useFocusFollowsConversation(conversations ?? EMPTY)
   const { refreshing, refresh } = useRefreshLists()
@@ -93,7 +98,7 @@ export function Sidebar({
       id: 'threads',
       label: PLACE_LABELS.threads,
       icon: PLACE_ICONS.threads,
-      page: null,
+      page: '/sessions',
       count: threads.length,
     },
     {
@@ -137,19 +142,23 @@ export function Sidebar({
 
   return (
     <div className="flex h-full flex-col">
-      <HeaderBand zone="nav" className="px-4">
+      {/* La bande réserve la même gouttière de barre que le bloc qui défile, quelle que
+          soit la largeur de la barre sur la plateforme : son bord droit utile est celui
+          des lignes. Le bouton de repli en `sm` (28 px), avec les 12 px de la bande, se
+          centre à 26 px de ce bord, comme le ⋯ d'un projet (conteneur 8 + ligne 4 + 14). */}
+      <HeaderBand zone="nav" className="overflow-y-hidden pl-4 [scrollbar-gutter:stable]">
         <Logo size={20} className="text-accent" />
         <span className="text-heading font-semibold tracking-tight">Solera</span>
         {/* Enveloppes plutôt que `hidden` sur le bouton : `IconButton` pose déjà un
             `inline-flex`, et entre deux utilitaires de display c'est l'ordre du CSS
             généré qui tranche, pas celui de la chaîne de classes. */}
         <span className="ml-auto md:hidden">
-          <IconButton label={t('shell.nav.close')} onClick={onClose}>
+          <IconButton label={t('shell.nav.close')} size="sm" onClick={onClose}>
             <X size={16} />
           </IconButton>
         </span>
         <span className="ml-auto hidden md:block">
-          <IconButton label={t('shell.nav.collapse')} onClick={onCollapse}>
+          <IconButton label={t('shell.nav.collapse')} size="sm" onClick={onCollapse}>
             <PanelLeftClose size={16} />
           </IconButton>
         </span>
@@ -158,7 +167,7 @@ export function Sidebar({
       {/* Un filet sépare les deux gestes des lieux. Seul ajout du 2026-10-15 au haut de
           la colonne : *Rechercher* et *Nouvelle conversation* restent les deux boutons
           sobres d'avant, mais rien ne disait qu'ils ne sont pas eux-mêmes des lieux. */}
-      <div className="shrink-0 border-b border-line px-2 py-1.5">
+      <div className="shrink-0 overflow-y-hidden border-b border-line px-2 py-1.5 [scrollbar-gutter:stable]">
         {/* Le raccourci n'existe pas au doigt : sans cette entrée, la recherche serait
             inatteignable depuis un téléphone. */}
         <button
@@ -191,41 +200,52 @@ export function Sidebar({
         </button>
       </div>
 
-      <SidebarPlaces places={places} current={place} onNavigate={stableNavigate} />
-
-      {/* Toujours là, même l'Activité éteinte : ce qui t'attend ne se retire pas. */}
-      <SidebarActivity
-        conversations={attended}
-        projects={projects}
-        onNavigate={stableNavigate}
-        coarse={!wide}
-        // En mode projet (#51), ses demandes passent devant dans chaque rang (Q15).
-        focus={place === 'projects' ? focus : undefined}
-      />
-
-      {/* La seule partie qui défile. Ce qui déborde passe sous le pli : le haut de la
-          colonne est fixe par construction, pas par accident. */}
-      <div ref={scroller} className={cx('relative min-h-0 flex-1 overflow-y-auto')}>
+      {/* Un seul bloc qui défile, comme la colonne de Claude : lieux, Activité, puis le
+          contenu du lieu. Seuls la bande, le bloc du haut et le compte restent fixes —
+          des lieux et une Activité fixes au-dessus laissaient aux sessions ce qui restait
+          de la hauteur, et rien sur un petit écran. La gouttière de la barre est
+          réservée : rien ne se décale quand elle paraît, les compteurs de droite restent
+          sur la verticale du `Ctrl K`. `SidebarActivity` mesure ce bloc par
+          `data-sidebar-scroll` pour fixer sa part de la hauteur. */}
+      <div
+        ref={scroller}
+        data-sidebar-scroll
+        className="relative min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
+      >
         <PullToRefresh target={scroller} refreshing={refreshing} onRefresh={refresh} />
-        {place === 'projects' ? (
-          <PlaceProjects
-            projects={projects ?? []}
-            conversations={conversations ?? []}
-            onNavigate={stableNavigate}
-            onReorder={(ids) => reorderProjects.mutate(ids)}
-          />
-        ) : place === 'knowledge' ? (
-          <PlaceKnowledge state={vaultState} onNavigate={stableNavigate} />
-        ) : place === 'planned' ? (
-          <PlacePlanned tasks={schedules ?? []} projects={projects ?? []} onNavigate={stableNavigate} />
-        ) : (
-          <PlaceThreads
-            conversations={threads}
-            projects={projects ?? []}
-            onNavigate={stableNavigate}
-            onSearch={onSearch}
-          />
-        )}
+        <SidebarFitBudget.Provider value={fit ? fitBudget : null}>
+          {/* Ce que la mesure compare à la hauteur du bloc : tout son contenu. */}
+          <div ref={content}>
+            <SidebarPlaces places={places} current={place} onNavigate={stableNavigate} />
+
+            {/* Toujours là, même l'Activité éteinte : ce qui t'attend ne se retire pas.
+                En « Ajuster à la hauteur », elle se réduit à son en-tête — le rendu du
+                téléphone — quand moins de 5 sessions tiendraient sous elle. */}
+            <SidebarActivity
+              conversations={attended}
+              projects={projects}
+              onNavigate={stableNavigate}
+              coarse={!wide || activityCollapsed}
+              // En mode projet (#51), ses demandes passent devant dans chaque rang (Q15).
+              focus={place === 'projects' ? focus : undefined}
+            />
+
+            {place === 'projects' ? (
+              <PlaceProjects
+                projects={projects ?? []}
+                conversations={conversations ?? []}
+                onNavigate={stableNavigate}
+                onReorder={(ids) => reorderProjects.mutate(ids)}
+              />
+            ) : place === 'knowledge' ? (
+              <PlaceKnowledge state={vaultState} onNavigate={stableNavigate} />
+            ) : place === 'planned' ? (
+              <PlacePlanned tasks={schedules ?? []} projects={projects ?? []} onNavigate={stableNavigate} />
+            ) : (
+              <PlaceThreads conversations={threads} projects={projects ?? []} onNavigate={stableNavigate} />
+            )}
+          </div>
+        </SidebarFitBudget.Provider>
       </div>
 
       <AccountMenu onNavigate={stableNavigate} />

@@ -15,14 +15,16 @@ import type { Config } from '../../config.js'
 import type { EventLog } from '../../events/event-log.js'
 import { ForkError, type AgentAdapter, type DescribeEditArgs, type ForkTarget } from '../registry.js'
 import type { AgentRunner, RunnerContext } from '../types.js'
-import { CliBinary } from '../cli-binary.js'
 import { ClaudeCommandCatalog } from './command-catalog.js'
 import { describeEdit } from './file-edits.js'
+import { sessionLookup } from './transcript.js'
 import { ClaudeModelCatalog } from './model-catalog.js'
 import { ClaudeRunner } from './runner.js'
 import { ClaudeUsageReader, claudeAccountUsage } from './usage.js'
 import { ClaudeAuthReader } from './auth.js'
 import type { AgentAuth } from '../auth.js'
+import { hostEnvironment } from '../../environments/host.js'
+import { CliBinary } from '../cli-binary.js'
 
 /**
  * Point de coupe d'un fork : l'`uuid` d'une entrée du fichier de transcript.
@@ -68,14 +70,14 @@ export class ClaudeAdapter implements AgentAdapter {
 
   constructor(config: Config) {
     this.binary = config.agents.claude.binary
-    this.cli = new CliBinary('claude', this.binary, config.agents.claude.enabled, config.paths.agents)
+    this.cli = new CliBinary('claude', this.binary, config.agents.claude.enabled, config.paths.agents, hostEnvironment)
     // Les deux sondes lancent le CLI via le SDK : elles ont besoin du même chemin absolu
     // que les conversations, sans quoi le réglage `agents.claude.binary` resterait sans
     // effet ici et le SDK retomberait sur un binaire que la release ne livre pas.
-    this.catalog = new ClaudeModelCatalog(() => this.cli.executable())
-    this.commandCatalog = new ClaudeCommandCatalog(() => this.cli.executable())
-    this.usageReader = new ClaudeUsageReader(() => this.cli.executable())
-    this.authReader = new ClaudeAuthReader(() => this.cli.executable())
+    this.catalog = new ClaudeModelCatalog(this.cli)
+    this.commandCatalog = new ClaudeCommandCatalog(this.cli)
+    this.usageReader = new ClaudeUsageReader(this.cli)
+    this.authReader = new ClaudeAuthReader(this.cli)
   }
 
   createRunner(ctx: RunnerContext): AgentRunner {
@@ -104,7 +106,7 @@ export class ClaudeAdapter implements AgentAdapter {
 
     try {
       const forked = await forkSession(target.agentSessionId, {
-        dir: target.cwd,
+        ...(await sessionLookup(target.cwd, target.agentSessionId, target.transcripts)),
         upToMessageId,
       })
       return forked.sessionId

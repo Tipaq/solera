@@ -99,9 +99,10 @@ export function SignalChip({ signal, onClick, labelClassName }: {
 }
 
 /**
- * Les signaux dont le détail existe ailleurs. Le panneau latéral, onglet Agents, tient
- * déjà la liste des sous-agents avec leur fil et celle des travaux de fond. Les autres
- * n'ont rien de plus à montrer qu'une infobulle.
+ * Les signaux dont le détail existe ailleurs, dans le panneau latéral : les sous-agents
+ * avec leur fil dans l'onglet Agent, les travaux de fond dans l'onglet Actions, avec les
+ * processus des sessions (`signalTab`). Les autres n'ont rien de plus à montrer qu'une
+ * infobulle.
  */
 const OPENS_PANEL = new Set<SignalKind>(['subagents', 'background'])
 

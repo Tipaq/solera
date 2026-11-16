@@ -125,6 +125,15 @@ function digest(log: EventLog, conversationId: string): Digest {
 }
 
 /**
+ * L'outil en cours et la demande ouverte d'une conversation, du même repliage borné :
+ * la page d'un jalon en résume sa session d'affinage (#184).
+ */
+export function presentOf(log: EventLog, conversationId: string): Pick<Digest, 'activity' | 'pending'> {
+  const { activity, pending } = digest(log, conversationId)
+  return { activity, pending }
+}
+
+/**
  * La demande encore ouverte d'une conversation — permission, question, plan ou saisie —,
  * ou null. Le même repliage que la consultation d'une tâche, borné aux dernières entrées :
  * l'onglet Activité d'un projet le lit pour chaque session qui attend (#112).

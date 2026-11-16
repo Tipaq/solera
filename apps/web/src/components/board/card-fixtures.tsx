@@ -19,16 +19,22 @@ function session(id: string, title: string, agent: CardConversationDto['agent'],
   return { id, title, agent, status, costUsd: 0, worktreeId: null, worktreeName: null, archivedAt: null, createdAt: now - ago }
 }
 
+/**
+ * Une carte complète, à compléter par `extra`. Les autres stories la prennent sous le nom
+ * de `fixtureCard` : un champ ajouté à `CardDto` ne se reporte qu'ici.
+ */
 function card(number: number, title: string, column: CardDto['column'], extra: Partial<CardDto> = {}): CardDto {
   return {
     id: `card-${number}`, projectId: PROJECT_ID, number, title, description: '', column, position: number,
-    dueAt: null, parent: null, children: [], acceptedAt: now - 3 * DAY, toClarifySince: null, createdBy: 'u1', createdByName: 'Tim', createdAt: now - 3 * DAY, updatedAt: now - DAY, columnSince: now - 2 * DAY,
+    dueAt: null, parent: null, milestone: false, children: [], branch: null, branchPr: null, refinement: null, acceptedAt: now - 3 * DAY, toClarifySince: null, createdBy: 'u1', createdByName: 'Tim', createdAt: now - 3 * DAY, updatedAt: now - DAY, columnSince: now - 2 * DAY,
     conversations: [], attachmentCount: 0, noteCount: 0, references: [], referencedBy: [], blocks: [], blockedBy: [], related: [], duplicateOf: null, duplicates: [], issue: null,
     ...extra,
   }
 }
 
-const parent = card(42, 'Gestion de projet', 'in_progress')
+export { card as fixtureCard }
+
+const parent = card(42, 'Gestion de projet', 'in_progress', { milestone: true })
 const fils = card(21, 'Cliquer « Fils » devrait ouvrir une conversation neuve', 'todo', { toClarifySince: now - DAY })
 const gitView = card(29, 'Développer la vue Git du panneau', 'done', { columnSince: now - 2 * DAY })
 

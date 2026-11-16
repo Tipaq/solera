@@ -30,11 +30,23 @@ export interface TerminalDto {
   interrupted: boolean
   /** Répertoire du shell : le workspace du projet, ou un worktree. */
   cwd: string
+  /**
+   * La session qui l'a ouvert, null hors session : sa relance repart dans le même
+   * environnement d'exécution, celui de cette session.
+   */
+  conversationId: string | null
   createdAt: number
   /** Action de projet qui a ouvert ce terminal pour y jouer sa commande. */
   actionId: string | null
+  /** L'essai d'une commande depuis l'éditeur d'actions, qui n'est l'exécution d'aucune action. */
+  trial: boolean
   /** Code de sortie d'une commande d'action terminée ; null pour un shell ou tant qu'elle tourne. */
   exitCode: number | null
+  /**
+   * Quand son process s'est terminé, relu après un redémarrage ; null tant qu'il tourne,
+   * et pour une entrée interrompue, dont la fin n'a pas été vue.
+   */
+  finishedAt: number | null
 }
 
 export const renameTerminalBodySchema = z.object({ title: z.string().min(1).max(60) })
@@ -44,6 +56,10 @@ export const renameTerminalBodySchema = z.object({ title: z.string().min(1).max(
  * sans rien, celui du workspace du projet. `cwd` sert à relancer un shell interrompu
  * là où il tournait : le serveur ne l'accepte que s'il désigne le workspace ou un
  * worktree encore vivant du projet.
+ */
+/*
+ * Les deux à la fois pour relancer le shell interrompu d'une session : `cwd` dit où,
+ * `conversationId` dans quel environnement.
  */
 export const openTerminalBodySchema = z.object({
   conversationId: z.string().min(1).optional(),

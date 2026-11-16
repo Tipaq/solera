@@ -1,4 +1,4 @@
-# Le serveur MCP de Solera depuis un client extérieur
+# Le serveur MCP de Solera, depuis une session ou un client extérieur
 
 Solera monte dans chaque conversation un serveur MCP `solera` qui rend au CLI ce que la
 plateforme sait : l'historique, le board, les sessions en cours, la mémoire, et les
@@ -8,8 +8,14 @@ hors de Solera : un Claude Code sur un portable, une app de bureau, un assistant
 téléphone. Il sert alors toute l'instance, au nom d'un compte, et c'est la façon de
 lire et piloter ses sessions de loin.
 
-Il parle en stdio et lit la base SQLite directement. Par HTTP, c'est un jeton d'API qui
+Il parle en stdio et lit la base SQLite directement. Par HTTP, c'est un jeton qui
 authentifie ; lancé à la main sur la machine, il fait confiance à qui peut le lancer.
+
+**Les sessions de Solera le joignent elles aussi par HTTP**, jamais en le lançant
+(ADR 0001, carte #138). Le CLI ne reçoit qu'une URL et un jeton de session ; c'est le
+serveur de Solera qui lance le `.mjs` sur l'hôte, avec la portée de la session. Un agent
+confiné ou dans un conteneur n'a donc ni la base ni son chemin. Voir « Depuis une
+session » plus bas.
 
 ## Trois portées
 
@@ -140,6 +146,28 @@ Le jeton est la frontière : il écrit consignes et mémoire, lance des sessions
 leurs permissions. Le restreindre à quelques projets limite ce qu'il atteint s'il fuit ;
 le révoquer ferme ses sessions au prochain message.
 
+## Depuis une session
+
+Au lancement d'un runner, `SessionManager` calcule la portée de la session (projet,
+conversation, dossier de mémoire, drapeaux de rangement, de cartes, de décisions, de
+brouillons, état du design system), en reçoit un jeton `solera_mcp_…` de
+`McpSessionTokens`, et donne au CLI une entrée MCP `http` :
+`<adresse de Solera>/api/v1/mcp` avec `Authorization: Bearer solera_mcp_…`. Les quatre
+CLI (Claude, Codex, OpenCode, Grok) savent faire du MCP en HTTP streamable : il n'y a pas
+de passerelle stdio.
+
+- Le jeton n'ouvre que `/api/v1/mcp` (`403` ailleurs) et n'appartient à aucun compte : le
+  process que le pont lance sert la conversation, avec exactement les variables de la
+  colonne « Conversation » ou « Fil libre » ci-dessus (`sessionScopeEnv`).
+- Le même jeton tant que la portée ne change pas, un autre sinon : les runners comparent
+  les serveurs résolus pour décider d'une relance.
+- En mémoire seulement. Il est révoqué à l'arrêt du runner, et les process qu'il a
+  ouverts s'arrêtent avec lui ; un redémarrage du serveur les emporte tous.
+- L'adresse vient de `soleraUrlForAgents` (`instance/agent-url.ts`) : la boucle locale
+  quand le serveur écoute partout, son adresse d'écoute sinon, ou `server.agent_url`
+  (`SOLERA_AGENT_URL`) pour l'imposer. Un CLI dans un conteneur aura besoin de
+  l'adresse de l'hôte : c'est là qu'elle s'ajoutera.
+
 ## En stdio, sur la machine
 
 Le `.mjs` dépend de `better-sqlite3` compilé pour le Node du daemon : à lancer avec le
@@ -157,8 +185,13 @@ claude mcp add --scope user solera \
 - `GLOBAL`, `selectProject`, `globalTools` et `callGlobalTool` dans `solera-mcp.mjs` : le
   projet est un état du process posé au début de chaque appel, et les appels sont
   traités un par un pour qu'ils ne se chevauchent pas.
-- `http/v1/mcp.ts` : le pont HTTP, un process par session, portée `mcp` des jetons.
+- `http/v1/mcp.ts` : le pont HTTP, un process par session, portée `mcp` des jetons d'API
+  ou portée d'une conversation pour les jetons de session.
+- `agents/mcp-session-tokens.ts` et `http/auth-hooks.ts` : les jetons de session, et le
+  garde qui ne leur ouvre que le pont.
 - `agent_requests.user_id` (migration 0050) : une demande à conversation vide porte le
   compte pour qui agir ; `AgentRequests.handleGlobal` et `principal` en font un
   demandeur sans session.
-- Tests : `apps/server/test/mcp-global.test.ts` et `mcp-http.test.ts`.
+- Tests : `apps/server/test/mcp-global.test.ts`, `mcp-http.test.ts` et
+  `mcp-session.test.ts` ; `session-mcp-support.ts` fait passer les tests de portée
+  par le jeton et le pont.

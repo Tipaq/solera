@@ -7,6 +7,11 @@ SSE (`GET /event`). Les bindings sont générés depuis l'OpenAPI que le binaire
 1.19.3 ajoute seulement `reasoning_options` aux modèles de `ProviderConfig`, dont
 opencode tire les variantes que l'adaptateur lit déjà).
 
+Dans un dev container, `opencode serve` écoute sur la boucle locale **du conteneur**,
+que l'hôte ne joint pas : l'environnement l'expose sur `127.0.0.1` de l'hôte par un
+relais (`urlFromHost`), une connexion par `docker exec` comme pour les ports du projet.
+L'image doit donc avoir un des outils de relais (socat, python3, node, bash ou nc).
+
 Ce qui a changé sur la ligne 1.x et compte pour Solera :
 
 - **1.19.1** : le partage de session n'existe plus (liens, commandes, import depuis une
@@ -58,6 +63,13 @@ se changent à chaud.
 `OPENCODE_DISABLE_PROJECT_CONFIG` coupe aussi l'`opencode.json` et le dossier
 `.opencode/` du projet : opencode n'a pas d'interrupteur plus fin. Un projet qui garde
 ses consignes dans son dépôt n'est pas concerné.
+
+Dans ce cas, opencode lit **le premier** fichier de consignes qu'il trouve, et non les
+deux : `AGENTS.md`, sinon `CLAUDE.md` (« The first matching file wins »,
+[opencode.ai/docs/rules](https://opencode.ai/docs/rules/), relu le 2026-11-12, non
+sondé sur le binaire). Un `AGENTS.md` présent, même vide, lui cache donc `CLAUDE.md`.
+Réglages › Consignes du projet le dit dans « Ce que lit chaque CLI »
+(`apps/web/src/lib/instructions-readers.ts`).
 
 ## Comportements relevés
 

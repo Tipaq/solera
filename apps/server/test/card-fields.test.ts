@@ -69,10 +69,11 @@ test('échéance et parente : posées, relues, et détachées sans toucher à la
     column: 'todo',
   })
 
-  // Aucun drapeau ne marque la parente : elle reste une carte, qui a des enfants.
+  // Son premier enfant fait de la parente un jalon, d'office.
   const board: CardDto[] = (await app.inject('/api/projects/project/cards')).json()
   const read = board.find((row) => row.id === parent.id)
   assert.equal(read?.parent, null)
+  assert.equal(read?.milestone, true)
   assert.deepEqual(read?.children.map((child) => child.id), [card.id])
 
   const detached = await app.inject({
@@ -158,23 +159,6 @@ test('colonne déduite : en cours dès qu\'un enfant démarre, jamais terminée 
   await patch(middle.id, { column: 'todo' })
   assert.equal(await column(middle.id), 'in_progress')
 
-  // Le glisser-déposer ne connaît que les feuilles : une colonne complète se compte
-  // sans les parentes, et une parente ne s'y range pas.
-  const board: CardDto[] = (await app.inject('/api/projects/project/cards')).json()
-  const leaves = (wanted: string) => board.filter((row) => row.column === wanted && row.children.length === 0).map((row) => row.id)
-  const ordered = await app.inject({
-    method: 'POST',
-    url: '/api/projects/project/cards/order',
-    payload: { columns: [{ column: 'in_progress', ids: leaves('in_progress') }] },
-  })
-  assert.equal(ordered.statusCode, 200, ordered.body)
-  const refused = await app.inject({
-    method: 'POST',
-    url: '/api/projects/project/cards/order',
-    payload: { columns: [{ column: 'in_progress', ids: [...leaves('in_progress'), middle.id] }] },
-  })
-  assert.equal(refused.statusCode, 400)
-  assert.equal(refused.json().error.code, 'card_is_parent')
 })
 
 test('à préciser : ramène en « à faire », et s\'efface dès que la carte en sort', async (t) => {
@@ -493,7 +477,7 @@ test('promouvoir une sous-tâche : une sœur, la ligne en #N, et sa case qui sui
   assert.equal((solo.json() as { created: CardDto }).created.title, 'Voir la une')
 })
 
-test('card_moves : les trois chemins qui changent une colonne écrivent une ligne', async (t) => {
+test('card_moves : le menu de la carte et le lancement d\'une session écrivent une ligne', async (t) => {
   const { app, ctx, create, moves } = await harness(t)
   const card = await create('Une carte qui traverse le board')
 
@@ -509,15 +493,7 @@ test('card_moves : les trois chemins qui changent une colonne écrivent une lign
   // c'est précisément ce que `updated_at` ne sait pas distinguer.
   await app.inject({ method: 'PATCH', url: `/api/cards/${card.id}`, payload: { title: 'Titre corrigé' } })
 
-  // 2. Le glisser-déposer.
-  const reordered = await app.inject({
-    method: 'POST',
-    url: '/api/projects/project/cards/order',
-    payload: { columns: [{ column: 'review', ids: [] }, { column: 'done', ids: [card.id] }] },
-  })
-  assert.equal(reordered.statusCode, 200, reordered.body)
-
-  // 3. Le passage automatique au lancement d'une session, sur une carte « à faire ».
+  // 2. Le passage automatique au lancement d'une session, sur une carte « à faire ».
   const second = await create('Une carte qu’une session ouvre')
   advanceCardOnLaunch(ctx, second.id, 'owner')
   // Une carte déjà plus loin ne recule pas, et ne laisse donc pas de trace.
@@ -527,7 +503,6 @@ test('card_moves : les trois chemins qui changent une colonne écrivent une lign
     moves().map((row) => [row.cardId === card.id ? 'first' : 'second', row.fromColumn, row.toColumn, row.userId]),
     [
       ['first', 'todo', 'review', 'owner'],
-      ['first', 'review', 'done', 'owner'],
       ['second', 'todo', 'in_progress', 'owner'],
     ],
   )

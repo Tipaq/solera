@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DEFAULT_CODEX_CONFIG, type SoleraEvent } from '@solera/protocol'
 import { CodexRunner } from '../agents/codex/runner.js'
+import { hostEnvironment } from '../environments/host.js'
 
 /** Sonde manuelle : un vrai tour court sur le compte Codex, jamais exécuté en CI. */
 const cwd = await mkdtemp(join(tmpdir(), 'solera-codex-probe-'))
@@ -15,7 +16,7 @@ let finish: () => void = () => {}
 const completed = new Promise<void>((resolve) => { finish = resolve })
 const runner = new CodexRunner({
   conversationId: 'codex-probe', cwd, attachmentsRoot: cwd, prototypesDir: null,
-  binary: process.env.CODEX_BIN ?? 'codex', resumeSessionId: null,
+  binary: process.env.CODEX_BIN ?? 'codex', environment: hostEnvironment, resumeSessionId: null,
   config: { ...DEFAULT_CODEX_CONFIG, model: process.env.CODEX_MODEL ?? 'gpt-6-astra',
     reasoningEffort: 'low', collaborationMode: blocking ? 'plan' : 'default',
     sandbox: 'read-only', askForApproval: 'never', soleraMcp: false },

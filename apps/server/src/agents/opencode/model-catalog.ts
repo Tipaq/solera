@@ -6,6 +6,7 @@ import { usableSlashCommands } from '@solera/protocol'
 import { CachedProbe, CachedProbeMap } from '../cached-probe.js'
 import { withProbeServer } from './probe.js'
 import { toSlashCommands } from './runner.js'
+import type { CliLauncher } from '../cli-binary.js'
 
 /**
  * Catalogues d'opencode, lus sur un serveur jetable : modèles des fournisseurs
@@ -37,7 +38,7 @@ export class OpencodeCatalog {
     (cwd) => resolve(cwd),
   )
 
-  constructor(private readonly executable: () => Promise<string>) {}
+  constructor(private readonly cli: CliLauncher) {}
 
   list(): Promise<Listing & { fetchedAt: number }> {
     return this.models.read()
@@ -53,7 +54,7 @@ export class OpencodeCatalog {
    * les quelque deux cents qu'opencode connaît.
    */
   private async probeModels(): Promise<Listing> {
-    return withProbeServer(await this.executable(), homedir(), async (server) => {
+    return withProbeServer(this.cli, homedir(), async (server) => {
       const [providers, agents, config] = await Promise.all([
         server.get<Providers>('/config/providers'),
         server.get<Agent[]>('/agent'),
@@ -69,7 +70,7 @@ export class OpencodeCatalog {
   }
 
   private async probeCommands(cwd: string): Promise<{ commands: SlashCommandDto[] }> {
-    return withProbeServer(await this.executable(), cwd, async (server) => ({
+    return withProbeServer(this.cli, cwd, async (server) => ({
       commands: usableSlashCommands(toSlashCommands(await server.get<Command[]>('/command'))),
     }))
   }

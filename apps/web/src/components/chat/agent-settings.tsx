@@ -744,6 +744,9 @@ export function useAgentSettings({
     // propose plus. Elle reste listée, en dernier, là où elle est déjà la valeur — un
     // fil d'avant, un réglage jamais changé — ou la seule issue d'un compte supprimé,
     // et dit quand elle est déconnectée.
+    //
+    // Codex et Grok ne la proposent plus du tout (#147) : leurs sessions ne tournent que
+    // sur un compte de Solera, et un fil qui la désigne encore part sur le premier.
     const cliStays = chosen === null || !accounts.some((account) => account.id === chosen)
     const known: SettingChoice<string>[] = claude
       ? [
@@ -752,10 +755,10 @@ export function useAgentSettings({
             ? [claudeCliLoggedOut ? { ...cli, hint: t('composer.account.cli.loggedOut') } : cli]
             : []),
         ]
-      : [cli, ...listed]
+      : listed
     // Un compte supprimé depuis : la conversation le désigne encore, le serveur
-    // repartira sur la connexion du CLI, et l'écran le dit plutôt que de montrer un
-    // sélecteur vide.
+    // repartira sur la connexion du CLI (Claude) ou sur le premier compte connecté
+    // (Codex, Grok), et l'écran le dit plutôt que de montrer un sélecteur vide.
     if (chosen && !accounts.some((account) => account.id === chosen)) {
       known.push({ value: chosen, label: t('composer.account.missing'), hint: t('composer.select.saved') })
     }
@@ -872,6 +875,9 @@ export function useAgentSettings({
     const requestAvailability = requestAvailabilityOf(mcpRegistry)
 
     const accountChoice = (account: string | null) => account ?? CLI_DEFAULT_CHOICE
+    // Codex et Grok : la connexion du CLI encore désignée se montre comme le compte sur
+    // lequel le serveur partira, le premier de la liste.
+    const soleraAccountChoice = (account: string | null) => account ?? accountOptions[0]?.value ?? CLI_DEFAULT_CHOICE
 
     const permissionOptionList = permissionOptions(t)
     const sandboxOptionList = codexSandboxOptions(t)
@@ -1149,15 +1155,14 @@ export function useAgentSettings({
                 label: t('composer.setting.account'),
                 icon: <IdCard size={14} />,
                 options: accountOptions,
-                value: accountChoice(codex.account),
-                onChange: (choice) =>
-                  onConfigChange({ ...codex, account: choice === CLI_DEFAULT_CHOICE ? null : choice }),
+                value: soleraAccountChoice(codex.account),
+                onChange: (choice) => onConfigChange({ ...codex, account: choice }),
                 // Le home du compte est l'environnement de l'app-server : changer de
                 // compte attend la relance de la session.
                 notice: notice(
                   appliedLabel(
-                    appliedConfig?.agent === 'codex' ? accountChoice(appliedConfig.account) : undefined,
-                    accountChoice(codex.account),
+                    appliedConfig?.agent === 'codex' ? soleraAccountChoice(appliedConfig.account) : undefined,
+                    soleraAccountChoice(codex.account),
                     accountOptions,
                   ),
                   t,
@@ -1451,13 +1456,12 @@ export function useAgentSettings({
                 label: t('composer.setting.account'),
                 icon: <IdCard size={14} />,
                 options: accountOptions,
-                value: accountChoice(grok.account),
-                onChange: (choice) =>
-                  onConfigChange({ ...grok, account: choice === CLI_DEFAULT_CHOICE ? null : choice }),
+                value: soleraAccountChoice(grok.account),
+                onChange: (choice) => onConfigChange({ ...grok, account: choice }),
                 // Le compte est le `GROK_HOME` du process : changer de compte attend la
                 // relance de la session.
                 notice: notice(
-                  appliedLabel(applied ? accountChoice(applied.account) : undefined, accountChoice(grok.account), accountOptions),
+                  appliedLabel(applied ? soleraAccountChoice(applied.account) : undefined, soleraAccountChoice(grok.account), accountOptions),
                   t,
                 ),
               }),

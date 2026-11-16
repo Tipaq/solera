@@ -64,7 +64,7 @@ export function registerCodexAccountRoutes(
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     owned(user.id, id)
-    await login.forget(id)
+    await login.forget(id, user.id)
     accounts.delete(user.id, id)
     reply.status(204)
   })

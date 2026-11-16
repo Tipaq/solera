@@ -1,23 +1,20 @@
-import { existsSync, lstatSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { linksTo, linkTo } from '../platform/links.js'
+import { bringNewest, dropLinks, keepConversations, mirrorPersonal, type Mirrored } from '../platform/account-home.js'
 
 /**
- * Le `CODEX_HOME` d'un compte supplémentaire.
+ * Le `CODEX_HOME` d'un compte de Solera, voir `platform/account-home.ts`.
  *
- * Un dossier par compte, où seul `auth.json` est réel : chaque autre entrée du home de
- * l'utilisateur y est liée par un lien symbolique. Codex y lit donc la même
- * configuration, les mêmes skills, les mêmes mémoires, et surtout les mêmes threads,
- * ce qui permet de reprendre ou de brancher une conversation quel que soit le compte
- * qui l'a ouverte (sondé sur 0.162.1). Les bases SQLite suivent aussi : SQLite résout
- * le lien avant de poser ses fichiers de journal à côté de la vraie base.
+ * Un dossier par compte, sans aucun lien : `auth.json`, que Codex écrit et rafraîchit
+ * lui-même, la configuration de l'utilisateur recopiée sans ses secrets, ses consignes
+ * globales et ses skills. Ses mémoires (`memories_1.sqlite`) restent les siennes : Codex
+ * en tient une par home, propre au compte.
  *
- * Les liens sont repris à chaque lancement et non posés une fois : Codex crée de
- * nouvelles entrées au fil des versions (`memories/`, `goals_1.sqlite`…), et une
- * entrée apparue dans le home de l'utilisateur après la création du compte doit être
- * vue par le compte aussi. Une entrée que Codex crée lui-même dans le home du compte
- * (journal, `history.jsonl`) y reste : elle n'est pas un lien, et on n'y touche pas.
+ * Une conversation se reprend d'un compte à l'autre parce que Solera recopie son fichier
+ * (`sessions/AAAA/MM/JJ/rollout-…-<id>.jsonl`) au même chemin dans le home qui la reprend :
+ * Codex l'y retrouve, à défaut de l'avoir dans sa base (sondé sur 0.167.0). Un nom ou un
+ * chemin différent est refusé.
  */
 
 /** `$CODEX_HOME` du serveur, à défaut `~/.codex` : là où vit la connexion du CLI. */
@@ -25,7 +22,38 @@ export function userCodexHome(): string {
   return process.env.CODEX_HOME || join(homedir(), '.codex')
 }
 
-const PRIVATE = new Set(['auth.json'])
+const MIRRORED: Mirrored[] = [
+  { name: 'config.toml', kind: 'config' },
+  { name: 'AGENTS.md', kind: 'file' },
+  { name: 'AGENTS.override.md', kind: 'file' },
+  { name: 'rules', kind: 'dir' },
+  // `.system` : les skills que Codex installe lui-même dans chaque home.
+  { name: 'skills', kind: 'dir', skip: ['.system'] },
+]
+
+/** Le fichier d'un thread sous `root`, ou null. */
+export function codexThreadFile(root: string, threadId: string): string | null {
+  const suffix = `-${threadId}.jsonl`
+  const sessions = join(root, 'sessions')
+  if (!existsSync(sessions)) return null
+  // `sessions/AAAA/MM/JJ/rollout-<date>-<id>.jsonl`, du plus récent au plus ancien.
+  const down = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort()
+      .reverse()
+      .map((name) => join(dir, name))
+  for (const year of down(sessions)) {
+    for (const month of down(year)) {
+      for (const day of down(month)) {
+        const found = readdirSync(day).find((name) => name.startsWith('rollout-') && name.endsWith(suffix))
+        if (found) return join(day, found)
+      }
+    }
+  }
+  return null
+}
 
 export class CodexAccountHomes {
   constructor(private readonly root: string) {}
@@ -34,33 +62,40 @@ export class CodexAccountHomes {
     return join(this.root, accountId)
   }
 
-  /** Crée le home s'il manque, puis reprend les liens. Rend son chemin. */
+  /**
+   * Où vont les conversations des comptes supprimés de l'utilisateur, pour qu'un fil né
+   * sur l'un d'eux se reprenne encore sur un autre. Un identifiant de compte est un UUID :
+   * le nom ne peut pas en croiser un.
+   */
+  kept(ownerId: string): string {
+    return join(this.root, '_conserve', ownerId)
+  }
+
+  /** Les homes où chercher une conversation de l'utilisateur, hors celui du CLI. */
+  sources(ownerId: string, accountIds: string[]): string[] {
+    return [this.kept(ownerId), ...accountIds.map((id) => this.path(id))]
+  }
+
+  /** Met de côté les conversations du compte avant que son home disparaisse. */
+  keepConversations(accountId: string, ownerId: string): void {
+    keepConversations(this.path(accountId), this.kept(ownerId))
+  }
+
+  /** Crée le home s'il manque, et y recopie ce qui vient de l'utilisateur. Rend son chemin. */
   ensure(accountId: string): string {
     const home = this.path(accountId)
-    mkdirSync(home, { recursive: true })
-    const source = userCodexHome()
-    if (!existsSync(source)) return home
-
-    for (const name of readdirSync(source)) {
-      if (PRIVATE.has(name)) continue
-      const target = join(source, name)
-      const link = join(home, name)
-      let current: ReturnType<typeof lstatSync> | null = null
-      try {
-        current = lstatSync(link)
-      } catch {
-        current = null
-      }
-      if (current) {
-        // Un lien juste : rien à faire. Un lien vers ailleurs (home de l'utilisateur
-        // déplacé) : repris. Un vrai fichier ou dossier : propre au compte, laissé.
-        if (!current.isSymbolicLink()) continue
-        if (linksTo(link, target)) continue
-        unlinkSync(link)
-      }
-      linkTo(target, link)
-    }
+    mkdirSync(home, { recursive: true, mode: 0o700 })
+    dropLinks(home)
+    mirrorPersonal(userCodexHome(), home, MIRRORED)
     return home
+  }
+
+  /**
+   * Amène dans `home` la dernière version du thread, prise dans `sources` : les homes des
+   * autres comptes de l'utilisateur, et celui de la connexion du CLI.
+   */
+  bringThread(home: string, threadId: string, sources: string[]): void {
+    bringNewest(home, sources, (root) => codexThreadFile(root, threadId))
   }
 
   /** Vrai quand le home porte une connexion, c'est-à-dire un `auth.json`. */

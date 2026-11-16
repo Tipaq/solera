@@ -24,15 +24,11 @@ export function useWriteMemoryFile(projectId: string) {
 export function useDeleteMemoryFile(projectId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (file: string) =>
-      api.delete<void>(`/api/projects/${projectId}/memory/${encodeURIComponent(file)}`),
+    /** `keepIndexLine` laisse sa ligne dans `MEMORY.md`, qui devient orpheline. */
+    mutationFn: ({ file, keepIndexLine = false }: { file: string; keepIndexLine?: boolean }) =>
+      api.delete<void>(
+        `/api/projects/${projectId}/memory/${encodeURIComponent(file)}${keepIndexLine ? '?index=keep' : ''}`,
+      ),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: memoryKey(projectId) }),
   })
-}
-
-/** La description d'une note, lue dans son en-tête : c'est ce qui dit de quoi elle parle. */
-export function memoryDescription(content: string): string | null {
-  const head = /^---\n([\s\S]*?)\n---/.exec(content)?.[1] ?? ''
-  const line = head.split('\n').find((candidate) => candidate.startsWith('description:'))
-  return line ? line.slice('description:'.length).trim().replace(/^["']|["']$/g, '') : null
 }

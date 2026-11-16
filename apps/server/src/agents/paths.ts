@@ -1,4 +1,7 @@
 import { isAbsolute, relative, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import type { EnvironmentProvider } from '../environments/provider.js'
+import { hostPathOf } from '../environments/devcontainer/paths.js'
 
 /**
  * Chemin relatif au répertoire de travail quand il en fait partie.
@@ -10,6 +13,25 @@ export function toWorkspacePath(cwd: string, path: string): string {
   const absolute = isAbsolute(path) ? path : resolve(cwd, path)
   const inside = relative(cwd, absolute)
   return inside.startsWith('..') || isAbsolute(inside) ? absolute : inside
+}
+
+/**
+ * Un chemin qu'un CLI a écrit dans le journal, tel que l'hôte le lit : `/mnt/c/…` dans un
+ * dev container sous Windows natif (#151), inchangé ailleurs. Pour ce qui se relit
+ * après coup, sans l'environnement de la session sous la main (un diff) ; pendant la
+ * session, c'est `EnvironmentProvider.pathOutside` qui traduit.
+ */
+export function loggedPath(path: string, platform: NodeJS.Platform = process.platform): string {
+  return hostPathOf(path, platform) ?? path
+}
+
+/**
+ * L'URL `file://` d'un fichier de l'hôte, telle que le CLI la lit dans son
+ * environnement : `file:///mnt/c/…` dans un dev container sous Windows natif (#152).
+ */
+export function fileUrlInside(environment: EnvironmentProvider, hostPath: string): string {
+  const inside = environment.pathInside(hostPath)
+  return pathToFileURL(inside, { windows: process.platform === 'win32' && !inside.startsWith('/') }).href
 }
 
 /**

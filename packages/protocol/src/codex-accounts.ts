@@ -4,11 +4,11 @@ import { z } from 'zod'
  * Comptes Codex supplémentaires, par utilisateur.
  *
  * Codex ne tient qu'une connexion par `CODEX_HOME`, dans son `auth.json`. Solera donne
- * donc à chaque compte supplémentaire son propre home, où seul `auth.json` est réel :
- * tout le reste (config.toml, sessions, skills, mémoires) est un lien vers le home de
- * l'utilisateur, pour que le compte ne change que l'abonnement qui paie, pas les
- * réglages ni les threads (sondé sur codex-cli 0.162.1 : un thread se reprend d'un
- * home à l'autre).
+ * donc à chaque compte son propre home, sans aucun lien vers celui de l'utilisateur :
+ * sa connexion, et une copie de la configuration (sans secrets), des consignes et des
+ * skills de l'utilisateur, refaite à chaque lancement. Un thread passe d'un home à
+ * l'autre par copie de son fichier, pour que changer de compte ne change que
+ * l'abonnement qui paie (`codex-accounts/homes.ts` côté serveur).
  *
  * Solera ne stocke aucun secret lui-même : la connexion se fait par l'app-server
  * lancé dans ce home, par code d'appareil ou par clé API, et c'est Codex qui écrit son

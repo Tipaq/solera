@@ -5,12 +5,15 @@ import type {
   ScheduleCadence,
   ScheduleOverlapPolicy,
   ScheduleCheckResultDto,
-  ScheduleRunStatus,
+  ScheduleScope,
+  ScheduleWorktreeMode,
   ScheduledRunDto,
   ScheduledTaskDto,
 } from '@solera/protocol'
 import { api } from './api'
+import { cadenceWords, formatDateTime as dateTimeIn } from './automations'
 import { locale, translate, type MessageKey } from './i18n'
+import { useInstance } from './instance'
 
 export const SCHEDULES_KEY = ['schedules']
 
@@ -36,12 +39,31 @@ export interface ScheduleInput {
   agent: AgentKind
   config: AgentConfig
   prompt: string
-  cadence: ScheduleCadence
+  /** Null : la tâche ne part qu'à la demande, et `onDemand` doit être vrai. */
+  cadence: ScheduleCadence | null
+  /** Absent : vrai à la création, inchangé à la modification. */
+  onDemand?: boolean
+  /** Absent : à la racine du projet à la création, inchangé à la modification. */
+  worktreeMode?: ScheduleWorktreeMode
   overlapPolicy: ScheduleOverlapPolicy
+  /** Tirs confinés ou non (#146) ; null : le réglage du projet. */
+  confined: boolean | null
   maxDurationMinutes: number
   /** Null retire la vérification. */
   checkScript?: string | null
   checkTimeoutSeconds?: number
+}
+
+/**
+ * Le fuseau où le serveur lit un motif cron : celui où l'aperçu d'une planification
+ * calcule et affiche ses passages (`nextScheduleRun`, `formatDateTime`).
+ *
+ * Celui du navigateur tant que l'instance n'est pas chargée, ou qu'un serveur plus
+ * ancien que l'interface ne le donne pas : c'était l'aperçu d'avant.
+ */
+export function useServerTimeZone(): string {
+  const { data } = useInstance()
+  return data?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
 }
 
 function useInvalidate() {
@@ -58,6 +80,23 @@ export function useCreateSchedule(projectId: string) {
   return useMutation({
     mutationFn: (input: ScheduleInput) =>
       api.post<ScheduledTaskDto>(`/api/projects/${projectId}/schedules`, input),
+    onSuccess: invalidate,
+  })
+}
+
+/**
+ * Où créer une tâche depuis la page Planifiées : un projet, le vault (Savoir), l'instance
+ * (réservée aux administrateurs) ou nulle part. Hors projet, ni worktree neuf ni
+ * confinement.
+ */
+export type ScheduleTarget = { scope: 'project'; projectId: string } | { scope: Exclude<ScheduleScope, 'project'> }
+
+/** Crée une tâche dans la portée choisie (`POST /api/schedules`). */
+export function useCreateScopedSchedule() {
+  const invalidate = useInvalidate()
+  return useMutation({
+    mutationFn: ({ target, input }: { target: ScheduleTarget; input: ScheduleInput }) =>
+      api.post<ScheduledTaskDto>('/api/schedules', { ...input, ...target }),
     onSuccess: invalidate,
   })
 }
@@ -93,6 +132,14 @@ export function useTestScheduleCheck(projectId: string) {
   return useMutation({
     mutationFn: (input: { script: string; timeoutSeconds: number; taskId?: string }) =>
       api.post<ScheduleCheckResultDto>(`/api/projects/${projectId}/schedules/check-test`, input),
+  })
+}
+
+/** Comme `useTestScheduleCheck`, joué où la portée tourne : le vault, le dossier de données. */
+export function useTestScopedScheduleCheck() {
+  return useMutation({
+    mutationFn: ({ target, ...input }: { target: ScheduleTarget; script: string; timeoutSeconds: number; taskId?: string }) =>
+      api.post<ScheduleCheckResultDto>('/api/schedules/check-test', { ...input, ...target }),
   })
 }
 
@@ -132,64 +179,33 @@ export function lastRun(task: ScheduledTaskDto): ScheduledRunDto | undefined {
   return task.runs.find((run) => run.status !== 'skipped')
 }
 
-export const RUN_LABELS: Record<ScheduleRunStatus, MessageKey> = {
-  checking: 'schedule.run.checking',
-  running: 'schedule.run.running',
-  succeeded: 'schedule.run.succeeded',
-  failed: 'schedule.run.failed',
-  timed_out: 'schedule.run.timedOut',
-  skipped: 'schedule.run.skipped',
-}
-
-export const RUN_DOTS: Record<ScheduleRunStatus, string> = {
-  checking: 'bg-accent animate-pulse',
-  running: 'bg-accent animate-pulse',
-  succeeded: 'bg-positive',
-  failed: 'bg-critical',
-  timed_out: 'bg-caution',
-  skipped: 'bg-line-strong',
-}
-
-/** La teinte d'une pastille de verdict, quand un tir se résume en un mot. */
-export const RUN_TONES: Record<ScheduleRunStatus, 'neutral' | 'accent' | 'positive' | 'caution' | 'critical'> = {
-  checking: 'accent',
-  running: 'accent',
-  succeeded: 'positive',
-  failed: 'critical',
-  timed_out: 'caution',
-  skipped: 'neutral',
-}
-
 export function scheduleState(task: ScheduledTaskDto): ScheduleState {
   const last = lastRun(task)
   if (last?.status === 'running' || last?.status === 'checking') return 'running'
   // Avant la pause : une tâche qui attend une validation ne fait rien tant qu'on ne l'a
   // pas donnée, et c'est la seule chose qu'on attende de qui la regarde.
   if (task.check && !task.check.approved) return 'approval'
-  if (!task.enabled) return task.cadence.kind === 'once' && task.lastRunAt ? 'done' : 'paused'
+  if (!task.enabled) return task.cadence?.kind === 'once' && task.lastRunAt ? 'done' : 'paused'
   if (last?.status === 'failed' || last?.status === 'timed_out') return 'failed'
   return 'waiting'
 }
 
-function formatMinutes(minutes: number): string {
-  if (minutes % 1440 === 0) return translate('schedule.cadence.days', { count: minutes / 1440 })
-  if (minutes % 60 === 0) return translate('schedule.cadence.hours', { count: minutes / 60 })
-  return translate('schedule.cadence.minutes', { count: minutes })
+/** Date et heure d'un tir ; `timeZone` les lit à l'heure du serveur plutôt qu'à celle du poste. */
+export function formatDateTime(ts: number, timeZone?: string): string {
+  return dateTimeIn(ts, locale(), timeZone)
 }
 
-export function formatDateTime(ts: number): string {
-  return new Date(ts).toLocaleString(locale(), {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-/** La cadence en clair ; le motif cron est traduit par l'appelant, qui a `cronToHuman`. */
-export function describeCadence(cadence: ScheduleCadence, cronHuman: (expression: string) => string | null): string {
-  if (cadence.kind === 'interval') return formatMinutes(cadence.minutes)
-  if (cadence.kind === 'once') return translate('schedule.cadence.onceAt', { date: formatDateTime(cadence.at) })
-  return cronHuman(cadence.expression) ?? cadence.expression
+/**
+ * La cadence en clair, « À la demande » sans cadence ; le motif cron est traduit par
+ * l'appelant, qui a `cronToHuman`.
+ */
+export function describeCadence(
+  cadence: ScheduleCadence | null,
+  cronHuman: (expression: string) => string | null,
+  timeZone?: string,
+): string {
+  if (cadence === null) return translate('automation.when.demand')
+  if (cadence.kind === 'cron') return cronHuman(cadence.expression) ?? cadence.expression
+  if (cadence.kind === 'once') return translate('schedule.cadence.onceAt', { date: formatDateTime(cadence.at, timeZone) })
+  return cadenceWords(cadence, translate, locale())
 }

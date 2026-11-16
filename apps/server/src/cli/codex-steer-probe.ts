@@ -6,6 +6,7 @@ import { DEFAULT_CODEX_CONFIG, type SoleraEvent } from '@solera/protocol'
 import { CodexAppServerClient } from '../agents/codex/app-server-client.js'
 import { CLIENT_INFO } from '../agents/codex/client-info.js'
 import { CodexRunner } from '../agents/codex/runner.js'
+import { hostEnvironment } from '../environments/host.js'
 
 /**
  * Sonde manuelle de `turn/steer` pendant que le modèle écrit sa réponse.
@@ -55,7 +56,7 @@ async function probeRaw(): Promise<void> {
   const done = new Promise<void>((resolve) => { finish = resolve })
   const deltaRuns: string[] = []
   const client: CodexAppServerClient = new CodexAppServerClient({
-    binary, cwd,
+    binary, cwd, environment: hostEnvironment,
     onServerRequest: async () => ({ decision: 'decline' }),
     onNotification: (method, params: any) => {
       if (method.endsWith('/delta')) {
@@ -106,7 +107,7 @@ async function probeRunner(): Promise<void> {
   let finish: () => void = () => {}
   const done = new Promise<void>((resolve) => { finish = resolve })
   const runner: CodexRunner = new CodexRunner({
-    conversationId: 'codex-steer-probe', cwd, attachmentsRoot: cwd, prototypesDir: null, binary, resumeSessionId: null,
+    conversationId: 'codex-steer-probe', cwd, attachmentsRoot: cwd, prototypesDir: null, binary, environment: hostEnvironment, resumeSessionId: null,
     config: { ...DEFAULT_CODEX_CONFIG, model, reasoningEffort: 'low', sandbox: 'read-only', askForApproval: 'never', soleraMcp: false },
     projectOverview: () => null, maskedInstructionRoots: () => [], memoryDir: () => null,
     resolveMcpServers: () => ({ servers: [], failures: [] }), skillRoots: () => [],

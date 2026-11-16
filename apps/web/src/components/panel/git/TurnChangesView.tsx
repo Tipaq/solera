@@ -4,7 +4,7 @@ import type { CheckpointFile } from '@solera/protocol'
 import type { EditedFile, TurnCheckpoint } from '../../../lib/chat-fold'
 import { openerLabel, sumLines, useCheckpointFileDiff } from '../../../lib/checkpoints'
 import { parseUnifiedDiff } from '../../../lib/diff'
-import { useTranslate } from '../../../lib/i18n'
+import { pluralOf, useTranslate } from '../../../lib/i18n'
 import { Banner, Button, IconButton } from '@solera/ui'
 import { FileDiffBody, FileRow, SectionTitle } from '../diff-parts'
 
@@ -66,14 +66,14 @@ export function TurnChangesView({
       </div>
 
       <SectionTitle>
-        {t(count > 1 ? 'git.commit.files' : 'git.commit.filesOne', { count, added, removed })}
+        {t(pluralOf(count) === 'one' ? 'git.commit.filesOne' : 'git.commit.files', { count, added, removed })}
       </SectionTitle>
 
       {checkpoint.excluded > 0 || checkpoint.truncated ? (
         <p className="border-b border-line/60 px-2.5 py-1.5 text-meta text-ink-faint">
           {checkpoint.excluded > 0 ? (
             <span title={t('checkpoint.view.excluded.hint')}>
-              {t(checkpoint.excluded === 1 ? 'checkpoint.view.excluded.one' : 'checkpoint.view.excluded.other', {
+              {t(`checkpoint.view.excluded.${pluralOf(checkpoint.excluded)}`, {
                 count: checkpoint.excluded,
               })}
             </span>

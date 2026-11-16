@@ -1,7 +1,8 @@
 import { basename } from 'node:path'
 import { toAttachmentDto, type AttachmentStore } from '../../attachments/store.js'
 import { randomUUID } from 'node:crypto'
-import { and, asc, count, desc, eq, inArray, max, or, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, inArray, isNull, max, or, sql } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/sqlite-core'
 import type { FastifyInstance } from 'fastify'
 import {
   attachments,
@@ -28,7 +29,6 @@ import {
   cardRelationKindSchema,
   createCardBodySchema,
   createCardNoteBodySchema,
-  reorderCardsBodySchema,
   toggleSubtask,
   toggleSubtaskBodySchema,
   promoteSubtaskBodySchema,
@@ -37,6 +37,7 @@ import {
   type CardConversationDto,
   type CardDto,
   type CardLinkDto,
+  type MilestoneLinkDto,
   type CardNoteDto,
   type CardSearchDto,
 } from '@solera/protocol'
@@ -45,8 +46,16 @@ import { addCardBlock, removeCardBlock } from '../../cards/blocks.js'
 import { addCardRelation, removeCardRelation } from '../../cards/relations.js'
 import { promoteSubtask } from '../../cards/promote.js'
 import { recordCardMove } from '../../cards/moves.js'
+import { readRefinements } from '../../cards/refinement.js'
 import { queueIssueRefusal, toCardIssueDto } from '../../issues/links.js'
-import { resolveParent, setCardParent, setToClarify, syncParentColumn } from '../../cards/tree.js'
+import {
+  assertMilestoneChoice,
+  hasChildren,
+  resolveParent,
+  setCardParent,
+  setToClarify,
+  syncParentColumn,
+} from '../../cards/tree.js'
 import type { AppContext } from '../context.js'
 import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
@@ -319,6 +328,8 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
         .map((row) => [row.id, row.displayName]),
     )
 
+    const refinements = readRefinements(ctx.db, ids)
+
     return rows.map((row) => ({
       id: row.id,
       projectId,
@@ -329,7 +340,20 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
       position: row.position,
       dueAt: row.dueAt,
       parent: row.parentId ? (parents.get(row.parentId) ?? null) : null,
+      milestone: row.milestone,
       children: offspring.get(row.id) ?? [],
+      branch: row.branch,
+      branchPr:
+        row.branchPrNumber !== null && row.branchPrUrl !== null
+          ? {
+              number: row.branchPrNumber,
+              url: row.branchPrUrl,
+              base: row.branchPrBase,
+              mergedAt: row.branchPrMergedAt,
+              closedAt: row.branchPrClosedAt,
+            }
+          : null,
+      refinement: refinements.get(row.id) ?? null,
       acceptedAt: row.acceptedAt,
       toClarifySince: row.toClarifySince,
       createdBy: row.createdBy,
@@ -460,8 +484,8 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     const body = createCardBodySchema.parse(request.body)
     loadProject(id, user.id)
 
-    const { parentId, ...fields } = body
-    const row = createCard(ctx.db, id, user.id, fields, { parentId })
+    const { parentId, dueAt, milestone, ...fields } = body
+    const row = createCard(ctx.db, id, user.id, fields, { parentId, dueAt, milestone })
     return reply.status(201).send(readCard(row.id, id))
   })
 
@@ -474,6 +498,9 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     // Le rattachement se vérifie avant toute écriture : un cycle refusé ne doit pas
     // laisser derrière lui un titre à moitié enregistré.
     if (body.parentId) resolveParent(ctx.db, card, body.parentId)
+    if (body.milestone !== undefined) {
+      assertMilestoneChoice(ctx.db, id, body.milestone, body.parentId !== undefined ? body.parentId : card.parentId)
+    }
 
     const patch: Partial<typeof cards.$inferInsert> = {}
     if (body.title !== undefined) patch.title = body.title
@@ -499,6 +526,10 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
       recordCardMove(ctx.db, { cardId: id, from: card.column, to: patch.column, userId: user.id })
     }
     if (body.parentId !== undefined) setCardParent(ctx.db, card, body.parentId, { userId: user.id })
+    // Après la parente, qui pose ou lève le drapeau d'office : le choix dit ici l'emporte.
+    if (body.milestone !== undefined) {
+      ctx.db.update(cards).set({ milestone: body.milestone, updatedAt: Date.now() }).where(eq(cards.id, id)).run()
+    }
     // Une parente ouverte ne garde pas une colonne choisie à la main : la rouvrir, ou la
     // poser ailleurs qu'en fermé, revient à la colonne que ses enfants disent. La fermer
     // reste un geste, celui que `parentCloseProposed` propose.
@@ -511,8 +542,7 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
 
   /** La colonne d'une carte qui a des enfants, recalculée depuis eux après un geste. */
   const syncOwnColumn = (cardId: string, userId: string): void => {
-    const child = ctx.db.select({ id: cards.id }).from(cards).where(eq(cards.parentId, cardId)).get()
-    if (child) syncParentColumn(ctx.db, cardId, { userId })
+    if (hasChildren(ctx.db, cardId)) syncParentColumn(ctx.db, cardId, { userId })
   }
 
   /**
@@ -784,81 +814,6 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
 
     return reply.status(201).send({ card: readCard(id, card.projectId), created: readCard(created.id, card.projectId) })
   })
-
-  app.post('/api/projects/:id/cards/order', async (request) => {
-    const user = requireUser(request)
-    const { id } = request.params as { id: string }
-    const body = reorderCardsBodySchema.parse(request.body)
-    loadProject(id, user.id)
-
-    // Le kanban ne montre que les feuilles : une carte qui a des enfants n'y est pas,
-    // n'entre donc pas dans le compte d'une colonne complète, et ne s'y range pas — sa
-    // colonne se déduit de ses enfants.
-    const all = ctx.db
-      .select({ id: cards.id, column: cards.column, parentId: cards.parentId })
-      .from(cards)
-      .where(eq(cards.projectId, id))
-      .all()
-    const parentIds = new Set(all.map((row) => row.parentId).filter((parentId) => parentId !== null))
-    const known = new Map(all.filter((row) => !parentIds.has(row.id)).map((row) => [row.id, row.column]))
-
-    const placed = new Set<string>()
-    for (const group of body.columns) {
-      for (const cardId of group.ids) {
-        if (parentIds.has(cardId)) {
-          throw badRequest('card_is_parent', 'Card {id} has children; its column follows theirs.', { id: cardId })
-        }
-        if (!known.has(cardId)) {
-          throw badRequest('card_not_in_project', 'Card {id} does not belong to this project.', {
-            id: cardId,
-          })
-        }
-        if (placed.has(cardId)) {
-          throw badRequest('card_placed_twice', 'Card {id} appears in two columns.', { id: cardId })
-        }
-        placed.add(cardId)
-      }
-    }
-
-    // Une colonne réécrite doit l'être en entier. Un envoi partiel laisserait les
-    // cartes omises avec leurs anciennes positions, donc intercalées au hasard parmi
-    // les nouvelles, et le board afficherait un ordre que personne n'a demandé.
-    const touched = new Set(body.columns.map((group) => group.column))
-    for (const [cardId, column] of known) {
-      if (touched.has(column) && !placed.has(cardId)) {
-        throw badRequest(
-          'card_column_incomplete',
-          'Reordering column {column} requires all of its cards.',
-          { column },
-        )
-      }
-    }
-
-    const now = Date.now()
-    writeTransaction(ctx.db, (tx) => {
-      for (const group of body.columns) {
-        group.ids.forEach((cardId, index) => {
-          const patch: Partial<typeof cards.$inferInsert> = {
-            column: group.column,
-            position: index,
-          }
-          const from = known.get(cardId)
-          // Un changement de colonne est un mouvement dans le workflow, pas un simple
-          // rangement : il vaut modification. Une réorganisation verticale n'en est
-          // pas une et ne doit pas faire remonter toute la colonne en « modifiée ».
-          if (from !== group.column) patch.updatedAt = now
-          tx.update(cards).set(patch).where(eq(cards.id, cardId)).run()
-          // Dans la transaction qui déplace : un glissement qui échoue à mi-chemin ne
-          // doit pas laisser au Journal des mouvements qui n'ont pas eu lieu.
-          if (from && from !== group.column) {
-            recordCardMove(tx, { cardId, from, to: group.column, userId: user.id, at: now })
-          }
-        })
-      }
-    })
-
-    return { ok: true }
-  })
 }
 
 /**
@@ -924,14 +879,62 @@ export function assertCardAccepted(ctx: AppContext, cardId: string): void {
   }
 }
 
-/** La carte d'une conversation, pour la puce qui ramène au board depuis le fil. */
-export function readCardLink(ctx: AppContext, cardId: string | null): CardLinkDto | null {
-  if (!cardId) return null
-  const row = ctx.db
-    .select({ id: cards.id, number: cards.number, title: cards.title, column: cards.column })
+/**
+ * La carte d'une conversation, pour la puce qui ramène au board depuis le fil, et son
+ * jalon : la parente de cette carte (#163), ou pour une session d'affinage la carte
+ * qu'elle découpe (#184), qui n'est pas sa carte.
+ */
+export function readConversationLinks(
+  ctx: AppContext,
+  conversation: { cardId: string | null; splitCardId: string | null },
+): ConversationLinks {
+  const { cardId, splitCardId } = conversation
+  if (cardId) {
+    const row = ctx.db
+      .select(CONVERSATION_LINKS)
+      .from(cards)
+      .leftJoin(milestoneCards, eq(milestoneCards.id, cards.parentId))
+      .where(eq(cards.id, cardId))
+      .get()
+    return row ? { card: row.card, milestone: row.milestone } : NO_LINKS
+  }
+  if (!splitCardId) return NO_LINKS
+  const milestone = ctx.db
+    .select({ id: cards.id, number: cards.number, title: cards.title })
     .from(cards)
-    .where(eq(cards.id, cardId))
+    .where(and(eq(cards.id, splitCardId), eq(cards.milestone, true)))
     .get()
-  return row ?? null
+  return { card: null, milestone: milestone ?? null }
 }
+
+/**
+ * La parente d'une carte, jointe une seconde fois : le jalon d'une conversation. Les
+ * routes de liste la joignent après la carte par `MILESTONE_OF_CONVERSATION`,
+ * `readConversationLinks` pour un fil.
+ */
+export const milestoneCards = alias(cards, 'milestone')
+
+/**
+ * La condition de jointure du jalon d'une conversation, après `cards` sur sa carte : la
+ * parente de sa carte, ou pour une session sans carte le jalon que sa session
+ * d'affinage découpe. Un découpage parti d'une carte qui n'est pas un jalon n'en a pas.
+ */
+export const MILESTONE_OF_CONVERSATION = or(
+  eq(milestoneCards.id, cards.parentId),
+  and(isNull(conversations.cardId), eq(milestoneCards.id, conversations.splitCardId), eq(milestoneCards.milestone, true)),
+)!
+
+/** Les colonnes de `ConversationLinks`, pour une requête qui joint `cards` puis `milestoneCards`. */
+export const CONVERSATION_LINKS = {
+  card: { id: cards.id, number: cards.number, title: cards.title, column: cards.column },
+  milestone: { id: milestoneCards.id, number: milestoneCards.number, title: milestoneCards.title },
+}
+
+/** Ce qu'une conversation montre de son rattachement au board. */
+export interface ConversationLinks {
+  card: CardLinkDto | null
+  milestone: MilestoneLinkDto | null
+}
+
+export const NO_LINKS: ConversationLinks = { card: null, milestone: null }
 

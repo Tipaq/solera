@@ -16,15 +16,28 @@ const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
   ['year', Infinity],
 ]
 
-export function relativeDate(ts: number): string {
+export function relativeDate(ts: number, now = Date.now()): string {
   const format = new Intl.RelativeTimeFormat(locale(), { numeric: 'auto' })
 
-  let value = (ts - Date.now()) / 1000
+  let value = (ts - now) / 1000
   for (const [unit, size] of UNITS) {
-    if (Math.abs(value) < size) return format.format(Math.round(value), unit)
+    if (Math.abs(value) < size) {
+      // Au-delà d'un jour, on compte des jours de calendrier et non des tranches de
+      // 24 h : une échéance à minuit dans neuf jours est « dans 9 jours » toute la
+      // journée, et pas « dans 8 jours » passé midi (#271).
+      if (unit === 'day') return format.format(calendarDays(ts, now), 'day')
+      return format.format(Math.round(value), unit)
+    }
     value /= size
   }
   return format.format(Math.round(value), 'year')
+}
+
+/** Les minuits franchis de `from` à `to`, dans le fuseau du lecteur. */
+function calendarDays(to: number, from: number): number {
+  const day = (ts: number) => new Date(ts).setHours(0, 0, 0, 0)
+  // Arrondi : un passage à l'heure d'été ou d'hiver fait un jour de 23 ou 25 heures.
+  return Math.round((day(to) - day(from)) / 86_400_000)
 }
 
 /**
@@ -108,11 +121,4 @@ export function dayFromInput(value: string): number | null {
 /** Le jour, écrit court et dans la langue de l'interface : « 20 oct. ». */
 export function formatDay(ts: number): string {
   return new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'short' }).format(ts)
-}
-
-/** Jours restants avant une échéance, négatifs quand elle est dépassée. */
-export function daysUntil(ts: number): number {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return Math.round((ts - today.getTime()) / 86_400_000)
 }

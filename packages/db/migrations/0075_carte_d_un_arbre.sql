@@ -1,0 +1,1 @@
+ALTER TABLE `worktrees` ADD `card_id` text;

@@ -1,7 +1,7 @@
 import type { ToolPart } from '@solera/opencode-bindings'
 import type { EditDiffDto, SoleraEvent } from '@solera/protocol'
 import { additionDiff } from '@solera/protocol'
-import { toWorkspacePath } from '../paths.js'
+import { loggedPath, toWorkspacePath } from '../paths.js'
 
 /**
  * Les outils d'opencode, ramenés aux noms et aux champs du journal (invariant I3).
@@ -75,13 +75,14 @@ export function describeTool(
 /**
  * Ce qu'une demande de permission montre. La clé `permission` d'opencode est une
  * famille d'outils (`edit` couvre `edit`, `write` et `apply_patch`), et le détail est
- * dans `metadata`.
+ * dans `metadata`. `outside` rend à l'hôte un chemin que le CLI voit ailleurs (#152).
  */
 export function describePermission(
   permission: string,
   patterns: string[],
   metadata: unknown,
   cwd: string,
+  outside: (path: string) => string = (path) => path,
 ): { toolName: string; input: unknown } {
   const meta = fields(metadata)
   switch (permission) {
@@ -89,7 +90,7 @@ export function describePermission(
       return { toolName: 'Bash', input: { command: text(meta.command) ?? patterns.join(' && ') } }
     case 'edit': {
       const path = text(meta.filepath) ?? patterns[0] ?? ''
-      return { toolName: 'Edit', input: { file_path: toWorkspacePath(cwd, path), diff: meta.diff } }
+      return { toolName: 'Edit', input: { file_path: toWorkspacePath(cwd, outside(path)), diff: meta.diff } }
     }
     case 'webfetch':
       return { toolName: 'WebFetch', input: { url: text(meta.url) ?? patterns[0] ?? '' } }
@@ -142,12 +143,12 @@ function patchedFiles(part: ToolPart): PatchedFile[] {
   return []
 }
 
-/** Les `file.edited` d'un appel terminé. */
-export function fileEdits(part: ToolPart, cwd: string): SoleraEvent[] {
+/** Les `file.edited` d'un appel terminé, sous le chemin de l'hôte (`outside`, #152). */
+export function fileEdits(part: ToolPart, cwd: string, outside: (path: string) => string = (path) => path): SoleraEvent[] {
   return patchedFiles(part).map((file) => ({
     type: 'file.edited',
     toolCallId: part.callID,
-    path: toWorkspacePath(cwd, file.path),
+    path: toWorkspacePath(cwd, outside(file.path)),
     action: file.action,
   }))
 }
@@ -166,7 +167,7 @@ function toGitPatch(path: string, diff: string): string | null {
 export function describeEdit(completedRaw: unknown, cwd: string, path: string): EditDiffDto {
   const part = (completedRaw as { part?: ToolPart } | null)?.part
   const file = part?.type === 'tool'
-    ? patchedFiles(part).find((entry) => toWorkspacePath(cwd, entry.path) === path)
+    ? patchedFiles(part).find((entry) => toWorkspacePath(cwd, loggedPath(entry.path)) === path)
     : undefined
 
   const patch = file?.diff ? toGitPatch(path, file.diff) : null

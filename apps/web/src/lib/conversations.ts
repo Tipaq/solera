@@ -5,9 +5,12 @@ import type {
   ElicitationAction,
   ElicitationValue,
   ConversationDto,
+  ExecutionEnvironment,
   HandoffDto,
   JournalPageDto,
+  ProjectBackgroundDto,
   SoleraEvent,
+  SplitMode,
 } from '@solera/protocol'
 import { api } from './api'
 import { uuidv4 } from './uuid'
@@ -119,6 +122,29 @@ export function useConversations(projectId: string | undefined) {
   })
 }
 
+/**
+ * Ce que les sessions du projet ont laissé tourner, session par session (#206). Le flux
+ * des statuts n'en pousse que le nombre : `useStatusFeed` relit cette liste quand le
+ * nombre d'une session bouge.
+ */
+export function useProjectBackground(projectId: string | undefined) {
+  return useQuery({ ...projectBackgroundQuery(projectId ?? ''), enabled: Boolean(projectId) })
+}
+
+/** La requête de `useProjectBackground`, pour qui en lit plusieurs (`useQueries`) : même clé, même cache. */
+export function projectBackgroundQuery(projectId: string) {
+  return {
+    queryKey: projectBackgroundKey(projectId),
+    queryFn: () => api.get<ProjectBackgroundDto[]>(`/api/projects/${projectId}/background`),
+    staleTime: 15_000,
+  }
+}
+
+/** Sans projet, la clé de tous : un fil dont on ignore le projet les fait tous relire. */
+export function projectBackgroundKey(projectId?: string | null) {
+  return projectId ? ['project-background', projectId] : ['project-background']
+}
+
 export function useConversation(conversationId: string | undefined) {
   return useQuery({
     queryKey: ['conversation', conversationId],
@@ -149,6 +175,10 @@ export function useCreateConversation(projectId: string | null) {
       /** Découper en cartes (#70), et la carte d'où le découpage part. */
       purpose?: 'split' | null
       splitCardId?: string | null
+      /** Le mode d'une session d'affinage de jalon (#184) ; absent, `questions`. */
+      splitMode?: SplitMode | null
+      /** Absent : l'environnement par défaut du projet. Figé à la création. */
+      environment?: ExecutionEnvironment
       /** Envoyé avec la création : sans message, aucune conversation n'est écrite. */
       firstMessage?: {
         clientMessageId: string

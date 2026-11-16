@@ -22,6 +22,7 @@ import {
   scheduledTasks,
 } from '@solera/db'
 import { hashPassword } from '../auth/passwords.js'
+import { syncMilestoneFlag } from '../cards/tree.js'
 import { loadConfig } from '../config.js'
 import { migrationsFolder, runPendingMigrations } from '../migrations.js'
 
@@ -676,8 +677,8 @@ async function main(): Promise<void> {
     { number: 8, title: 'Switch to Vite 6', column: 'done', position: 1, description: 'Migration went through with no config change beyond the plugin bump.' },
     { number: 9, title: 'Android home-screen widget', column: 'abandoned', position: 0, description: 'Superseded by the PWA shortcut work; keeping the notes for reference.' },
     /*
-      Deux cartes-jalons. Un jalon n'est pas un type (carte #83) : c'est une carte qui a
-      des enfants, désignés par `milestoneOf` plus bas. Sans elles, la chronologie et le
+      Deux cartes-jalons : des cartes de premier niveau qui ont des enfants, désignés
+      par `milestoneOf` plus bas, et que leur drapeau « jalon » distingue (#183). Sans elles, la chronologie et le
       jalon courant de l'Aperçu n'auraient rien à montrer, et les suites qui les
       couvrent ne vérifieraient qu'un état vide.
     */
@@ -743,6 +744,8 @@ async function main(): Promise<void> {
       .update(cards)
       .set({ parentId: cardIds.get(milestone)! })
       .where(eq(cards.id, cardIds.get(number)!))
+    // Écrite à la main plutôt que par `writeCardParent` : le drapeau se pose donc ici.
+    syncMilestoneFlag(db, cardIds.get(milestone)!)
   }
   // Le backlink de la description de la carte 10, qui cite #2.
   await db.insert(cardRefs).values({ sourceId: cardIds.get(10)!, targetId: cardIds.get(2)! })
@@ -799,6 +802,7 @@ async function main(): Promise<void> {
     .update(cards)
     .set({ parentId: atlasIds.get(4)! })
     .where(eq(cards.id, atlasIds.get(1)!))
+  syncMilestoneFlag(db, atlasIds.get(4)!)
 
   // ---- Conversations ----------------------------------------------------------
 

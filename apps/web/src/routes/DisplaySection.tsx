@@ -1,14 +1,22 @@
-import { Card, SwitchRow } from '@solera/ui'
+import { PanelLeft } from 'lucide-react'
+import { Card, CardBody, CardHeader, cx, SwitchRow } from '@solera/ui'
 import { SectionHeader } from '../components/settings/SectionHeader'
 import { useTranslate, type MessageKey } from '../lib/i18n'
-import { setDisplay, useDisplaySettings, type DisplayKey } from '../lib/display-settings'
+import {
+  setDisplay,
+  setSessionLimit,
+  useDisplaySettings,
+  useSessionLimit,
+  type DisplayKey,
+} from '../lib/display-settings'
+import { SESSION_LIMITS } from '../lib/sidebar-budget'
 
 /**
  * *Affichage* : ce que la colonne de gauche montre.
  *
- * Deux listes et une règle. Les lieux d'abord — *Fils* et *Projets* ne se décrochent
- * pas, les quatre autres oui — puis les trois détails qui font la densité de la
- * colonne. La règle est écrite en tête parce qu'elle seule rend ces interrupteurs
+ * Combien de sessions chaque liste montre, puis deux listes et une règle. Les lieux —
+ * *Fils* et *Projets* ne se décrochent pas, les quatre autres oui — puis les trois
+ * détails qui font la densité de la colonne. La règle est écrite en tête parce qu'elle seule rend ces interrupteurs
  * inoffensifs : ce qu'on retire de la colonne reste joignable par la palette.
  */
 
@@ -68,6 +76,7 @@ const DETAILS: Toggle[] = [
 export function DisplaySection() {
   const t = useTranslate()
   const values = useDisplaySettings()
+  const sessionLimit = useSessionLimit()
 
   const switches = (toggles: Toggle[]) =>
     toggles.map((toggle) => (
@@ -83,6 +92,36 @@ export function DisplaySection() {
   return (
     <div className="flex flex-col gap-4">
       <SectionHeader description={t('display.rule')} />
+
+      {/* En tête : c'est le réglage qui décide de la densité de toute la colonne. Les
+          mêmes boutons que la langue et le thème d'*Apparence*, rendue juste à côté. */}
+      <Card>
+        <CardHeader
+          title={t('display.sessionLimit.title')}
+          description={t('display.sessionLimit.description')}
+          icon={<PanelLeft size={16} />}
+        />
+        <CardBody>
+          <div className="grid grid-cols-4 gap-2">
+            {SESSION_LIMITS.map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setSessionLimit(option)}
+                aria-pressed={sessionLimit === option}
+                className={cx(
+                  'flex items-center justify-center rounded-md border px-3 py-2.5 text-sm font-medium transition-colors',
+                  sessionLimit === option
+                    ? 'border-accent bg-accent-wash text-ink'
+                    : 'border-line text-ink-soft hover:border-line-strong hover:text-ink',
+                )}
+              >
+                {option === 'fit' ? t('display.sessionLimit.fit') : option}
+              </button>
+            ))}
+          </div>
+        </CardBody>
+      </Card>
 
       <section className="flex flex-col gap-2">
         <h3 className="px-1 text-sm font-medium text-ink">{t('display.places')}</h3>

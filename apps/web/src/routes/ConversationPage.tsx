@@ -8,7 +8,6 @@ import {
   GitBranch,
   SquareKanban,
   Loader,
-  PanelRight,
   Terminal,
 } from 'lucide-react'
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -23,6 +22,7 @@ import { ChatThread } from '../components/chat/ChatThread'
 import { ArrangeFreeThreadButton } from '../components/ArrangeConversation'
 import { HeaderBand } from '../components/HeaderBand'
 import { appliedPermissionLabel } from '../components/chat/agent-settings'
+import { EnvironmentPill, environmentServicesPath } from '../components/Environment'
 import { Composer } from '../components/chat/Composer'
 import { ComposerStatus } from '../components/chat/ComposerStatus'
 import { WorktreeGoneNotice } from '../components/chat/WorktreeGoneNotice'
@@ -60,7 +60,9 @@ import { useConversationConfig } from '../lib/conversation-config'
 import { CardRefContext } from '../lib/card-refs'
 import { FileLinkContext } from '../lib/file-links'
 import { useTranslate } from '../lib/i18n'
+import { DetailSurfaceContext } from '../lib/detail-surface'
 import { clearSubAgent, setPanelOpen, setPanelTab, showCheckpoint, usePanelLayout, usePanelPresence } from '../lib/panel'
+import { signalTab } from '../lib/actions-pane'
 import { useProjects } from '../lib/projects'
 import { useTrackRead } from '../lib/reads'
 import { useCurrentUser } from '../lib/session'
@@ -81,7 +83,7 @@ import {
 import { buildTurns } from '../lib/turns'
 import { useChatStream } from '../lib/use-chat-stream'
 import { useGitHead, useWorktrees } from '../lib/worktrees'
-import { ActionsLauncher } from '../components/actions/ActionsLauncher'
+import { PanelToggle, ProjectPanelToggle } from '../components/panel/PanelToggle'
 
 /** Le passage de relais, chargé à son ouverture (#128) : hors du paquet d'entrée. */
 const HandoffDialog = lazy(() =>
@@ -982,6 +984,9 @@ export function ConversationPage() {
     // fil : c'est lui, et pas le projet, qui décide de ce qu'un chemin relatif désigne
     // quand la conversation tourne dans un worktree.
     <FileLinkContext.Provider value={conversationId}>
+    {/* La conversation a son panneau : un détail s'y ouvre en pile, jamais dans un
+        tiroir à côté (TIR-8). */}
+    <DetailSurfaceContext.Provider value="panel">
     {/* Les `#12` du fil désignent les cartes du board de ce projet. */}
     <CardRefContext.Provider value={conversation.projectId}>
     {/* `overflow-clip` et non `hidden` : un conteneur `hidden` reste défilable par programme, et l éditeur qui révèle une ligne pendant que le panneau glisse hors écran le décalait, laissant le panneau coupé à gauche. */}
@@ -1085,6 +1090,14 @@ export function ConversationPage() {
             </span>
           )}
 
+          {/* Où tournent son CLI et ses terminaux, figé à la création (ADR 0001). À côté
+              du dossier : les deux disent où le travail se fait. */}
+          <EnvironmentPill
+            environment={conversation.environment}
+            to={environmentServicesPath(conversation.environment, conversation)}
+            className="hidden @min-[44rem]/thread:flex"
+          />
+
           {/*
             L'en-tête ne garde que ce qui invalide la lecture en cours : une erreur, un
             tour interrompu, une liaison coupée. Le reste vit au-dessus du composer, qui
@@ -1097,21 +1110,15 @@ export function ConversationPage() {
             labelClassName="@max-[44rem]/thread:hidden"
           />
 
-          {/* Les boutons du projet, joués dans le worktree de ce fil. Un fil libre n'a
-              pas de dossier où les lancer. */}
-          {conversation.projectId ? (
-            <ActionsLauncher projectId={conversation.projectId} conversationId={conversationId} />
-          ) : null}
           {/* Tout à droite, contre le bord : c'est le panneau qu'il ouvre, et il doit
               se trouver du côté où celui-ci apparaît. Le panneau appartient à la
               conversation, il lit le répertoire de travail de ce fil, worktree
-              compris, pas celui du projet. */}
-          <IconButton
-            label={panel.open ? t('conversation.panel.close') : t('conversation.panel.open')}
-            onClick={() => setPanelOpen(!panel.open)}
-          >
-            <PanelRight size={16} className={cx(panel.open && 'text-accent')} />
-          </IconButton>
+              compris, pas celui du projet. Son point dit ce que le ⚡ retiré disait. */}
+          {conversation.projectId ? (
+            <ProjectPanelToggle projectId={conversation.projectId} open={panel.open} />
+          ) : (
+            <PanelToggle open={panel.open} status={null} />
+          )}
         </HeaderBand>
 
         <Dialog.Root open={metaOpen} onOpenChange={setMetaOpen}>
@@ -1472,7 +1479,12 @@ export function ConversationPage() {
                 {activity ? <TurnActivity label={activity} /> : <span />}
                 <SignalRow
                   signals={signals}
-                  onSelect={() => setPanelOpen(true)}
+                  // Chaque signal ouvre l'onglet qui le tient : les sous-agents dans Agent, les
+                  // travaux de fond dans Actions, avec les processus des sessions (PACT-10).
+                  onSelect={(kind) => {
+                    setPanelTab(signalTab(kind))
+                    setPanelOpen(true)
+                  }}
                   className="justify-end"
                 />
               </div>
@@ -1552,11 +1564,13 @@ export function ConversationPage() {
             docked={panelLayout.docked}
             canDock={panelLayout.canDock}
             session={session}
+            environment={conversation.environment}
           />
         </Suspense>
       ) : null}
     </div>
     </CardRefContext.Provider>
+    </DetailSurfaceContext.Provider>
     </FileLinkContext.Provider>
   )
 }

@@ -63,6 +63,7 @@ test('sources : déclarées par un admin, sans doublon, préconfigurées par la 
   const { call } = await http(t)
   const listed = (await call('member', 'GET', '/api/skill-sources')).json() as { sources: SkillSourceDto[] }
   assert.deepEqual(listed.sources.map((source) => [source.name, source.subpath, source.builtin]), [
+    ['Tipaq/solera', 'skills', true],
     ['anthropics/skills', 'skills', true],
     ['openai/skills', 'skills/.curated', true],
   ])

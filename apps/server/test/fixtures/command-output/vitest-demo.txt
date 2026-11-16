@@ -1,0 +1,61 @@
+ RUN  v2.1.8 /home/tim/projects/solera/apps/web
+
+ ✓ src/lib/cron.test.ts (12 tests) 18ms
+ ✓ src/lib/activity-groups.test.ts (9 tests) 7ms
+ ❯ src/lib/dates.test.ts (14 tests | 2 failed) 31ms
+   × relativeDate > dit « demain » pour le lendemain 9ms
+   × relativeDate > passe à la semaine au-delà de 6 jours 4ms
+ ❯ src/lib/project-visits.test.ts (6 tests | 1 failed) 12ms
+   × rememberVisit > ne garde que les 20 derniers projets 6ms
+ ✓ src/lib/signals.test.ts (11 tests) 9ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/lib/dates.test.ts > relativeDate > dit « demain » pour le lendemain
+AssertionError: expected 'dans 1 j' to be 'demain' // Object.is equality
+
+- Expected
++ Received
+
+- demain
++ dans 1 j
+
+ ❯ src/lib/dates.test.ts:42:31
+     40|   it('dit « demain » pour le lendemain', () => {
+     41|     const tomorrow = startOfDay(Date.now()) + DAY + 9 * HOUR
+     42|     expect(relativeDate(tomorrow)).toBe('demain')
+       |                               ^
+     43|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  src/lib/dates.test.ts > relativeDate > passe à la semaine au-delà de 6 jours
+AssertionError: expected 'dans 9 j' to be 'dans 1 sem.' // Object.is equality
+
+- Expected
++ Received
+
+- dans 1 sem.
++ dans 9 j
+
+ ❯ src/lib/dates.test.ts:57:39
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  src/lib/project-visits.test.ts > rememberVisit > ne garde que les 20 derniers projets
+AssertionError: expected [ …(21) ] to have a length of 20 but got 21
+
+- Expected
++ Received
+
+- 20
++ 21
+
+ ❯ src/lib/project-visits.test.ts:28:22
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+ Test Files  2 failed | 3 passed (5)
+      Tests  3 failed | 49 passed (52)
+   Start at  16:41:07
+   Duration  1.82s (transform 412ms, setup 0ms, collect 1.21s, tests 79ms)

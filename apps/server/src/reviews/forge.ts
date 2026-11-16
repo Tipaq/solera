@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { countChecks, type RawPullRequest } from './pull-requests.js'
 
 const run = promisify(execFile)
 
@@ -17,6 +18,12 @@ export interface PullRequest {
   /** La branche visée. */
   base: string
   state: 'OPEN' | 'CLOSED' | 'MERGED'
+  isDraft: boolean
+  /** `UNKNOWN` tant que GitHub n'a pas calculé la fusion : il tranchera lui-même. */
+  mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN'
+  checks: { passed: number; pending: number; failed: string[] }
+  /** Quand la forge l'a fusionnée, `null` sinon. Absente d'une forge qui ne la dit pas. */
+  mergedAt?: number | null
 }
 
 /**
@@ -54,7 +61,7 @@ export class ForgeError extends Error {}
 export const ghForge: Forge = {
   async readPullRequest(cwd, ref, token) {
     try {
-      const { stdout } = await gh(cwd, ['pr', 'view', ref, '--json', 'number,url,headRefName,headRefOid,baseRefName,state'], token)
+      const { stdout } = await gh(cwd, ['pr', 'view', ref, '--json', 'number,url,headRefName,headRefOid,baseRefName,state,isDraft,mergeable,mergedAt,statusCheckRollup'], token)
       const value = JSON.parse(stdout) as Record<string, unknown>
       return {
         number: Number(value.number),
@@ -63,6 +70,10 @@ export const ghForge: Forge = {
         headSha: String(value.headRefOid ?? ''),
         base: String(value.baseRefName ?? ''),
         state: value.state === 'MERGED' ? 'MERGED' : value.state === 'CLOSED' ? 'CLOSED' : 'OPEN',
+        isDraft: value.isDraft === true,
+        mergeable: value.mergeable === 'MERGEABLE' ? 'MERGEABLE' : value.mergeable === 'CONFLICTING' ? 'CONFLICTING' : 'UNKNOWN',
+        checks: countChecks((value.statusCheckRollup ?? null) as RawPullRequest['statusCheckRollup']),
+        mergedAt: typeof value.mergedAt === 'string' ? Date.parse(value.mergedAt) || null : null,
       }
     } catch (err) {
       throw forgeError(err, `Solera n'a pas pu lire la PR « ${ref} »`)

@@ -23,6 +23,7 @@ import { EventLog } from '../src/events/event-log.js'
 import { HttpError } from '../src/http/errors.js'
 import type { SecretStore } from '../src/secrets/store.js'
 import { SessionManager } from '../src/sessions/session-manager.js'
+import { hostEnvironment } from '../src/environments/host.js'
 import { projectCwd, resolveConversationCwd } from '../src/workspace.js'
 import { directoryGone } from '../src/worktrees/gone.js'
 import { linkedWorktreePaths } from '../src/worktrees/linked.js'
@@ -102,6 +103,7 @@ async function harness(t: TestContext, { agent = 'claude' as ConversationRow['ag
     const internals = sessions as unknown as { runners: Map<string, unknown> }
     internals.runners.set(conversationId, {
       runner: runner as unknown as AgentRunner,
+      environment: hostEnvironment,
       lastActivity: Date.now(), status, idleTimer: null, background: 0, loops: 0, pendingRestart: null,
     })
     return runner

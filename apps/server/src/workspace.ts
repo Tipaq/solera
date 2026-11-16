@@ -5,8 +5,10 @@ import type { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { eq } from 'drizzle-orm'
 import { conversations, projects, worktrees, type ConversationRow, type Db } from '@solera/db'
-import { MAX_UPLOAD_BYTES, type TreeEntryDto } from '@solera/protocol'
-import { HttpError, notFound } from './http/errors.js'
+import { MAX_UPLOAD_BYTES, type SchedulePlace, type TreeEntryDto } from '@solera/protocol'
+import type { Config } from './config.js'
+import { HttpError, badRequest, notFound } from './http/errors.js'
+import { vaultRoot } from './settings/app-settings.js'
 import { directoryGone, markWorktreeGone, workingDirectoryMissing } from './worktrees/gone.js'
 
 /**
@@ -79,6 +81,33 @@ export function projectWorkspace(db: Db, projectId: string, userId: string): str
 }
 
 /**
+ * Dossier d'un worktree dont ce compte voit le projet : la portée « worktree » du
+ * panneau (S5, carte #169), pour un arbre qui n'a pas de session par laquelle l'ouvrir.
+ *
+ * Un arbre d'un projet invisible est introuvable, comme le projet. Un arbre retiré, ou
+ * dont le dossier est parti par git, est refusé comme le cwd d'un fil (voir
+ * `resolveConversationCwd`), et marqué au passage.
+ */
+export function worktreeWorkspace(db: Db, worktreeId: string, userId: string): string {
+  const row = db
+    .select({ worktree: worktrees, ownerId: projects.ownerId, visibility: projects.visibility })
+    .from(worktrees)
+    .innerJoin(projects, eq(projects.id, worktrees.projectId))
+    .where(eq(worktrees.id, worktreeId))
+    .get()
+  if (!row || (row.ownerId !== userId && row.visibility !== 'shared')) {
+    throw notFound('worktree_not_found', 'Worktree not found.')
+  }
+  const { worktree } = row
+  if (worktree.removedAt) throw workingDirectoryMissing(worktree.path)
+  if (directoryGone(worktree.path)) {
+    markWorktreeGone(db, worktree.id)
+    throw workingDirectoryMissing(worktree.path)
+  }
+  return worktree.path
+}
+
+/**
  * Dossier visé par le brouillon d'une conversation : le worktree s'il en désigne un,
  * le workspace du projet sinon.
  *
@@ -139,18 +168,35 @@ export function resolveConversationCwd(db: Db, conversation: ConversationRow): s
 }
 
 /**
+ * Le dossier d'un lieu hors projet : le vault du Savoir, ou le dossier de données de
+ * l'instance. Le vault se relit à chaque appel : il se règle dans l'interface.
+ */
+export function placeDirectory(db: Db, config: Pick<Config, 'paths' | 'vault'>, place: SchedulePlace): string {
+  if (place === 'instance') return config.paths.data
+  const root = vaultRoot(db, config)
+  if (root === null) throw badRequest('vault_unconfigured', 'No vault folder is configured.')
+  return root
+}
+
+/**
  * Le dossier où le CLI d'une conversation tourne réellement.
  *
  * Distinct de `resolveConversationCwd` : un fil libre n'a pas de répertoire de travail
  * au sens du produit — l'interface ne lui montre ni fichiers, ni git, ni terminaux —
  * mais un process se lance toujours quelque part. On lui donne un dossier vide à lui,
  * sous `<data>/threads/<id>`, plutôt que le home, qui offrirait la machine entière à
- * lire à un agent dont l'interface annonce qu'il n'a pas de dossier.
+ * lire à un agent dont l'interface annonce qu'il n'a pas de dossier. Sauf le fil d'une
+ * tâche Savoir ou Instance, qui tourne dans le lieu de sa tâche (`place`).
  */
-export function agentCwd(db: Db, threadsRoot: string, conversation: ConversationRow): string {
+export function agentCwd(db: Db, config: Pick<Config, 'paths' | 'vault'>, conversation: ConversationRow): string {
   const cwd = resolveConversationCwd(db, conversation)
   if (cwd !== null) return cwd
-  const thread = resolve(threadsRoot, conversation.id)
+  if (conversation.place) {
+    const place = placeDirectory(db, config, conversation.place)
+    if (directoryGone(place)) throw workingDirectoryMissing(place)
+    return place
+  }
+  const thread = resolve(config.paths.threads, conversation.id)
   mkdirSync(thread, { recursive: true })
   return thread
 }

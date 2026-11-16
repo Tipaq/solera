@@ -1,12 +1,14 @@
 import { Suspense, lazy, useEffect, useState, type ReactNode } from 'react'
-import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
 import { AppearanceSync } from './lib/appearance-sync'
 import { visibleSections } from './components/settings/sections'
 import { LEGACY_SETTINGS_SECTIONS, openSettings, useSettingsDialog } from './lib/settings-dialog'
 import { useInstance } from './lib/instance'
 import { useCurrentUser } from './lib/session'
+import { movedView } from './lib/place'
 import { useProjects } from './lib/projects'
+import { legacyTravailQuery } from './lib/travail-model'
 import { useUserSettings } from './lib/user-settings'
 import { ConversationPage } from './routes/ConversationPage'
 import { DraftConversationPage } from './routes/DraftConversationPage'
@@ -15,7 +17,7 @@ import { LoginPage } from './routes/LoginPage'
 import { PortfolioLayout } from './routes/PortfolioLayout'
 import { ProjectLayout } from './routes/ProjectLayout'
 import { ProjectOverviewPage } from './routes/ProjectOverviewPage'
-import { ProjectsPage } from './routes/ProjectsPage'
+import { PortfolioOverviewPage } from './routes/PortfolioOverviewPage'
 
 /**
  * L'éditeur de skill, chargé à part.
@@ -58,24 +60,19 @@ const OnboardingPage = lazy(() =>
 )
 
 /**
- * L'onglet Activité d'un projet, chargé à part : le paquet principal frôle la limite de
+ * L'onglet Travail d'un projet, chargé à part : le paquet principal frôle la limite de
  * précache, et cette vue n'est pas celle d'arrivée.
  */
-const ProjectActivityPage = lazy(() =>
-  import('./routes/ProjectActivityPage').then((m) => ({ default: m.ProjectActivityPage })),
-)
-
-/** L'Activité du portefeuille (#117), chargée à part pour la même raison. */
-const PortfolioActivityPage = lazy(() =>
-  import('./routes/PortfolioActivityPage').then((m) => ({ default: m.PortfolioActivityPage })),
+const ProjectTravailPage = lazy(() =>
+  import('./routes/ProjectTravailPage').then((m) => ({ default: m.ProjectTravailPage })),
 )
 
 /**
- * La vue d'un jalon lancé (#116), chargée à part : on n'y vient que par le bandeau de
- * l'Activité ou la frise des Jalons.
+ * La page d'un jalon (#194), chargée à part : on y vient de l'onglet Jalons, du bandeau
+ * de l'Activité ou d'une fiche de carte.
  */
-const ProjectMilestonePage = lazy(() =>
-  import('./routes/ProjectMilestonePage').then((m) => ({ default: m.ProjectMilestonePage })),
+const MilestonePage = lazy(() =>
+  import('./routes/milestones/MilestonePage').then((m) => ({ default: m.MilestonePage })),
 )
 
 /**
@@ -92,26 +89,27 @@ const ProjectMilestonePage = lazy(() =>
  * d'arrivée : l'accueil, le portefeuille, la vue d'ensemble d'un projet, la conversation.
  */
 const NewProjectPage = lazy(() => import('./routes/NewProjectPage').then((m) => ({ default: m.NewProjectPage })))
-const PortfolioBoardPage = lazy(() =>
-  import('./routes/PortfolioBoardPage').then((m) => ({ default: m.PortfolioBoardPage })),
+const PortfolioTableauPage = lazy(() =>
+  import('./routes/PortfolioTableauPage').then((m) => ({ default: m.PortfolioTableauPage })),
 )
-const PortfolioTimelinePage = lazy(() =>
-  import('./routes/PortfolioTimelinePage').then((m) => ({ default: m.PortfolioTimelinePage })),
+const PortfolioMilestonesPage = lazy(() =>
+  import('./routes/PortfolioMilestonesPage').then((m) => ({ default: m.PortfolioMilestonesPage })),
 )
-const PortfolioJournalPage = lazy(() =>
-  import('./routes/PortfolioJournalPage').then((m) => ({ default: m.PortfolioJournalPage })),
+const PortfolioActionsPage = lazy(() =>
+  import('./routes/PortfolioActionsPage').then((m) => ({ default: m.PortfolioActionsPage })),
+)
+const PortfolioTravailPage = lazy(() =>
+  import('./routes/PortfolioTravailPage').then((m) => ({ default: m.PortfolioTravailPage })),
 )
 const SchedulesPage = lazy(() => import('./routes/SchedulesPage').then((m) => ({ default: m.SchedulesPage })))
+const SessionsPage = lazy(() => import('./routes/SessionsPage').then((m) => ({ default: m.SessionsPage })))
 const ServicesPage = lazy(() => import('./routes/ServicesPage').then((m) => ({ default: m.ServicesPage })))
 const BoardPage = lazy(() => import('./routes/BoardPage').then((m) => ({ default: m.BoardPage })))
-const SchedulePage = lazy(() => import('./routes/SchedulePage').then((m) => ({ default: m.SchedulePage })))
-const ProjectTimelinePage = lazy(() =>
-  import('./routes/ProjectTimelinePage').then((m) => ({ default: m.ProjectTimelinePage })),
+const ProjectActionsPage = lazy(() => import('./routes/ProjectActionsPage').then((m) => ({ default: m.ProjectActionsPage })))
+const MilestonesPage = lazy(() =>
+  import('./routes/milestones/MilestonesPage').then((m) => ({ default: m.MilestonesPage })),
 )
-const ProjectJournalPage = lazy(() =>
-  import('./routes/ProjectJournalPage').then((m) => ({ default: m.ProjectJournalPage })),
-)
-const ProjectPage = lazy(() => import('./routes/ProjectPage').then((m) => ({ default: m.ProjectPage })))
+const ProjectSettingsPage = lazy(() => import('./routes/ProjectSettingsPage').then((m) => ({ default: m.ProjectSettingsPage })))
 
 /** Une vue chargée à part, sans voile d'attente : elle arrive quand son code est là. */
 function Deferred({ children }: { children: ReactNode }) {
@@ -173,6 +171,24 @@ function LegacySettingsRoute() {
   // « projets » n'a jamais été une section : c'était déjà une redirection vers le
   // formulaire de création, et il reste le bon endroit où arriver.
   return <Navigate to={section === 'projets' ? '/projects/new' : '/'} replace />
+}
+
+/** Une ancienne vue d'un projet, redirigée vers celle qui l'a absorbée sans perdre sa requête. */
+function MovedView({ to, force }: { to: string; force?: Record<string, string> }) {
+  const { projectId } = useParams()
+  const { search } = useLocation()
+  return <Navigate to={movedView(`/p/${projectId}/${to}`, search, force)} replace />
+}
+
+/**
+ * Une ancienne adresse de l'Activité ou du Journal, menée à la vue de Travail qui l'a
+ * absorbée : `?groupe=worktree` vers « Par arbre », le Journal vers « Par moment ».
+ */
+function LegacyTravailRedirect({ from }: { from: 'activity' | 'journal' }) {
+  const { projectId } = useParams()
+  const { search } = useLocation()
+  const query = legacyTravailQuery(from, search)
+  return <Navigate to={`/p/${projectId}/travail${query ? `?${query}` : ''}`} replace />
 }
 
 export function App() {
@@ -245,15 +261,20 @@ export function App() {
               portefeuille, et il doit s'ouvrir plein écran. */}
           <Route path="/projects/new" element={<Deferred><NewProjectPage /></Deferred>} />
           <Route path="/projects" element={<PortfolioLayout />}>
-            <Route index element={<ProjectsPage />} />
-            <Route path="board" element={<Deferred><PortfolioBoardPage /></Deferred>} />
-            <Route path="activity" element={<Suspense fallback={null}><PortfolioActivityPage /></Suspense>} />
-            {/* Travail s'est fondu dans l'Activité (#117) : l'ancienne adresse y mène. */}
-            <Route path="work" element={<Navigate to="/projects/activity" replace />} />
-            <Route path="timeline" element={<Deferred><PortfolioTimelinePage /></Deferred>} />
-            <Route path="journal" element={<Deferred><PortfolioJournalPage /></Deferred>} />
+            <Route index element={<PortfolioOverviewPage />} />
+            <Route path="board" element={<Deferred><PortfolioTableauPage /></Deferred>} />
+            <Route path="timeline" element={<Deferred><PortfolioMilestonesPage /></Deferred>} />
+            <Route path="travail" element={<Deferred><PortfolioTravailPage /></Deferred>} />
+            <Route path="actions" element={<Deferred><PortfolioActionsPage /></Deferred>} />
+            {/* Les anciennes vues mènent à Travail, qui les a reprises : l'Activité et le
+                Travail d'avant #117 à sa vue retenue, le Journal à Par moment. */}
+            {['activity', 'work'].map((path) => (
+              <Route key={path} path={path} element={<Navigate to="/projects/travail" replace />} />
+            ))}
+            <Route path="journal" element={<Navigate to="/projects/travail?vue=moment" replace />} />
           </Route>
           <Route path="/schedules" element={<Deferred><SchedulesPage /></Deferred>} />
+          <Route path="/sessions" element={<Deferred><SessionsPage /></Deferred>} />
           {/* Avant la note : « parcourir » ne doit pas être pris pour un chemin de note.
               Pas de voile d'attente : la page arrive quand son code est là, plutôt que
               de faire clignoter un écran vide entre deux notes. */}
@@ -262,19 +283,23 @@ export function App() {
           <Route path="/vault" element={<Suspense fallback={null}><VaultPage /></Suspense>} />
           <Route path="/services" element={<Deferred><ServicesPage /></Deferred>} />
           {/* Les vues d'un projet partagent une coque : la bande, qui ne dépend pas de
-              la vue, et la rangée d'onglets qui les porte. Les réglages restent dehors —
-              ils ne sont pas une vue mais une destination du `⋯` — et les conversations
-              aussi, leur bande nommant la session plutôt que le projet. */}
+              la vue, et la rangée d'onglets qui les porte, réglages compris. Les
+              conversations restent dehors, leur bande nommant la session plutôt que le
+              projet. */}
           <Route path="/p/:projectId" element={<ProjectLayout />}>
             <Route index element={<ProjectOverviewPage />} />
-            <Route path="activity" element={<Suspense fallback={null}><ProjectActivityPage /></Suspense>} />
+            <Route path="travail" element={<Suspense fallback={null}><ProjectTravailPage /></Suspense>} />
             <Route path="board" element={<Deferred><BoardPage /></Deferred>} />
-            <Route path="schedules" element={<Deferred><SchedulePage /></Deferred>} />
-            <Route path="timeline" element={<Deferred><ProjectTimelinePage /></Deferred>} />
-            <Route path="timeline/:number" element={<Suspense fallback={null}><ProjectMilestonePage /></Suspense>} />
-            <Route path="journal" element={<Deferred><ProjectJournalPage /></Deferred>} />
+            <Route path="actions" element={<Deferred><ProjectActionsPage /></Deferred>} />
+            <Route path="timeline" element={<Deferred><MilestonesPage /></Deferred>} />
+            <Route path="timeline/:number" element={<Suspense fallback={null}><MilestonePage /></Suspense>} />
+            <Route path="settings" element={<Deferred><ProjectSettingsPage /></Deferred>} />
+            {/* Les anciennes adresses : elles ont circulé, elles mènent à la vue qui les a
+                absorbées, requête comprise. */}
+            <Route path="activity" element={<LegacyTravailRedirect from="activity" />} />
+            <Route path="journal" element={<LegacyTravailRedirect from="journal" />} />
+            <Route path="schedules" element={<MovedView to="actions" />} />
           </Route>
-          <Route path="/p/:projectId/settings" element={<Deferred><ProjectPage /></Deferred>} />
           {/* Avant l'identifiant : « new » ne doit pas être pris pour une conversation. */}
           <Route path="/p/:projectId/c/new" element={<DraftConversationPage />} />
           <Route path="/p/:projectId/c/:conversationId" element={<ConversationPage />} />

@@ -6,11 +6,13 @@ import { agentConfigSchema, type CodexMode } from './agent-config.js'
 import type { CardLinkDto } from './cards.js'
 import type { TaskPendingDto } from './v1.js'
 import { elicitationActionSchema, elicitationContentSchema } from './elicitation.js'
-import { agentKindSchema, type AgentKind } from './events.js'
+import { agentKindSchema, type AgentKind, type BackgroundTask } from './events.js'
 import { mcpServerNameSchema, mcpTransportSchema, type McpServer } from './mcp.js'
 import { projectInstructionsModeSchema, type InstructionsMode } from './instructions.js'
 import { configLayerPatchSchema, type ConfigLayer, type ConfigOverrides } from './config-layers.js'
 import { MAX_SKILLS_PER_MESSAGE } from './skills.js'
+import { confinedServicesSchema, executionEnvironmentSchema, type ExecutionEnvironment } from './environments.js'
+import { splitModeSchema } from './refinement.js'
 
 export const conversationStatusSchema = z.enum([
   'idle',
@@ -141,6 +143,9 @@ export function slugifyProjectName(name: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
+/** Le cap d'un projet tient en une phrase. */
+export const PROJECT_CAP_MAX = 280
+
 export const updateProjectBodySchema = z
   .object({
     name: z.string().min(1).max(120),
@@ -161,12 +166,27 @@ export const updateProjectBodySchema = z
     /**
      * Un changement du niveau du projet, champ par champ (#120) : ce que l'écran des
      * réglages du projet envoie. `defaultConfig` reste lu pour les clients d'avant.
+     * Une liste quand le brouillon des réglages en porte plusieurs, une par portée au
+     * plus (le commun, puis chaque CLI) : ils s'appliquent dans l'ordre.
      */
-    configLayer: configLayerPatchSchema,
+    configLayer: z.union([configLayerPatchSchema, z.array(configLayerPatchSchema).max(5)]),
     /** Chemin absolu d'un dossier qui porte un `.storybook/` ; `null` délie le DS. */
     designSystemPath: z.string().min(1).nullable(),
     archived: z.boolean(),
     turnCheckpoints: z.boolean(),
+    /** L'environnement des sessions qu'on y ouvrira ; celles qui existent gardent le leur. */
+    environment: executionEnvironmentSchema,
+    /** Les services docker-compose des sessions confinées : partagés ou copiés (#145). */
+    confinedServices: confinedServicesSchema,
+    /** Les sessions autonomes confinées quand leur lancement ne dit rien (#146). */
+    autonomousConfined: z.boolean(),
+    /** Le cap, en une phrase ; vide ou `null` le retire. */
+    cap: z
+      .string()
+      .trim()
+      .max(PROJECT_CAP_MAX)
+      .nullable()
+      .transform((cap) => cap || null),
   })
   .partial()
 
@@ -236,6 +256,8 @@ export interface ProjectDto {
   instructionsMode: InstructionsMode | null
   /** Le design system lié, null s'il n'y en a pas. */
   designSystemPath: string | null
+  /** Où va le projet, en une phrase ; null tant que personne n'en a écrit. */
+  cap: string | null
   /** Points de reprise git par tour (voir `checkpoints.ts` côté serveur). */
   turnCheckpoints: boolean
   /** Shells vivants dans le projet, pour signaler qu'un terminal y tourne encore. */
@@ -322,7 +344,17 @@ export const createConversationBodySchema = z.object({
    */
   purpose: z.literal('split').nullable().default(null),
   splitCardId: z.string().uuid().nullable().default(null),
+  /**
+   * Le mode d'une session d'affinage (#184). Absent d'un découpage : `questions`. Refusé
+   * hors découpage.
+   */
+  splitMode: splitModeSchema.nullable().default(null),
   title: z.string().min(1).max(200).optional(),
+  /**
+   * L'environnement d'exécution de la session, figé à sa création. Absent : celui du
+   * projet par défaut.
+   */
+  environment: executionEnvironmentSchema.optional(),
   /**
    * Premier message, envoyé dans la foulée de la création.
    *
@@ -347,6 +379,8 @@ export const createFreeConversationBodySchema = createConversationBodySchema.omi
   cardId: true,
   purpose: true,
   splitCardId: true,
+  splitMode: true,
+  environment: true,
 })
 
 /** Ordre manuel des conversations d'un projet, du haut vers le bas. */
@@ -538,6 +572,9 @@ export interface ConversationMetrics {
   model: string | null
 }
 
+/** Le jalon d'une conversation, de quoi rendre l'étiquette « Jalon #N » et son lien. */
+export type MilestoneLinkDto = Pick<CardLinkDto, 'id' | 'number' | 'title'>
+
 export interface ConversationDto {
   id: string
   /** Null pour un fil libre : une conversation n'appartient à un projet que si on l'y a rangée. */
@@ -557,11 +594,19 @@ export interface ConversationDto {
    * corrige, et le fil doit en montrer la version courante.
    */
   card: CardLinkDto | null
+  /**
+   * Le jalon de la conversation : la parente de sa carte, null sans carte ou sans
+   * parente (#163). Résolu à la lecture comme la carte, pour que « Ce qui t'attend »
+   * étiquette une demande sans charger les cartes de tous les projets.
+   */
+  milestone: MilestoneLinkDto | null
   userId: string
   title: string
   /** Vrai si l'utilisateur a renommé : le CLI ne proposera plus de titre. */
   titleSetByUser: boolean
   agent: AgentKind
+  /** Où tournent son CLI et ses terminaux, figé à la création (ADR 0001). */
+  environment: ExecutionEnvironment
   /** Conversation d'origine si celle-ci est une branche. Null sinon. */
   forkedFromId: string | null
   /** Conversation que celle-ci continue dans un autre CLI. Null sinon. */
@@ -614,6 +659,32 @@ export interface ConversationDto {
  */
 export interface ConversationPromptDto extends TaskPendingDto {
   conversationId: string
+}
+
+/**
+ * Un travail de fond d'une session, vu depuis la liste d'un projet (#206) : ce que le
+ * flux des statuts ne donne que par son nombre, avec ce que le journal en sait de plus.
+ */
+export interface ProjectBackgroundTaskDto extends BackgroundTask {
+  /** Son départ : `task.started`, sinon la première liste de niveau qui l'a annoncé. */
+  startedAt: number
+  /** L'appel d'outil qui l'a lancé ; nul pour un travail que le harnais lance de lui-même. */
+  toolCallId: string | null
+  /** La commande exacte d'un `Bash` lancé en fond ; nulle pour un workflow ou un sous-agent. */
+  command: string | null
+  /**
+   * L'entrée de `GET /api/services` qui le porte : même session, même commande. Celle-là
+   * ne se montre pas une seconde fois à côté du travail.
+   */
+  serviceId: string | null
+}
+
+/** Une session du projet qui a laissé tourner quelque chose (`GET /api/projects/:id/background`). */
+export interface ProjectBackgroundDto {
+  conversationId: string
+  title: string
+  agent: AgentKind
+  tasks: ProjectBackgroundTaskDto[]
 }
 
 export interface JournalPageDto {
@@ -684,7 +755,21 @@ export type WorktreeState = 'missing' | 'unreadable' | 'dirty' | 'unmerged' | 'e
 /** Comment une conversation tient à un arbre : son cwd, ou des fichiers qu'elle y a écrits. */
 export type WorktreeLink = 'worktree' | 'edited'
 
-export interface WorktreeStatusDto {
+/**
+ * D'où vient la carte d'un arbre ou d'une branche, de la plus sûre à la moins sûre : la
+ * session la plus récente de l'arbre qui traite une carte, la carte pour laquelle l'arbre
+ * a été créé, le numéro du nom de la branche (`feat/153-titre` → #153), déduit et
+ * marqué comme tel.
+ */
+export type TreeCardSource = 'session' | 'created' | 'name'
+
+/** La carte d'un arbre ou d'une branche, et sa provenance ; toutes deux nulles sans carte. */
+export interface TreeCardFields {
+  card: { id: string; number: number } | null
+  cardSource: TreeCardSource | null
+}
+
+export interface WorktreeStatusDto extends TreeCardFields {
   /** Null pour un arbre que git connaît mais que Solera n'a pas créé. */
   id: string | null
   /** Branche, ou nom de l'entrée en base quand la branche est perdue. */
@@ -717,6 +802,13 @@ export interface WorktreeStatusDto {
   lastCommitAt: number | null
   lastEditAt: number | null
   conversations: { id: string; link: WorktreeLink }[]
+  /**
+   * L'espace qu'occupe l'arbre sur le disque, en octets. Null tant qu'il n'est pas
+   * mesuré, pour un arbre introuvable, et hors des routes de la liste : la mesure se
+   * fait en fond, et la liste ne l'attend jamais. Les fichiers liés en dur (le store de
+   * pnpm) comptent en entier : nettoyer l'arbre peut libérer moins.
+   */
+  sizeBytes: number | null
 }
 
 export interface WorktreeStatusListDto {
@@ -727,10 +819,53 @@ export interface WorktreeStatusListDto {
   fresh: boolean
   worktrees: WorktreeStatusDto[]
   /**
-   * Les branches locales qu'aucun arbre n'a extraites, la base exceptée. `merged` se
-   * juge comme l'état d'un arbre : sur le contenu, ou sur une PR fusionnée.
+   * Les branches qu'aucun arbre n'a extraites, la base exceptée : les locales, puis
+   * celles d'`origin` sans locale. `merged` se juge comme l'état d'un arbre : sur le
+   * contenu, ou sur une PR fusionnée.
    */
-  branches: { name: string; merged: boolean }[]
+  branches: LooseBranchDto[]
+  /**
+   * Vrai tant que la date, l'avance et les commits des branches se lisent : la liste
+   * part sans eux, et la lecture suivante les aura.
+   */
+  branchesPending: boolean
+  /** L'espace qu'occupe le dossier du projet, `.git` compris ; null comme `sizeBytes`. */
+  rootSizeBytes: number | null
+  /**
+   * Vrai tant qu'une taille de la liste attend sa première mesure : l'interface repasse
+   * pour la lire. Indépendant de `fresh`, qu'une taille complétée ne périme pas.
+   */
+  sizesPending: boolean
+}
+
+/** Un commit propre à une branche, que la base n'a pas. */
+export interface BranchCommitDto {
+  hash: string
+  shortHash: string
+  subject: string
+  /** Date du commit, en millisecondes. */
+  ts: number
+}
+
+/** Une branche qu'aucun arbre n'a extraite. */
+export interface LooseBranchDto extends TreeCardFields {
+  /** Nom court, sans `origin/` pour une distante. */
+  name: string
+  merged: boolean
+  /** N'existe que sur `origin`, sans branche locale du même nom. */
+  remoteOnly: boolean
+  /** Le commit de tête. */
+  head: string
+  /**
+   * Le sujet du commit de tête, sa date, l'avance et le retard sur la base : null tant
+   * que `branchesPending`, ou quand git n'a pas su les lire.
+   */
+  subject: string | null
+  lastCommitAt: number | null
+  ahead: number | null
+  behind: number | null
+  /** Ses trois derniers commits que la base n'a pas, le plus récent d'abord. */
+  recentCommits: BranchCommitDto[]
 }
 
 /**
@@ -786,6 +921,34 @@ export interface WorktreeCleanupResultDto {
   branchDeleted: boolean
   archived: number
   stopped: number
+}
+
+/**
+ * Supprimer en lot des branches fusionnées (S8). Le serveur rejuge chacune : rien ne
+ * part sur la seule foi de ce que l'interface a affiché.
+ */
+export const branchCleanupBodySchema = z.object({
+  names: z.array(z.string().trim().min(1).max(200)).min(1).max(100),
+})
+
+/**
+ * Pourquoi une branche est restée : la base, une branche sortie dans un arbre, du
+ * travail que la base n'a pas, une branche locale introuvable, ou git qui a refusé.
+ */
+export type BranchCleanupRefusal = 'base' | 'checked_out' | 'not_merged' | 'not_found' | 'failed'
+
+export interface BranchCleanupResultDto {
+  deleted: string[]
+  /** Dans l'ordre de la demande. `message` : ce que git a dit, pour `failed` seulement. */
+  refused: { name: string; reason: BranchCleanupRefusal; message?: string }[]
+}
+
+/** La PR que Solera vient de fusionner (S7). */
+export interface PullRequestMergeResultDto {
+  number: number
+  url: string
+  branch: string
+  base: string
 }
 
 export interface DiffFileDto {
@@ -1045,7 +1208,7 @@ export interface PushPayload {
    * la langue de l'appareil : le serveur ne connaît pas celle de l'interface. `title`
    * reste le repli, pour une sorte que le service worker en cache ne connaît pas encore.
    */
-  kind?: 'permission' | 'question' | 'elicitation' | 'plan' | 'turnCompleted' | 'decision' | 'test'
+  kind?: 'permission' | 'question' | 'elicitation' | 'plan' | 'turnCompleted' | 'decision' | 'scheduleFailed' | 'test'
   /**
    * Le nombre de décisions en attente, pour la pastille de l'icône de l'application
    * installée : le service worker la pose à la réception, application fermée comprise.

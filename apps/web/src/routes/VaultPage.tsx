@@ -6,7 +6,7 @@ import { HeaderBand } from '../components/HeaderBand'
 import { NoteEditor, type NoteTarget } from '../components/vault/NoteEditor'
 import { VaultPanel } from '../components/vault/VaultPanel'
 import { ApiRequestError } from '../lib/api'
-import { useTranslate } from '../lib/i18n'
+import { useTranslate, pluralOf } from '../lib/i18n'
 import { setPanelOpen, usePanelLayout, usePanelPresence } from '../lib/panel'
 import { openSettings } from '../lib/settings-dialog'
 import { useCanOpenSection } from '../components/settings/sections'
@@ -194,7 +194,7 @@ export function VaultPage() {
               className="shrink-0"
             >
               <Badge icon={<Link2 size={11} />}>
-                {t(facts.incoming.length === 1 ? 'vault.page.incoming.one' : 'vault.page.incoming.other', {
+                {t(`vault.page.incoming.${pluralOf(facts.incoming.length)}`, {
                   count: String(facts.incoming.length),
                 })}
               </Badge>

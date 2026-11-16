@@ -34,11 +34,10 @@ export interface PlaceSpec {
    * règle la zone basse, les deux ensemble. C'est la correction du quinzième tour — un
    * clic qui ne changeait qu'un coin de l'écran se lisait mal.
    *
-   * `null` pour *Fils*, le seul lieu sans page : la palette couvre déjà la recherche
-   * dans l'historique, et `/` renvoie sur le dernier contexte — cliquer *Fils* en
-   * lisant une note aurait donc fermé la note.
+   * *Fils* a la sienne depuis `/sessions` : toutes les sessions, là où la colonne
+   * s'arrête à ce qui tient.
    */
-  page: string | null
+  page: string
   /** Le compteur, ou `null` quand le lieu n'a qu'un point de nouveauté. */
   count: number | null
   /** Du nouveau dans ce lieu, quand il ne se compte pas. */
@@ -103,7 +102,7 @@ export function SidebarPlaces({ places, current, onNavigate }: {
                     // Le lieu se déduit de l'adresse ouverte ; ce clic est l'exception
                     // qu'on s'accorde, et elle ne survit pas à la navigation suivante.
                     setSidebarPlace(place.id)
-                    if (place.page) navigate(place.page)
+                    navigate(place.page)
                     onNavigate()
                   }}
                   /*
@@ -162,17 +161,12 @@ export function SidebarPlaces({ places, current, onNavigate }: {
                   des lieux sans raccourci. Il ne coûte pourtant pas un pixel de zone
                   cliquable — le `::after` du bouton passe dessous.
                 */}
-                <span aria-hidden className={cx(
-                  'shrink-0 text-meta tabular-nums text-ink-faint',
-                  place.page && 'group-hover/place:hidden',
-                )}>
+                <span aria-hidden className="shrink-0 text-meta tabular-nums text-ink-faint group-hover/place:hidden">
                   {place.count !== null
                     ? place.count
                     : place.dot ? <StateDot state="unread" labelled={false} /> : null}
                 </span>
-                {place.page ? (
-                  <ArrowUpRight size={14} className="hidden shrink-0 text-ink-faint group-hover/place:block" />
-                ) : null}
+                <ArrowUpRight size={14} className="hidden shrink-0 text-ink-faint group-hover/place:block" />
               </div>
             </li>
           )

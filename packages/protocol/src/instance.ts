@@ -43,6 +43,11 @@ export interface InstanceInfo {
   profile: InstanceProfile
   capabilities: InstanceCapabilities
   /**
+   * Fuseau IANA du serveur (`Europe/Paris`) : celui où un motif cron est lu. L'aperçu
+   * d'une planification calcule et affiche dans ce fuseau, pas dans celui du navigateur.
+   */
+  timeZone: string
+  /**
    * Vrai tant que la base n'a aucun compte : l'interface ouvre alors la visite sur la
    * création du premier compte au lieu de la page de connexion. Toujours faux en bureau,
    * où le lanceur crée le compte lui-même.

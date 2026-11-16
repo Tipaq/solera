@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `confined_services` text DEFAULT 'shared' NOT NULL;

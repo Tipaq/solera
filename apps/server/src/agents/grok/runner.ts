@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { pathToFileURL } from 'node:url'
 import type {
   ContentBlock as AcpContentBlock,
   NewSessionResponse,
@@ -30,7 +29,7 @@ import { CLIENT_INFO } from '../codex/client-info.js'
 import { PendingInteractions } from '../interactions.js'
 import { failedStatuses } from '../mcp-registry.js'
 import { describeOutgoingMessage } from '../outgoing.js'
-import { toWorkspacePath } from '../paths.js'
+import { fileUrlInside, toWorkspacePath } from '../paths.js'
 import { agentProcessEnv } from '../process-env.js'
 import { journalDeath } from '../session-close.js'
 import { ToolDurations } from '../tool-durations.js'
@@ -252,7 +251,8 @@ export class GrokRunner implements AgentRunner {
   }
 
   private launchFor(config: GrokConfig): GrokLaunch {
-    return grokLaunch(config, this.ctx.skillRoots(config))
+    // Les plugins sont lus par le CLI, là où il tourne (#152).
+    return grokLaunch(config, this.ctx.skillRoots(config).map((root) => this.ctx.environment.pathInside(root)))
   }
 
   async start(): Promise<void> {
@@ -266,6 +266,7 @@ export class GrokRunner implements AgentRunner {
     this.client = new AcpClient({
       label: 'grok',
       binary: this.ctx.binary,
+      environment: this.ctx.environment,
       args: launch.args,
       cwd: this.ctx.cwd,
       env: agentProcessEnv({ ...this.ctx.processEnv, ...launch.env }),
@@ -302,7 +303,7 @@ export class GrokRunner implements AgentRunner {
       // `session/update`, que le journal a déjà. Elle refuse `additionalDirectories`.
       session = await this.client.request<ResumeSessionResponse>('session/resume', {
         sessionId: this.ctx.resumeSessionId,
-        cwd: this.ctx.cwd,
+        cwd: this.ctx.environment.pathInside(this.ctx.cwd),
         mcpServers,
         _meta: meta,
       }, SESSION_OPEN_TIMEOUT_MS)
@@ -314,7 +315,9 @@ export class GrokRunner implements AgentRunner {
       // Le champ `systemPrompt` de l'ACP, lui, est ignoré (sondé).
       const rules = this.ctx.projectOverview(this.config)
       const created = await this.client.request<NewSessionResponse>('session/new', {
-        cwd: this.ctx.cwd,
+        // Le dossier tel que le CLI le voit : `/mnt/c/…` dans un dev container sous
+        // Windows natif (#152). Le process, lui, est lancé par l'environnement, qui traduit.
+        cwd: this.ctx.environment.pathInside(this.ctx.cwd),
         mcpServers,
         _meta: {
           ...meta,
@@ -712,7 +715,7 @@ export class GrokRunner implements AgentRunner {
     return track.diffs.map((diff) => ({
       type: 'file.edited' as const,
       toolCallId: id,
-      path: toWorkspacePath(this.ctx.cwd, diff.path),
+      path: toWorkspacePath(this.ctx.cwd, this.ctx.environment.pathOutside(diff.path)),
       action: diff.oldText === null || diff.oldText === '' ? ('created' as const) : ('modified' as const),
     }))
   }
@@ -891,7 +894,7 @@ export class GrokRunner implements AgentRunner {
     const blocks: AcpContentBlock[] = []
     if (promptText) blocks.push({ type: 'text', text: promptText })
     for (const mention of mentions) {
-      blocks.push({ type: 'resource_link', name: mention.relativePath, uri: pathToFileURL(mention.path).href })
+      blocks.push({ type: 'resource_link', name: mention.relativePath, uri: fileUrlInside(this.ctx.environment, mention.path) })
     }
     for (const attachment of attachments) {
       if (!attachment.inlineImage) continue

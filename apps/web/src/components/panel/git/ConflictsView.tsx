@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { AlertTriangle, Bot, Check, Loader } from 'lucide-react'
 import type { ConflictFileDto } from '@solera/protocol'
 import { api } from '../../../lib/api'
-import { useTranslate } from '../../../lib/i18n'
+import { useTranslate, pluralOf } from '../../../lib/i18n'
 import type { WorkspaceScope } from '../../../lib/workspace-scope'
 import { Banner, cx } from '@solera/ui'
 import { useGitActions } from './actions'
@@ -70,7 +70,7 @@ export function ConflictsView({
       <div className="flex shrink-0 items-center gap-2 border-b border-caution/40 bg-caution/8 px-2.5 py-2">
         <AlertTriangle size={14} className="shrink-0 text-caution" />
         <p className="min-w-0 flex-1 truncate text-xs font-medium text-ink">
-          {t(files.length === 1 ? 'git.conflicts.headerOne' : 'git.conflicts.header', {
+          {t(pluralOf(files.length) === 'one' ? 'git.conflicts.headerOne' : 'git.conflicts.header', {
             count: files.length,
             origin: t(originKey(data?.origin ?? null)),
             theirs: data?.theirsLabel ?? '',
@@ -228,7 +228,7 @@ function FileEditor({
           {file.path}
         </p>
         <span className="shrink-0 text-micro text-ink-faint">
-          {t(blocks.length === 1 ? 'git.conflicts.blocksOne' : 'git.conflicts.blocks', {
+          {t(pluralOf(blocks.length) === 'one' ? 'git.conflicts.blocksOne' : 'git.conflicts.blocks', {
             count: blocks.length,
           })}
         </span>

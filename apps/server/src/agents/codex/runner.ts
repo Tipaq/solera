@@ -120,12 +120,15 @@ const INTERRUPT_GRACE_MS = 15_000
  *
  * Codex accepte un chemin local pour les images (`localImage`), là où Claude exige du
  * base64 : c'est le protocole de chacun qui décide, pas une préférence de Solera.
+ * Ces chemins sont lus par le CLI : `inside` les lui donne tels qu'il les voit (#152).
+ * Les compétences gardent le leur, que le CLI a lui-même publié.
  */
 function buildUserInput(
   text: string,
   attachments: OutgoingAttachment[],
   mentions: OutgoingMention[],
   skills: Map<string, string>,
+  inside: (path: string) => string,
   referenceContext?: string | null,
 ): { blocks: ContentBlock[]; input: UserInput[] } {
   const { blocks, promptText } = describeOutgoingMessage(text, attachments, referenceContext)
@@ -144,12 +147,12 @@ function buildUserInput(
   // Contrairement à Claude, l'app-server ne développe pas les `@chemin` du texte : la
   // mention est un élément d'entrée à part, que le protocole prévoit explicitement.
   for (const mention of mentions) {
-    input.push({ type: 'mention', name: mention.name, path: mention.path })
+    input.push({ type: 'mention', name: mention.name, path: inside(mention.path) })
   }
 
   for (const attachment of attachments) {
     if (attachment.inlineImage) {
-      input.push({ type: 'localImage', path: attachment.path })
+      input.push({ type: 'localImage', path: inside(attachment.path) })
     }
   }
 
@@ -201,6 +204,12 @@ export class CodexRunner implements AgentRunner {
   private skillRoots: string[] = []
   private config: CodexConfig
   private readonly interactions: PendingInteractions
+  /**
+   * Un chemin de l'hôte tel que le CLI le voit, et l'inverse : dans un dev container
+   * sous Windows natif, `C:\…` y est `/mnt/c/…` (#151, #152).
+   */
+  private readonly inside = (path: string) => this.ctx.environment.pathInside(path)
+  private readonly outside = (path: string) => this.ctx.environment.pathOutside(path)
   private readonly asyncQuestions: CodexAsyncQuestions
   private readonly serverRequests = new Map<RequestId, string>()
   private readonly requestScopes = new Map<RequestId, { threadId: string | null; turnId: string | null }>()
@@ -281,7 +290,7 @@ export class CodexRunner implements AgentRunner {
             ...this.config.additionalDirectories,
             ...(this.ctx.prototypesDir ? [this.ctx.prototypesDir] : []),
             ...(this.ctx.workTrees?.() ?? []),
-          ],
+          ].map(this.inside),
           networkAccess: this.config.webSearch,
           excludeTmpdirEnvVar: false,
           excludeSlashTmp: false,
@@ -292,6 +301,7 @@ export class CodexRunner implements AgentRunner {
   async start(): Promise<void> {
     this.client = new CodexAppServerClient({
       binary: this.ctx.binary,
+      environment: this.ctx.environment,
       cwd: this.ctx.cwd,
       env: agentProcessEnv(this.ctx.processEnv),
       onNotification: (method, params) => {
@@ -343,7 +353,7 @@ export class CodexRunner implements AgentRunner {
     const started = this.ctx.resumeSessionId
       ? await this.client.call<ThreadStartResponse, 'thread/resume'>('thread/resume', {
           threadId: this.ctx.resumeSessionId,
-          cwd: this.ctx.cwd,
+          cwd: this.inside(this.ctx.cwd),
           approvalPolicy: this.approvalPolicy(),
           sandbox: this.config.sandbox,
           model: this.config.model,
@@ -355,7 +365,7 @@ export class CodexRunner implements AgentRunner {
           excludeTurns: true,
         })
       : await this.client.call<ThreadStartResponse, 'thread/start'>('thread/start', {
-          cwd: this.ctx.cwd,
+          cwd: this.inside(this.ctx.cwd),
           approvalPolicy: this.approvalPolicy(),
           sandbox: this.config.sandbox,
           model: this.config.model,
@@ -372,7 +382,7 @@ export class CodexRunner implements AgentRunner {
         agent: 'codex',
         agentSessionId: started.thread.id,
         model: started.model,
-        cwd: started.cwd,
+        cwd: this.ctx.environment.pathOutside(started.cwd),
         // L'app-server n'annonce pas la liste des outils : elle dépend du sandbox et
         // des serveurs MCP configurés. Mieux vaut vide que devinée.
         tools: [],
@@ -399,7 +409,7 @@ export class CodexRunner implements AgentRunner {
 
     try {
       const listed = await client.call<SkillsListResponse, 'skills/list'>('skills/list', {
-        cwds: [this.ctx.cwd],
+        cwds: [this.inside(this.ctx.cwd)],
       })
 
       this.skillPaths = new Map()
@@ -1027,7 +1037,7 @@ export class CodexRunner implements AgentRunner {
     this.completedItems.add(item.id)
     this.startedItems.delete(item.id)
     if (this.completedItems.size > 4096) this.completedItems.delete(this.completedItems.values().next().value!)
-    for (const event of completedItem(item, this.ctx.cwd, this.durations.stop(item.id), parent)) {
+    for (const event of completedItem(item, this.ctx.cwd, this.durations.stop(item.id), parent, this.outside)) {
       // L'item natif n'est gardé qu'une fois, avec la complétion : il peut porter une
       // image ou une longue sortie, et l'entrée republiée n'en a pas besoin.
       this.ctx.emit(event, event.type === 'tool.input_updated' ? undefined : raw)
@@ -1254,6 +1264,7 @@ export class CodexRunner implements AgentRunner {
       attachments,
       mentions,
       this.resolveSkills(skills),
+      this.inside,
       this.ctx.sessionReferenceContext?.(text, this.appliedConfig),
     )
     this.ctx.emit({
@@ -1281,7 +1292,7 @@ export class CodexRunner implements AgentRunner {
       threadId: this.threadId,
       clientUserMessageId,
       input,
-      cwd: this.ctx.cwd,
+      cwd: this.inside(this.ctx.cwd),
       approvalPolicy: this.approvalPolicy(),
       sandboxPolicy: this.sandboxPolicy(),
       model: this.config.model,
@@ -1344,6 +1355,7 @@ export class CodexRunner implements AgentRunner {
       attachments,
       mentions,
       this.resolveSkills(skills),
+      this.inside,
       this.ctx.sessionReferenceContext?.(text, this.appliedConfig),
     )
     this.pendingSteer = { blocks }
@@ -1430,7 +1442,7 @@ export class CodexRunner implements AgentRunner {
     if (!this.client) return
     try {
       await this.client.call<SkillsExtraRootsSetResponse, 'skills/extraRoots/set'>('skills/extraRoots/set', {
-        extraRoots: roots.map((root) => join(root, 'skills')),
+        extraRoots: roots.map((root) => this.inside(join(root, 'skills'))),
       })
       this.skillRoots = roots
     } catch (err) {

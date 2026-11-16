@@ -504,6 +504,80 @@ export async function copyCheckpoints(cwd: string, fromId: string, toId: string)
   return entries.length
 }
 
+/** Où était HEAD à une capture, et quand elle a été prise. */
+export interface CaptureHead {
+  head: string | null
+  ts: number
+}
+
+/** Un tour fini, vu par ses deux captures. */
+export interface TurnHeads {
+  conversationId: string
+  key: string
+  before: CaptureHead
+  after: CaptureHead
+}
+
+/**
+ * HEAD avant et après chaque tour fini du dépôt, toutes conversations confondues.
+ *
+ * Les métas se lisent d'un seul `cat-file --batch` : un dépôt garde des milliers de
+ * captures, et un process par tour coûterait des secondes. Un tour encore ouvert n'a
+ * pas de capture d'après et n'est pas rendu, une capture sans méta non plus.
+ */
+export async function readTurnHeads(cwd: string): Promise<TurnHeads[]> {
+  const repo = await locate(cwd)
+  if (!repo) return []
+  const prefix = refBase('')
+  const refs = (await read(repo.top, ['for-each-ref', '--format=%(objectname) %(refname)', prefix]))
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [object = '', ref = ''] = line.split(' ')
+      const [conversationId, key, phase] = ref.slice(prefix.length).split('/')
+      return { object, conversationId, key, phase }
+    })
+    .filter((ref): ref is { object: string; conversationId: string; key: string; phase: CheckpointPhase } =>
+      Boolean(ref.conversationId && ref.key) && (ref.phase === 'before' || ref.phase === 'after'),
+    )
+  if (refs.length === 0) return []
+
+  // Une méta est un JSON ASCII que ce module écrit : sa taille en octets est sa longueur.
+  const raw = await read(repo.top, ['cat-file', '--batch'], undefined, refs.map((ref) => `${ref.object}:meta\n`).join(''))
+  const metas: (CaptureHead | null)[] = []
+  let at = 0
+  for (let i = 0; i < refs.length; i += 1) {
+    const end = raw.indexOf('\n', at)
+    if (end === -1) break
+    const header = raw.slice(at, end).split(' ')
+    at = end + 1
+    if (header[1] !== 'blob') {
+      metas.push(null)
+      continue
+    }
+    const size = Number(header[2])
+    try {
+      const meta = JSON.parse(raw.slice(at, at + size)) as Meta
+      metas.push({ head: meta.head ?? null, ts: meta.ts ?? 0 })
+    } catch {
+      metas.push(null)
+    }
+    at += size + 1
+  }
+
+  const turns = new Map<string, Partial<Pick<TurnHeads, 'before' | 'after'>> & { conversationId: string; key: string }>()
+  refs.forEach((ref, i) => {
+    const meta = metas[i]
+    if (!meta) return
+    const id = `${ref.conversationId}/${ref.key}`
+    const turn = turns.get(id) ?? { conversationId: ref.conversationId, key: ref.key }
+    turn[ref.phase] = meta
+    turns.set(id, turn)
+  })
+  return [...turns.values()].filter((turn): turn is TurnHeads => Boolean(turn.before && turn.after))
+}
+
 /** Retire toutes les captures d'une conversation. Sans effet hors dépôt ou sans capture. */
 export async function deleteCheckpoints(cwd: string, conversationId: string): Promise<number> {
   const repo = await locate(cwd)

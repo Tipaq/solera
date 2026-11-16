@@ -1,6 +1,5 @@
-import { execFile } from 'node:child_process'
 import type { AgentAuthDto } from '@solera/protocol'
-import { launchOf } from './launch.js'
+import type { CliLauncher } from './cli-binary.js'
 import { agentProcessEnv } from './process-env.js'
 
 /**
@@ -29,24 +28,15 @@ const AUTH_TIMEOUT_MS = 10_000
  * nul : `codex login status` sort en 1 quand personne n'est connecté, et c'est une
  * réponse, pas une panne. Seuls l'absence du binaire et le délai dépassé rejettent.
  */
-export function runAuthCommand(
-  binary: string,
+export async function runAuthCommand(
+  cli: CliLauncher,
   args: string[],
   env?: Record<string, string>,
 ): Promise<{ stdout: string; stderr: string; code: number }> {
-  const launch = launchOf(binary)
-  return new Promise((resolve, reject) => {
-    execFile(
-      launch.command,
-      [...launch.args, ...args],
-      { timeout: AUTH_TIMEOUT_MS, windowsHide: true, env: agentProcessEnv(env) },
-      (err, stdout, stderr) => {
-        const code = err ? (err as { code?: unknown }).code : 0
-        // Un code numérique est une sortie normale du CLI ; ENOENT ou un signal (délai
-        // dépassé) n'en sont pas.
-        if (err && typeof code !== 'number') return reject(err)
-        resolve({ stdout: String(stdout), stderr: String(stderr), code: typeof code === 'number' ? code : 0 })
-      },
-    )
+  return cli.environment.exec({
+    command: await cli.executable(),
+    args,
+    env: agentProcessEnv(env),
+    timeoutMs: AUTH_TIMEOUT_MS,
   })
 }

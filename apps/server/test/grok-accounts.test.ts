@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -10,11 +10,12 @@ import { eq } from 'drizzle-orm'
 import { openDatabase, runMigrations, users } from '@solera/db'
 import type { GrokAccount, GrokLoginStatusDto } from '@solera/protocol'
 import { readGrokBilling, toGrokUsage } from '../src/agents/grok/billing.js'
-import { GrokAccountHomes } from '../src/grok-accounts/homes.js'
+import { GrokAccountHomes, grokSessionDir } from '../src/grok-accounts/homes.js'
 import { GrokLoginService } from '../src/grok-accounts/login.js'
 import { GrokAccountStore } from '../src/grok-accounts/store.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerGrokAccountRoutes } from '../src/http/routes/grok-accounts.js'
+import { hostCli } from './environment-support.js'
 
 async function harness(t: TestContext) {
   const dir = await mkdtemp(join(tmpdir(), 'solera-grok-accounts-'))
@@ -25,7 +26,7 @@ async function harness(t: TestContext) {
   for (const id of ['owner', 'other']) {
     db.insert(users).values({ id, username: id, displayName: id, passwordHash: '', createdAt: 1 }).run()
   }
-  // Le home de l'utilisateur, que les homes des comptes reprennent par liens.
+  // Le home de l'utilisateur, dont les homes des comptes recopient la configuration.
   const userHome = join(dir, 'user-grok')
   mkdirSync(join(userHome, 'sessions'), { recursive: true })
   writeFileSync(join(userHome, 'config.toml'), '[cli]\n')
@@ -40,7 +41,7 @@ async function harness(t: TestContext) {
   chmodSync(binary, 0o700)
   const store = new GrokAccountStore(db)
   const homes = new GrokAccountHomes(join(dir, 'grok-accounts'))
-  const login = new GrokLoginService(homes, store, async () => binary)
+  const login = new GrokLoginService(homes, store, hostCli(binary))
   t.after(() => login.closeAll())
   return { dir, db, userHome, binary, store, homes, login }
 }
@@ -53,28 +54,42 @@ async function until(check: () => boolean, label: string): Promise<void> {
   }
 }
 
-test('home Grok d’un compte : lié au home de l’utilisateur, sauf la connexion et ses caches', async (t) => {
+test('home Grok d’un compte : aucun lien, la config sans secrets, ni connexion ni sessions de l’utilisateur', async (t) => {
   const { userHome, homes } = await harness(t)
+  writeFileSync(join(userHome, 'config.toml'), '[cli]\ninstaller = "npm"\n[model.perso]\napi_key = "xai-s3cret"\nbase_url = "https://x"\n')
+  mkdirSync(join(userHome, 'rules'))
+  writeFileSync(join(userHome, 'rules', 'style.md'), 'règle')
   const home = homes.ensure('acct')
-  assert.equal(readlinkSync(join(home, 'config.toml')), join(userHome, 'config.toml'))
-  assert.equal(readlinkSync(join(home, 'sessions')), join(userHome, 'sessions'), 'les sessions se reprennent d’un compte à l’autre')
+  for (const name of readdirSync(home)) assert.ok(!lstatSync(join(home, name)).isSymbolicLink(), name)
+  const config = readFileSync(join(home, 'config.toml'), 'utf8')
+  assert.match(config, /installer = "npm"/)
+  assert.match(config, /base_url/)
+  assert.ok(!config.includes('s3cret'), 'une clé ne passe pas au compte')
+  assert.equal(readFileSync(join(home, 'rules', 'style.md'), 'utf8'), 'règle')
   assert.ok(!existsSync(join(home, 'auth.json')), 'la connexion de l’utilisateur ne passe pas au compte')
   assert.ok(!existsSync(join(home, 'models_cache.json')), 'le catalogue dépend de l’abonnement')
+  assert.ok(!existsSync(join(home, 'sessions')))
   assert.equal(homes.connected('acct'), false)
 
-  mkdirSync(join(userHome, 'memory-v2'))
   writeFileSync(join(home, 'logs'), '')
   homes.ensure('acct')
-  assert.equal(readlinkSync(join(home, 'memory-v2')), join(userHome, 'memory-v2'))
-  assert.ok(!lstatSync(join(home, 'logs')).isSymbolicLink(), 'ce que Grok écrit dans le home du compte y reste')
+  assert.ok(existsSync(join(home, 'logs')), 'ce que Grok écrit dans le home du compte y reste')
 })
 
-test('home Grok d’un compte : les sessions sont liées même quand l’utilisateur n’en a pas encore', async (t) => {
+test('session Grok : son dossier recopié depuis le home qui en a la dernière version', async (t) => {
   const { userHome, homes } = await harness(t)
-  await rm(join(userHome, 'sessions'), { recursive: true })
+  const id = '01a1bbd2-c7e3-71d1-a13f-522ca6f7366d'
+  const session = (root: string, content: string, mtime: number) => {
+    const dir = join(root, 'sessions', '%2Fprojets%2Fsolera', id)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'summary.json'), content)
+    utimesSync(join(dir, 'summary.json'), mtime, mtime)
+  }
+  session(userHome, 'cli', 2_000)
   const home = homes.ensure('acct')
-  assert.equal(readlinkSync(join(home, 'sessions')), join(userHome, 'sessions'))
-  assert.ok(lstatSync(join(userHome, 'sessions')).isDirectory(), 'le dossier est créé côté utilisateur')
+  homes.bringSession(home, id, [userHome, home])
+  assert.equal(readFileSync(join(grokSessionDir(home, id)!, 'summary.json'), 'utf8'), 'cli')
+  assert.equal(grokSessionDir(home, '../../etc'), null, 'un identifiant ne sort pas de sessions/')
 })
 
 test('connexion par code d’appareil : URL et code lus sur la sortie de grok login, courriel et formule retenus', async (t) => {
@@ -136,7 +151,7 @@ test('connexion par clé API : Grok l’écrit dans le home du compte, Solera n�
 
 test('consommation : enveloppe de crédits de la période, dépassement à la demande, formule', async (t) => {
   const { binary, homes } = await harness(t)
-  const usage = await readGrokBilling(binary, homes.ensure('acct'))
+  const usage = await readGrokBilling(hostCli(binary), homes.ensure('acct'))
   assert.deepEqual(usage, {
     agent: 'grok',
     plan: 'X Premium',

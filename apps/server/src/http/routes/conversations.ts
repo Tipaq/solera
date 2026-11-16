@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import {
   agentRequests,
@@ -30,7 +30,6 @@ import {
   sendMessageBodySchema,
   steerBodySchema,
   updateConversationBodySchema,
-  type CardLinkDto,
   type ConversationDto,
   type ConversationPromptDto,
   type EditDiffDto,
@@ -38,6 +37,7 @@ import {
   type JournalPageDto,
   type PendingRequestsDto,
   type ToolOutputDto,
+  type ForwardedPortDto,
 } from '@solera/protocol'
 import { ForkError, type AgentRegistry } from '../../agents/registry.js'
 import type { OutgoingAttachment } from '../../agents/types.js'
@@ -64,7 +64,16 @@ import {
   workingDirectoryMissing,
 } from '../../worktrees/gone.js'
 import { assertWorktreeBelongs } from '../v1/access.js'
-import { assertCardAccepted, assertCardInProject, readCardLink } from './cards.js'
+import {
+  assertCardAccepted,
+  assertCardInProject,
+  CONVERSATION_LINKS,
+  milestoneCards,
+  MILESTONE_OF_CONVERSATION,
+  NO_LINKS,
+  readConversationLinks,
+  type ConversationLinks,
+} from './cards.js'
 import { coalesceDeltas } from '../../events/coalesce.js'
 import type { EventLog } from '../../events/event-log.js'
 import { dropConversation } from '../../search/search-index.js'
@@ -75,11 +84,13 @@ import {
   pendingRequests,
   tellOutcome,
 } from '../../sessions/request-lifecycle.js'
+import { EphemeralContainer } from '../../environments/devcontainer/ephemeral.js'
 import type { SessionManager } from '../../sessions/session-manager.js'
 import { acceptCardFiling, acceptDraft, acceptFiling, type AcceptDeps } from '../../sessions/request-accept.js'
 import type { AppContext } from '../context.js'
 import { badRequest, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
+import { environmentOf } from '../../environments/environments.js'
 
 /**
  * Bornes d'une page de relecture (`EventLog.readForReplay`).
@@ -98,7 +109,7 @@ const PAGE_ROWS = 5000
 const PAGE_BYTES = 16_000_000
 
 /**
- * `lastReadSeq`, `card` et `worktreeGone` sont passés plutôt que relus ici : les routes
+ * `lastReadSeq`, `links` et `worktreeGone` sont passés plutôt que relus ici : les routes
  * de liste les ramènent en une jointure, et une lecture par ligne rendrait la sidebar
  * quadratique.
  */
@@ -106,7 +117,7 @@ export function conversationToDto(
   row: ConversationRow,
   userId: string,
   lastReadSeq: number,
-  card: CardLinkDto | null,
+  links: ConversationLinks,
   worktreeGone: boolean,
 ): ConversationDto {
   return {
@@ -114,11 +125,13 @@ export function conversationToDto(
     projectId: row.projectId,
     worktreeId: row.worktreeId,
     worktreeGone,
-    card,
+    card: links.card,
+    milestone: links.milestone,
     userId: row.userId,
     title: row.title,
     titleSetByUser: row.titleSetByUser,
     agent: row.agent,
+    environment: environmentOf(row),
     forkedFromId: row.forkedFromId,
     handoffFromId: row.handoffFromId,
     config: parseAgentConfig(row.config),
@@ -240,16 +253,12 @@ export function registerConversationRoutes(
       .select({
         conversation: conversations,
         lastReadSeq: conversationReads.lastReadSeq,
-        card: {
-          id: cards.id,
-          number: cards.number,
-          title: cards.title,
-          column: cards.column,
-        },
+        ...CONVERSATION_LINKS,
         worktreeRemovedAt: worktrees.removedAt,
       })
       .from(conversations)
       .leftJoin(cards, eq(cards.id, conversations.cardId))
+      .leftJoin(milestoneCards, MILESTONE_OF_CONVERSATION)
       .leftJoin(worktrees, eq(worktrees.id, conversations.worktreeId))
       .leftJoin(projects, eq(projects.id, conversations.projectId))
       .leftJoin(
@@ -271,7 +280,7 @@ export function registerConversationRoutes(
         row.conversation,
         user.id,
         row.lastReadSeq ?? 0,
-        row.card,
+        { card: row.card, milestone: row.milestone },
         // Sans constat sur le disque : la liste ne fait pas un `stat` par fil. L'ouverture
         // du fil, l'envoi et la réconciliation des worktrees posent `removedAt`.
         row.worktreeRemovedAt !== null,
@@ -294,16 +303,12 @@ export function registerConversationRoutes(
       .select({
         conversation: conversations,
         lastReadSeq: conversationReads.lastReadSeq,
-        card: {
-          id: cards.id,
-          number: cards.number,
-          title: cards.title,
-          column: cards.column,
-        },
+        ...CONVERSATION_LINKS,
         worktreeRemovedAt: worktrees.removedAt,
       })
       .from(conversations)
       .leftJoin(cards, eq(cards.id, conversations.cardId))
+      .leftJoin(milestoneCards, MILESTONE_OF_CONVERSATION)
       .leftJoin(worktrees, eq(worktrees.id, conversations.worktreeId))
       .leftJoin(
         conversationReads,
@@ -325,7 +330,7 @@ export function registerConversationRoutes(
         row.conversation,
         user.id,
         row.lastReadSeq ?? 0,
-        row.card,
+        { card: row.card, milestone: row.milestone },
         // Sans constat sur le disque : la liste ne fait pas un `stat` par fil. L'ouverture
         // du fil, l'envoi et la réconciliation des worktrees posent `removedAt`.
         row.worktreeRemovedAt !== null,
@@ -432,6 +437,9 @@ export function registerConversationRoutes(
       if (body.purpose !== 'split') throw badRequest('split_card_without_purpose', 'splitCardId only goes with purpose "split".')
       assertCardInProject(ctx, body.splitCardId, id)
     }
+    if (body.splitMode && body.purpose !== 'split') {
+      throw badRequest('split_mode_without_purpose', 'splitMode only goes with purpose "split".')
+    }
 
     // Les `CLI_DEFAULT` sont remplacés par ce que le CLI annonce, avant d'écrire en
     // base : la conversation garde ensuite une configuration explicite et stable.
@@ -447,7 +455,9 @@ export function registerConversationRoutes(
       cardId: body.cardId,
       purpose: body.purpose,
       splitCardId: body.splitCardId,
+      splitMode: body.splitMode,
       title: body.title,
+      environment: body.environment,
       origin: null,
       firstMessage: firstMessage && {
         clientMessageId: firstMessage.clientMessageId,
@@ -476,7 +486,7 @@ export function registerConversationRoutes(
           row,
           user.id,
           0,
-          readCardLink(ctx, body.cardId),
+          readConversationLinks(ctx, row),
           checkWorktree(ctx.db, row.worktreeId).gone,
         ),
       )
@@ -520,7 +530,7 @@ export function registerConversationRoutes(
 
     if (firstMessage) attachments.claim(firstMessage.attachmentIds, row.id)
 
-    return reply.status(201).send(conversationToDto(row, user.id, 0, null, false))
+    return reply.status(201).send(conversationToDto(row, user.id, 0, NO_LINKS, false))
   })
 
 
@@ -607,7 +617,7 @@ export function registerConversationRoutes(
           { ...row, lastSeq: copied },
           user.id,
           0,
-          readCardLink(ctx, row.cardId),
+          readConversationLinks(ctx, row),
           false,
         ),
       )
@@ -659,7 +669,10 @@ export function registerConversationRoutes(
       cardId: source.cardId,
       purpose: source.purpose,
       splitCardId: source.splitCardId,
+      splitMode: source.splitMode,
       title: body.title ?? source.title,
+      // Le même monde que l'original : la suite poursuit le même travail.
+      environment: environmentOf(source),
       origin: null,
       handoff: {
         fromConversationId: source.id,
@@ -676,7 +689,7 @@ export function registerConversationRoutes(
           row,
           user.id,
           0,
-          readCardLink(ctx, row.cardId),
+          readConversationLinks(ctx, row),
           checkWorktree(ctx.db, row.worktreeId).gone,
         ),
       )
@@ -715,9 +728,27 @@ export function registerConversationRoutes(
       conversation,
       user.id,
       readCursor(id, user.id),
-      readCardLink(ctx, conversation.cardId),
+      readConversationLinks(ctx, conversation),
       worktree.gone,
     )
+  })
+
+  /**
+   * Ses coéquipiers : les sessions que celle-ci a lancées avec `start_session`, de la plus
+   * ancienne à la plus récente. Les identifiants seuls : le client les a déjà dans la liste
+   * du projet, avec leur état en direct, et n'y montre que celles que son compte voit.
+   */
+  app.get('/api/conversations/:id/teammates', async (request): Promise<string[]> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    await loadReadable(id, user.id)
+    return ctx.db
+      .select({ id: agentRequests.launchedConversationId })
+      .from(agentRequests)
+      .where(and(eq(agentRequests.conversationId, id), eq(agentRequests.kind, 'start_session'), isNotNull(agentRequests.launchedConversationId)))
+      .orderBy(agentRequests.createdAt)
+      .all()
+      .flatMap((row) => (row.id ? [row.id] : []))
   })
 
   /**
@@ -751,6 +782,19 @@ export function registerConversationRoutes(
       .run()
 
     return { lastReadSeq: readCursor(id, user.id) }
+  })
+
+  /**
+   * Les ports du conteneur à elle d'une session confinée dans un dev container (#145),
+   * et où l'hôte sert chacun : l'aperçu web de cette session, et d'elle seule, les
+   * traduit. Vide tant que son conteneur ne tourne pas.
+   */
+  app.get('/api/conversations/:id/ports', async (request): Promise<ForwardedPortDto[]> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    await loadReadable(id, user.id)
+    const environment = sessions.liveEnvironments().find((live) => live.conversationId === id)?.environment
+    return environment instanceof EphemeralContainer ? environment.forwardedPorts() : []
   })
 
   /**
@@ -1001,7 +1045,7 @@ export function registerConversationRoutes(
       result.row,
       user.id,
       readCursor(id, user.id),
-      result.moved ? null : readCardLink(ctx, conversation.cardId),
+      result.moved ? NO_LINKS : readConversationLinks(ctx, conversation),
       checkWorktree(ctx.db, result.row.worktreeId).gone,
     )
   })
@@ -1020,7 +1064,7 @@ export function registerConversationRoutes(
       row,
       user.id,
       readCursor(id, user.id),
-      readCardLink(ctx, row.cardId),
+      readConversationLinks(ctx, row),
       false,
     )
   })
@@ -1038,7 +1082,7 @@ export function registerConversationRoutes(
       row,
       user.id,
       readCursor(id, user.id),
-      readCardLink(ctx, row.cardId),
+      readConversationLinks(ctx, row),
       false,
     )
   })

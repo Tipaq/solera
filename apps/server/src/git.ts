@@ -1,8 +1,9 @@
 import { execFile, spawn } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
-import { posix, resolve } from 'node:path'
+import { readFile, writeFile } from 'node:fs/promises'
+import { join, posix, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import type { FileState, GitHeadDto } from '@solera/protocol'
+import { defaultBase } from './worktrees/assess.js'
 
 const run = promisify(execFile)
 
@@ -159,6 +160,43 @@ export async function readGitHead(cwd: string): Promise<GitHeadDto | null> {
   return { branch: null, detached: hash, rebasing }
 }
 
+/** Ce qu'un dossier a d'extrait : chaque champ null quand git ne sait pas le dire. */
+export interface Checkout {
+  /** Null en HEAD détachée ou hors d'un dépôt. */
+  branch: string | null
+  /** Le commit court. */
+  head: string | null
+  /** Commits en avance sur la branche par défaut, et en retard sur elle. */
+  ahead: number | null
+  behind: number | null
+  /** Fichiers modifiés ou non suivis. */
+  dirtyFiles: number | null
+}
+
+/**
+ * Branche, commit, écart à la base et fichiers non commités d'un dossier, sous-dossier
+ * d'un arbre compris : ce qu'un service lancé là sert (`actions/served.ts`).
+ */
+export async function readCheckout(cwd: string): Promise<Checkout> {
+  const read = (args: string[]) => git(cwd, args).then((out) => out.trim(), () => null)
+  const [branch, head, status, base] = await Promise.all([
+    read(['symbolic-ref', '--quiet', '--short', 'HEAD']),
+    read(['rev-parse', '--short', 'HEAD']),
+    read(['status', '--porcelain', '--untracked-files=all']),
+    defaultBase(cwd).catch(() => null),
+  ])
+  const counts = base && head ? await read(['rev-list', '--left-right', '--count', `${base}...HEAD`]) : null
+  const [behind = null, ahead = null] = counts ? counts.split(/\s+/).map((n) => Number(n) || 0) : []
+  return {
+    branch: branch || null,
+    head: head || null,
+    ahead,
+    behind,
+    // Une ligne par fichier, renommage compris ; un nom à retour à la ligne est cité.
+    dirtyFiles: status === null ? null : status.split('\n').filter(Boolean).length,
+  }
+}
+
 export async function listBranches(cwd: string): Promise<string[]> {
   const stdout = await git(cwd, ['branch', '--format=%(refname:short)', '--sort=-committerdate'])
   return stdout.split('\n').map((l) => l.trim()).filter(Boolean)
@@ -213,12 +251,60 @@ export async function addWorktree(
   return { reusedBranch }
 }
 
+/**
+ * La raison du verrou que Solera pose sur un worktree dont il a réécrit les liens pour un
+ * dev container (#155) : elle le distingue de celui d'une personne.
+ */
+export const SOLERA_WORKTREE_LOCK = 'Solera: git links rewritten for a dev container, where git may take this worktree for stale'
+
+/**
+ * Verrouille un worktree pour Solera, s'il ne l'est pas déjà : le fichier `locked` de son
+ * dossier d'administration, qu'écrirait `git worktree lock`. Un verrou existant reste.
+ */
+export async function lockWorktreeForSolera(adminDir: string): Promise<void> {
+  try {
+    await writeFile(join(adminDir, 'locked'), `${SOLERA_WORKTREE_LOCK}\n`, { flag: 'wx' })
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
+  }
+}
+
+/**
+ * Retire un worktree. Le verrou que Solera y a posé (`SOLERA_WORKTREE_LOCK`) est levé
+ * d'abord, et reposé si le retrait échoue ; celui qu'une personne a posé reste, et git
+ * refuse alors de le retirer.
+ */
 export async function removeWorktree(repo: string, path: string, force: boolean): Promise<void> {
   try {
-    await git(repo, ['worktree', 'remove', ...(force ? ['--force'] : []), path])
+    const ours = (await worktreeLock(repo, path)) === SOLERA_WORKTREE_LOCK
+    if (ours) await git(repo, ['worktree', 'unlock', path])
+    try {
+      await git(repo, ['worktree', 'remove', ...(force ? ['--force'] : []), path])
+    } catch (err) {
+      if (ours) await git(repo, ['worktree', 'lock', '--reason', SOLERA_WORKTREE_LOCK, path]).catch(() => undefined)
+      throw err
+    }
   } catch (err) {
     throw new GitError(gitMessage(err))
   }
+}
+
+/**
+ * La raison du verrou d'un worktree, lue depuis le dépôt : elle se lit encore quand le
+ * dossier du worktree a disparu. Null s'il n'est pas verrouillé.
+ */
+async function worktreeLock(repo: string, path: string): Promise<string | null> {
+  const raw = await git(repo, ['worktree', 'list', '--porcelain', '-z']).catch(() => '')
+  const same = (a: string, b: string) =>
+    process.platform === 'win32' ? resolve(a).toLowerCase() === resolve(b).toLowerCase() : resolve(a) === resolve(b)
+  for (const block of raw.split('\0\0')) {
+    const fields = block.split('\0')
+    const tree = fields.find((field) => field.startsWith('worktree '))?.slice('worktree '.length)
+    if (!tree || !same(tree, path)) continue
+    const locked = fields.find((field) => field === 'locked' || field.startsWith('locked '))
+    return locked === undefined ? null : locked.slice('locked '.length)
+  }
+  return null
 }
 
 /**
@@ -513,6 +599,47 @@ function parseNumstat(numstat: string): DiffFile[] {
     .filter((file) => file.path.length > 0)
 }
 
+/** Les fichiers d'un `--numstat` et leur patch, borné à `MAX_DIFF_BYTES`. */
+function workingDiff(numstat: string, patch: string): WorkingDiff {
+  const truncated = Buffer.byteLength(patch) > MAX_DIFF_BYTES
+  return { files: parseNumstat(numstat), patch: truncated ? patch.slice(0, MAX_DIFF_BYTES) : patch, truncated }
+}
+
+/**
+ * Ce qu'une branche apporte depuis qu'elle a quitté la base (`base...head`), et son
+ * avance et son retard sur elle : le diff « avec la base » (S6).
+ *
+ * Les deux références sont d'abord résolues en commits, `--end-of-options` devant : un
+ * nom inconnu répond `null` plutôt qu'un message de git, et rien ne passe pour une
+ * option. Le diff part ensuite sur les hashes.
+ */
+export async function readRangeDiff(
+  cwd: string,
+  base: string,
+  head: string,
+): Promise<(WorkingDiff & { ahead: number; behind: number }) | null> {
+  const resolve = (ref: string) =>
+    git(cwd, ['rev-parse', '--verify', '--quiet', '--end-of-options', `${ref}^{commit}`]).then(
+      (out) => out.trim(),
+      () => null,
+    )
+  const [from, to] = await Promise.all([resolve(base), resolve(head)])
+  if (!from || !to) return null
+
+  try {
+    const range = `${from}...${to}`
+    const [numstat, patch, counts] = await Promise.all([
+      git(cwd, ['diff', '--numstat', '--no-relative', range]),
+      git(cwd, ['diff', '--patch', ...PATCH_FLAGS, range]),
+      git(cwd, ['rev-list', '--left-right', '--count', range]),
+    ])
+    const [behind, ahead] = counts.trim().split(/\s+/).map(Number)
+    return { ...workingDiff(numstat, patch), ahead: ahead ?? 0, behind: behind ?? 0 }
+  } catch (err) {
+    throw new GitError(gitMessage(err))
+  }
+}
+
 /**
  * Ce qu'un commit a changé, contre son premier parent.
  *
@@ -526,12 +653,7 @@ export async function readCommitDiff(cwd: string, hash: string): Promise<Working
       git(cwd, ['show', '--format=', '--patch', ...PATCH_FLAGS, '-m', '--first-parent', hash]),
     ])
 
-    const truncated = Buffer.byteLength(patch) > MAX_DIFF_BYTES
-    return {
-      files: parseNumstat(numstat),
-      patch: truncated ? patch.slice(0, MAX_DIFF_BYTES) : patch,
-      truncated,
-    }
+    return workingDiff(numstat, patch)
   } catch (err) {
     throw new GitError(gitMessage(err))
   }

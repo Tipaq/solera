@@ -4,7 +4,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import Fastify from 'fastify'
+import { eq } from 'drizzle-orm'
 import { cardReviews, cards, openDatabase, projects, runMigrations, users } from '@solera/db'
+import { registerErrorHandler } from '../src/http/errors.js'
+import { registerPullRequestRoutes } from '../src/http/routes/pull-requests.js'
+import { ForgeError, type Forge, type PullRequest } from '../src/reviews/forge.js'
+import { mergeRefusalOf } from '../src/reviews/merge.js'
+import type { WorktreeStatusService } from '../src/worktrees/status-service.js'
 import {
   ProjectPullRequests,
   badgeStateOf,
@@ -145,4 +152,162 @@ test('une seule lecture de la forge par minute ; une forge muette rend « indisp
   await new Promise((resolve) => setImmediate(resolve))
   const down = await service.get(project, 'owner')
   assert.deepEqual(down, { available: false, fetchedAt: now, pullRequests: [] })
+})
+
+// --- Fusionner une PR depuis Solera (S7, #170) ------------------------------------
+
+function forged(overrides: Partial<PullRequest> = {}): PullRequest {
+  return {
+    number: 18,
+    url: 'https://github.com/o/r/pull/18',
+    head: 'fix/worktree-disparu',
+    headSha: 'f00dcafe',
+    base: 'main',
+    state: 'OPEN',
+    isDraft: false,
+    mergeable: 'MERGEABLE',
+    checks: { passed: 1, pending: 0, failed: [] },
+    ...overrides,
+  }
+}
+
+test("une PR n'est prête à fusionner qu'ouverte, hors brouillon, sans conflit et ses checks passés", () => {
+  const none = { passed: 0, pending: 0, failed: [] }
+  assert.equal(mergeRefusalOf(forged()), null)
+  assert.equal(mergeRefusalOf(forged({ checks: none, mergeable: 'UNKNOWN' })), null, 'GitHub juge le conflit plus tard : il tranchera')
+  assert.equal(mergeRefusalOf(forged({ state: 'MERGED' })), 'merged')
+  assert.equal(mergeRefusalOf(forged({ state: 'CLOSED' })), 'closed')
+  assert.equal(mergeRefusalOf(forged({ isDraft: true, mergeable: 'CONFLICTING' })), 'draft')
+  assert.equal(mergeRefusalOf(forged({ mergeable: 'CONFLICTING' })), 'conflicting')
+  assert.equal(mergeRefusalOf(forged({ checks: { ...none, pending: 1, failed: ['ci'] } })), 'checks_failing')
+  assert.equal(mergeRefusalOf(forged({ checks: { ...none, pending: 1 } })), 'checks_pending')
+})
+
+async function mergeHarness(t: TestContext) {
+  const { db, project } = await harness(t)
+  db.insert(users).values({ id: 'guest', username: 'guest', displayName: 'Invité', passwordHash: '', createdAt: 1 }).run()
+  db.update(projects).set({ visibility: 'shared' }).run()
+
+  let pr = forged()
+  let failRead = false
+  let failMerge = false
+  const merges: unknown[][] = []
+  const forge: Forge = {
+    async readPullRequest(cwd, ref, token) {
+      assert.equal(cwd, project.workspacePath)
+      assert.equal(ref, '18')
+      assert.equal(token, 'jeton-owner')
+      if (failRead) throw new ForgeError("Solera n'a pas pu lire la PR « 18 » : HTTP 502")
+      return pr
+    },
+    async mergePullRequest(...args) {
+      if (failMerge) throw new ForgeError("Solera n'a pas pu fusionner la PR #18 : Pull request is not mergeable")
+      merges.push(args)
+      pr = { ...pr, state: 'MERGED' }
+    },
+    async createPullRequest() {
+      throw new Error('jamais ici')
+    },
+  }
+
+  let lists = 0
+  const pullRequests = new ProjectPullRequests(db, async () => {
+    lists++
+    return [raw()]
+  })
+  const invalidated: string[] = []
+  const worktreeStatus = { invalidate: (id: string) => invalidated.push(id) } as unknown as WorktreeStatusService
+
+  let userId = 'owner'
+  const app = Fastify()
+  app.addHook('preHandler', async (request) => {
+    request.user = db.select().from(users).where(eq(users.id, userId)).get()
+  })
+  registerErrorHandler(app)
+  registerPullRequestRoutes(app, { db, config: {} } as never, pullRequests, {
+    forge,
+    worktreeStatus,
+    token: (id) => `jeton-${id}`,
+  })
+  t.after(() => app.close())
+
+  const merge = (url = '/api/projects/project/pull-requests/18/merge') => app.inject({ method: 'POST', url })
+  return {
+    app,
+    cwd: project.workspacePath,
+    merge,
+    listed: () => pullRequests.get(project, 'owner'),
+    merges,
+    invalidated,
+    lists: () => lists,
+    setPr: (next: Partial<PullRequest>) => (pr = forged(next)),
+    as: (id: string) => (userId = id),
+    failRead: () => (failRead = true),
+    failMerge: () => (failMerge = true),
+  }
+}
+
+test('fusionner une PR prête : en squash, au commit lu sur la forge, puis les caches des PR et des arbres tombent', async (t) => {
+  const h = await mergeHarness(t)
+  await h.listed()
+  assert.equal(h.lists(), 1)
+
+  const res = await h.merge()
+  assert.equal(res.statusCode, 200, res.body)
+  assert.deepEqual(res.json(), { number: 18, url: 'https://github.com/o/r/pull/18', branch: 'fix/worktree-disparu', base: 'main' })
+  assert.deepEqual(h.merges, [[h.cwd, 18, 'f00dcafe', 'jeton-owner']])
+  assert.deepEqual(h.invalidated, ['project'])
+
+  await h.listed()
+  assert.equal(h.lists(), 2, 'la liste des PR est relue sur la forge, sans attendre la minute')
+})
+
+test("une PR qui n'est pas prête est refusée en 409, avec sa raison, sans rien fusionner", async (t) => {
+  const h = await mergeHarness(t)
+  const cases: [Partial<PullRequest>, string][] = [
+    [{ state: 'MERGED' }, 'pull_request_merged'],
+    [{ state: 'CLOSED' }, 'pull_request_closed'],
+    [{ isDraft: true }, 'pull_request_draft'],
+    [{ mergeable: 'CONFLICTING' }, 'pull_request_conflicting'],
+    [{ checks: { passed: 0, pending: 0, failed: ['ci'] } }, 'pull_request_checks_failing'],
+    [{ checks: { passed: 0, pending: 2, failed: [] } }, 'pull_request_checks_pending'],
+  ]
+  for (const [pr, code] of cases) {
+    h.setPr(pr)
+    const res = await h.merge()
+    assert.equal(res.statusCode, 409, code)
+    assert.equal(res.json().error.code, code)
+    assert.equal(res.json().error.params.number, 18)
+  }
+  assert.deepEqual(h.merges, [])
+  assert.deepEqual(h.invalidated, [])
+})
+
+test('seul le propriétaire fusionne ; un projet invisible est introuvable ; un numéro illisible est refusé', async (t) => {
+  const h = await mergeHarness(t)
+  h.as('guest')
+  const res = await h.merge()
+  assert.equal(res.statusCode, 403)
+  assert.equal(res.json().error.code, 'pull_request_merge_forbidden')
+
+  h.as('owner')
+  assert.equal((await h.merge('/api/projects/ailleurs/pull-requests/18/merge')).statusCode, 404)
+  const bad = await h.merge('/api/projects/project/pull-requests/abc/merge')
+  assert.equal(bad.statusCode, 400)
+  assert.deepEqual(h.merges, [])
+})
+
+test('la forge qui refuse de lire ou de fusionner rend un 502 avec son message', async (t) => {
+  const h = await mergeHarness(t)
+  h.failMerge()
+  const refused = await h.merge()
+  assert.equal(refused.statusCode, 502)
+  assert.equal(refused.json().error.code, 'forge_failed')
+  assert.match(refused.json().error.params.error, /not mergeable/)
+
+  h.failRead()
+  const unread = await h.merge()
+  assert.equal(unread.statusCode, 502)
+  assert.match(unread.json().error.params.error, /HTTP 502/)
+  assert.deepEqual(h.invalidated, [], 'rien ne change, rien ne tombe')
 })

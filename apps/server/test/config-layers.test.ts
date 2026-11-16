@@ -5,8 +5,10 @@ import {
   DEFAULT_CODEX_CONFIG,
   EMPTY_CONFIG_LAYER,
   accountLayerFromLegacy,
+  changedLayerFields,
   configSources,
   diffAgentConfig,
+  diffConfigLayers,
   layerFromFullConfigs,
   layerWithFullConfig,
   patchConfigLayer,
@@ -16,6 +18,7 @@ import {
   resolveAgentConfig,
   storedUserSettingsSchema,
   type ConfigLayer,
+  type ConfigLayerPatch,
 } from '@solera/protocol'
 
 /**
@@ -196,4 +199,50 @@ test('la forme d’avant les préréglages par CLI se relit encore', () => {
   assert.equal(readProjectLayer(JSON.stringify(layer({ shared: { decisions: 'ask' } }))).shared.decisions, 'ask')
   assert.deepEqual(readProjectLayer(null), EMPTY_CONFIG_LAYER)
   assert.deepEqual(readProjectLayer('{pas du json'), EMPTY_CONFIG_LAYER)
+})
+
+/* Le brouillon d'un niveau (page projet v2, PP-22) : les écrans changent une copie du
+   niveau, comptent ce qui en diffère, puis envoient l'écart en un seul `PATCH`. */
+
+const replay = (base: ConfigLayer, patches: ConfigLayerPatch[]) => patches.reduce(patchConfigLayer, base)
+
+test('écart entre deux niveaux : rejoué sur le premier, il redonne le second', () => {
+  const base = layer({ shared: { decisions: 'ask', cardFiling: 'deny' }, claude: { model: 'opus', effort: 'high' }, codex: { sandbox: 'read-only' } })
+  const next = replay(base, [
+    { scope: 'shared', set: { proposeCards: 'auto' }, unset: ['cardFiling'] },
+    { scope: 'claude', set: { effort: 'low' }, unset: ['model'] },
+    { scope: 'grok', set: { model: 'grok-4' } },
+  ])
+  const patches = diffConfigLayers(base, next)
+  assert.deepEqual(replay(base, patches), next)
+  // Les champs communs d'abord : leur écriture efface des exceptions que les CLI reposent ensuite.
+  assert.equal(patches[0]!.scope, 'shared')
+  assert.deepEqual(patches.find((patch) => patch.scope === 'claude'), { scope: 'claude', set: { effort: 'low' }, unset: ['model'] })
+  assert.equal(patches.some((patch) => patch.scope === 'codex'), false, 'un CLI inchangé n’envoie rien')
+})
+
+test('écart : rien quand rien ne change, null reste une valeur posée', () => {
+  const base = layer({ claude: { account: 'compte' } })
+  assert.deepEqual(diffConfigLayers(base, base), [])
+  const next = replay(base, [{ scope: 'claude', set: { account: null } }])
+  assert.deepEqual(diffConfigLayers(base, next), [{ scope: 'claude', set: { account: null } }])
+})
+
+test('écart : une exception gardée sous un champ commun rendu à l’héritage survit au rejeu', () => {
+  const base = layer({ shared: { decisions: 'ask' }, codex: { decisions: 'deny' } })
+  const next = layer({ shared: {}, codex: { decisions: 'deny' } })
+  assert.deepEqual(replay(base, diffConfigLayers(base, next)), next)
+})
+
+test('champs changés : un champ commun compte une fois, un champ propre par CLI', () => {
+  const base = layer({ shared: { decisions: 'ask' }, codex: { decisions: 'deny' }, claude: { model: 'opus' } })
+  // Régler un champ commun efface son exception chez Codex : un seul réglage changé.
+  let next = replay(base, [{ scope: 'shared', set: { decisions: 'auto' } }])
+  assert.deepEqual(changedLayerFields(base, next), ['decisions'])
+  next = replay(next, [{ scope: 'claude', set: { model: 'sonnet' } }, { scope: 'codex', set: { model: 'gpt' } }])
+  assert.deepEqual(changedLayerFields(base, next).sort(), ['claude.model', 'codex.model', 'decisions'])
+  // Revenir à la valeur enregistrée efface la modification d'elle-même.
+  next = replay(next, [{ scope: 'claude', set: { model: 'opus' } }, { scope: 'codex', unset: ['model'] }])
+  assert.deepEqual(changedLayerFields(base, next), ['decisions'])
+  assert.deepEqual(changedLayerFields(base, base), [])
 })

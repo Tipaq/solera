@@ -1,5 +1,16 @@
-import { cardMentions, type CardConversationDto, type CardDto } from '@solera/protocol'
+import {
+  cardMentions,
+  type AgentKind,
+  type CardDto,
+  type ConversationDto,
+  type ConversationStatus,
+  type ProjectPullRequestDto,
+  type WorktreeStatusDto,
+  type WorktreeStatusListDto,
+} from '@solera/protocol'
+import { isOpen, liveSessions, loadedStatus, type StatusOf } from './card-state'
 import type { ChatItem } from './chat-fold'
+import type { MilestoneEntry } from './milestone-model'
 
 /** Une étape du plan que l'agent s'est donné, quelle que soit la forme qu'il lui donne. */
 export interface AgentPlanStep {
@@ -101,66 +112,80 @@ export function suggestCard(items: ChatItem[], cards: CardDto[]): { card: CardDt
   return best
 }
 
-const WEEK = 7 * 24 * 60 * 60 * 1000
-
-/**
- * Une session qui tourne ou attend quelqu'un, et n'est pas archivée.
- *
- * `interrupted` et `error` n'en sont pas : un redémarrage du daemon laisse `interrupted`
- * à toute session alors en cours, jusqu'au message suivant — sa carte pulserait sinon
- * dans « maintenant » sans que rien ne tourne.
- */
-export function isLiveSession(session: CardConversationDto): boolean {
-  return !session.archivedAt && (session.status === 'running' || session.status === 'awaiting_input')
-}
-
 /** Ce que compte la pastille de *Projet* : les cartes qui attendent une relecture. */
 export function toReviewCount(cards: CardDto[] | undefined): number {
   return cards?.filter((card) => card.column === 'review').length ?? 0
 }
 
 /**
- * Le projet vu depuis une session : ce qui touche sa carte, ce qui bouge, le reste.
- *
- * Une carte n'apparaît qu'une fois, au plus près : citée autour de la carte, elle ne
- * se répète pas dans « maintenant », et ce qui est dans « maintenant » n'est pas
- * recompté dans le reste. Sans quoi la même ligne revient trois fois dans un panneau
- * de quarante lignes.
+ * Les cartes prêtes à partir (PPR-3) : à faire, acceptées, rien à préciser, aucun
+ * bloqueur ouvert, aucune session vivante — dans l'ordre du tableau. Un regroupement
+ * n'en est pas une : ce sont ses enfants qui partent.
  */
-export function projectOverview(cards: CardDto[], current: CardDto | null, now = Date.now()) {
-  const shown = new Set<string>(current ? [current.id] : [])
-  const around: { relation: 'parent' | 'children' | 'blockedBy' | 'blocks' | 'references' | 'referencedBy'; card: CardDto }[] = []
-  if (current) {
-    const byId = new Map(cards.map((card) => [card.id, card]))
-    const add = (relation: (typeof around)[number]['relation'], id: string) => {
-      const card = byId.get(id)
-      if (!card || shown.has(id)) return
-      shown.add(id)
-      around.push({ relation, card })
-    }
-    if (current.parent) add('parent', current.parent.id)
-    for (const link of current.children) add('children', link.id)
-    for (const link of current.blockedBy) add('blockedBy', link.id)
-    for (const link of current.blocks) add('blocks', link.id)
-    for (const link of current.references) add('references', link.id)
-    for (const link of current.referencedBy) add('referencedBy', link.id)
-  }
+export function readyCards(cards: readonly CardDto[], statusOf: StatusOf = loadedStatus): CardDto[] {
+  return cards
+    .filter(
+      (card) =>
+        card.children.length === 0 &&
+        card.column === 'todo' &&
+        card.acceptedAt !== null &&
+        card.toClarifySince === null &&
+        !card.blockedBy.some(isOpen) &&
+        liveSessions(card, statusOf).length === 0,
+    )
+    .sort((a, b) => a.position - b.position)
+}
 
-  const review = cards.filter((card) => card.column === 'review' && !shown.has(card.id))
-  // Une session vivante suffit, quelle que soit la colonne : une carte encore « à
-  // faire » sur laquelle un agent travaille bouge bel et bien maintenant.
-  const active = cards.filter((card) =>
-    (card.column === 'todo' || card.column === 'in_progress')
-    && card.conversations.some(isLiveSession) && !shown.has(card.id))
-  for (const card of [...review, ...active]) shown.add(card.id)
+/** Une autre session du projet qui tourne ou attend, en une ligne. */
+export interface ActiveSessionRow {
+  id: string
+  title: string
+  agent: AgentKind
+  awaiting: boolean
+  /** Le numéro de sa carte, quand elle en traite une. */
+  card: number | null
+}
 
-  const rest = (column: CardDto['column']) => cards.filter((card) => card.column === column && !shown.has(card.id))
-  return {
-    around,
-    review,
-    active,
-    todo: rest('todo'),
-    inProgress: rest('in_progress'),
-    doneThisWeek: rest('done').filter((card) => now - card.columnSince < WEEK),
-  }
+/**
+ * Les autres sessions actives du projet (PPR-3) : celles qui attendent quelqu'un d'abord,
+ * puis celles qui travaillent, sans la session du panneau ni les rangées.
+ */
+export function otherActiveSessions(
+  live: readonly { conversation: Pick<ConversationDto, 'id' | 'title' | 'agent' | 'archivedAt' | 'card'>; status: ConversationStatus }[],
+  conversationId: string,
+): ActiveSessionRow[] {
+  const rows = live.flatMap(({ conversation, status }): ActiveSessionRow[] =>
+    conversation.id !== conversationId &&
+    conversation.archivedAt === null &&
+    (status === 'running' || status === 'awaiting_input')
+      ? [{
+          id: conversation.id,
+          title: conversation.title,
+          agent: conversation.agent,
+          awaiting: status === 'awaiting_input',
+          card: conversation.card?.number ?? null,
+        }]
+      : [],
+  )
+  return rows.sort((a, b) => Number(b.awaiting) - Number(a.awaiting))
+}
+
+/** L'arbre où travaille la session ; null à la racine du projet, ou avant la lecture. */
+export function sessionWorktree(list: Pick<WorktreeStatusListDto, 'worktrees'> | undefined, conversationId: string): WorktreeStatusDto | null {
+  return list?.worktrees.find((tree) => tree.conversations.some((entry) => entry.id === conversationId)) ?? null
+}
+
+/** Les checks d'une PR, « réussis / total » ; null quand la forge n'en dit rien. */
+export function pullRequestChecks(pr: Pick<ProjectPullRequestDto, 'checks'>): { passed: number; total: number } | null {
+  const total = pr.checks.passed + pr.checks.pending + pr.checks.failed.length
+  return total === 0 ? null : { passed: pr.checks.passed, total }
+}
+
+/**
+ * La carte de la session est-elle dans ce jalon ? La carte-jalon elle-même en fait
+ * partie. Null sans carte : la ligne du jalon n'a alors rien à en dire.
+ */
+export function sessionInMilestone(entry: Pick<MilestoneEntry, 'card' | 'children'>, card: Pick<CardDto, 'id'> | null): boolean | null {
+  if (!card) return null
+  return entry.card.id === card.id || entry.children.some((child) => child.id === card.id)
 }

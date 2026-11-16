@@ -188,12 +188,13 @@ export class SkillLibrary {
    * Le dossier est écrit entier dans la zone de transit, puis déplacé d'un geste : Codex
    * surveille la racine, et ne doit pas voir un `SKILL.md` sans ses fichiers annexes.
    * Quand `target.name` remplace le nom du frontmatter, celui-ci est réécrit : le nom du
-   * dossier et celui du fichier doivent rester le même.
+   * dossier et celui du fichier doivent rester le même. `userId` est null pour ce que
+   * Solera installe seul, au démarrage.
    */
   install(
     files: Map<string, Uint8Array>,
     target: SkillTarget,
-    userId: string,
+    userId: string | null,
     origin: SkillOrigin | null = null,
   ): LibrarySkillDto {
     const { text, data } = readMain(files)

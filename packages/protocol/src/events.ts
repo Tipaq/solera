@@ -502,6 +502,11 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
           /** Les cartes qu'elle cessera de bloquer. */
           unblocks: z.array(cardFilingRefSchema).optional(),
           /**
+           * Les sous-tâches à ajouter en fin de liste (#185) : l'ajout au jalon rangé dans
+           * une carte qui existe déjà. Au clic, celles que la carte porte déjà sont sautées.
+           */
+          addSubtasks: z.array(z.string()).optional(),
+          /**
            * Clore la carte (#69) : avec `toColumn` (« terminé » par défaut, ou
            * « abandonné ») si elle n'y est pas déjà, puis archiver ses conversations,
            * retirer ses worktrees et supprimer ses branches fusionnées.

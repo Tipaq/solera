@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process'
 import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises'
 import { join, sep } from 'node:path'
 import { promisify } from 'node:util'
-import { closePanelButton } from './panel.mjs'
+import { closePanelButton, openProjectPanel } from './panel.mjs'
 
 /** Vrais téléchargements du navigateur, uniquement dans la démo temporaire. */
 export async function checkDownloads({ page, context, base, project, hero, data }) {
@@ -65,8 +65,7 @@ export async function checkDownloads({ page, context, base, project, hero, data 
   console.log('OK : téléchargement API, gros binaire, noms Unicode, fichier vide, worktree, authentification et bornage des chemins/liens.')
 
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.goto(`${base}/p/${project.id}/board`)
-  await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
+  await openProjectPanel(page, base, project)
   const panel = page.locator('[data-panel="workspace"]')
   // Plein écran et ouverture rapide n'ont plus de bouton : la géométrie se règle à la
   // poignée, et l'ouverture rapide à son raccourci. Le panneau n'a plus d'en-tête où
@@ -90,7 +89,7 @@ export async function checkDownloads({ page, context, base, project, hero, data 
     assert.equal(download.suggestedFilename(), name)
     assert.equal(await download.failure(), null)
     assert.deepEqual(await readFile(await download.path()), fixtures.get(name))
-    assert.equal(page.url(), `${base}/p/${project.id}/board`, 'Downloading must keep the IDE open')
+    assert.equal(page.url(), `${base}/p/${project.id}/travail`, 'Downloading must keep the IDE open')
   }
 
   await openFile('ui-downloads/note.txt')
@@ -110,6 +109,15 @@ export async function checkDownloads({ page, context, base, project, hero, data 
     const path = `ui-downloads/${name}`
     await openFile(path)
     await expectDownload(name, () => panel.getByRole('button', { name: `Télécharger ${path}`, exact: true }).click())
+    // La visionneuse PDF de Chromium prend le focus en finissant de charger, même sous
+    // un dialogue modal et même dans une iframe inerte. Si ce moment tombe pendant la
+    // saisie dans « Ouvrir un fichier », le texte part dans l'iframe et l'option
+    // n'apparaît jamais. Aucun signal ne dit que le vol est passé (il suit l'événement
+    // `load` d'une centaine de ms) : on retire donc l'iframe avant d'écrire (carte #248).
+    if (name === 'document.pdf') {
+      await panel.getByRole('button', { name: `Fermer ${path}`, exact: true }).click()
+      await panel.locator('iframe[data-editor-file]').waitFor({ state: 'detached' })
+    }
   }
   for (const width of [320, 390]) {
     await page.setViewportSize({ width, height: 844 })

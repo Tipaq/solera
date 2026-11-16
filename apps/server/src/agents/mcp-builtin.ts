@@ -5,8 +5,8 @@ import { BUILTIN_MCP_SERVER_NAME, type AgentConfig, type McpServer } from '@sole
 /**
  * Le serveur MCP de Solera, monté d'office dans chaque conversation.
  *
- * Ce n'est pas une ligne de `mcp_servers` : personne ne l'a déclaré, il n'a ni commande
- * à saisir ni secret à garder, et son nom est réservé pour qu'aucune entrée du registre
+ * Ce n'est pas une ligne de `mcp_servers` : personne ne l'a déclaré, il n'a ni adresse
+ * à saisir ni secret à garder (son jeton naît et meurt avec le runner), et son nom est réservé pour qu'aucune entrée du registre
  * ne vienne l'écraser. Il emprunte quand même la forme `McpServer`, ce qui lui fait
  * traverser les deux adaptateurs de CLI et l'inventaire sans qu'aucun d'eux ait à
  * connaître son existence.
@@ -19,6 +19,11 @@ import { BUILTIN_MCP_SERVER_NAME, type AgentConfig, type McpServer } from '@sole
  * — un dossier de mémoire vide, un drapeau de rangement — jamais en liste d'outils :
  * c'est le `.mjs` qui tient son catalogue. Le critère d'ouverture d'une famille est
  * écrit en tête de `packages/protocol/src/agent-config.ts`.
+ *
+ * Le CLI le joint par HTTP, jamais en le lançant lui-même (ADR 0001) : le `.mjs` lit la
+ * base, et c'est le serveur de Solera qui le lance sur l'hôte, derrière le pont de
+ * `http/v1/mcp.ts`, avec la portée que désigne le jeton de la session. Les quatre CLI
+ * savent faire du MCP en HTTP streamable, il n'y a donc aucune passerelle stdio.
  */
 
 /** Identifiant distinct de ceux du registre, qui sont des UUID. */
@@ -44,11 +49,11 @@ export function resolveEntry(): string {
   return found
 }
 
-export interface BuiltinMcpParams {
-  /** Interrupteur global de `config.toml`. */
-  enabled: boolean
-  config: AgentConfig
-  databasePath: string
+/**
+ * Ce qu'une session a le droit de demander au serveur MCP. Calculée au lancement du
+ * runner, elle est attachée à son jeton et ne lui est jamais confiée.
+ */
+export interface McpSessionScope {
   /**
    * Projet de la conversation, ou null pour un fil libre — et le serveur part quand
    * même, en n'exposant que les outils qui ne parlent pas d'un projet : la mémoire du
@@ -57,6 +62,7 @@ export interface BuiltinMcpParams {
    * une.
    */
   projectId: string | null
+  /** La conversation que le serveur sert : ses outils de session parlent d'elle. */
   conversationId: string
   /**
    * Dossier de mémoire, du projet ou du compte, où `write_memory` écrit pour Codex.
@@ -101,6 +107,12 @@ export interface BuiltinMcpParams {
    * retire alors les outils du design system de son catalogue.
    */
   designSystemState: string
+  /**
+   * La session voit les lecteurs de l'hôte sous `/mnt/<lecteur>` (`mountsDrives`) : dans
+   * un conteneur, sous Windows natif. Le `.mjs` traduit alors les chemins qu'il rend à
+   * l'agent, et ceux qu'il en reçoit, comme `containerPathOf` et `hostPathOf` (#153).
+   */
+  mountedDrives: boolean
 }
 
 /**
@@ -114,49 +126,48 @@ export function builtinMcpEnabled(enabled: boolean, config: AgentConfig): boolea
   return !(config.agent === 'claude' && config.strictMcp)
 }
 
-export function builtinMcpServer(params: BuiltinMcpParams): McpServer | null {
-  const {
-    enabled,
-    config,
-    databasePath,
-    projectId,
-    conversationId,
-    memoryDir,
-    projectFiling,
-    cardFiling,
-    decisions,
-    proposeCards,
-    designSystemState,
-  } = params
-  if (!builtinMcpEnabled(enabled, config)) return null
+/**
+ * La portée d'une session telle que le `.mjs` la lit, en variables d'environnement.
+ *
+ * Seul le pont HTTP s'en sert désormais, pour lancer le process sur l'hôte : le CLI de
+ * la session n'en voit plus rien. Vide plutôt qu'absente pour un fil libre : les deux
+ * se lisent pareil côté serveur, et une variable toujours posée se voit dans `ps` même
+ * quand elle n'a rien à dire.
+ */
+export function sessionScopeEnv(scope: McpSessionScope, databasePath: string): Record<string, string> {
+  return {
+    SOLERA_MCP_DB: databasePath,
+    SOLERA_MCP_PROJECT: scope.projectId ?? '',
+    SOLERA_MCP_CONVERSATION: scope.conversationId,
+    SOLERA_MCP_MEMORY: scope.memoryDir,
+    ...(scope.projectFiling ? { SOLERA_MCP_FILING: '1' } : {}),
+    ...(scope.cardFiling ? { SOLERA_MCP_CARD_FILING: '1' } : {}),
+    ...(scope.decisions ? { SOLERA_MCP_DECISIONS: '1' } : {}),
+    ...(scope.proposeCards ? { SOLERA_MCP_PROPOSE_CARDS: '1' } : {}),
+    SOLERA_MCP_DESIGN_SYSTEM: scope.designSystemState,
+    ...(scope.mountedDrives ? { SOLERA_MCP_MOUNTED_DRIVES: '1' } : {}),
+  }
+}
 
+/** Le chemin du pont, sous l'adresse de Solera que l'environnement de la session joint. */
+export const MCP_ENDPOINT_PATH = '/api/v1/mcp'
+
+/**
+ * L'entrée que le CLI reçoit : une URL et un jeton de session, rien d'autre.
+ *
+ * Le jeton est un secret, contrairement à la portée qu'il désigne : il part en en-tête,
+ * par la configuration en mémoire que chaque adaptateur passe à son CLI, et meurt avec
+ * le runner (`McpSessionTokens`).
+ */
+export function builtinMcpServer(params: { baseUrl: string; token: string }): McpServer {
   return {
     id: BUILTIN_MCP_SERVER_ID,
     name: BUILTIN_MCP_SERVER_NAME,
     enabled: true,
     transport: {
-      type: 'stdio',
-      // `process.execPath` et non « node » : sous systemd le PATH est minimal, et rien
-      // ne garantit que celui du CLI mène au même runtime que celui du serveur.
-      command: process.execPath,
-      args: [resolveEntry()],
-      // Une portée, jamais un secret : le serveur lit la base directement, il n'a donc
-      // aucun jeton à recevoir, et l'environnement d'un process reste lisible par
-      // quiconque a un shell sur la machine.
-      env: {
-        SOLERA_MCP_DB: databasePath,
-        // Vide plutôt qu'absente pour un fil libre : les deux se lisent pareil côté
-        // serveur, et une variable toujours posée se voit dans `ps` même quand elle
-        // n'a rien à dire.
-        SOLERA_MCP_PROJECT: projectId ?? '',
-        SOLERA_MCP_CONVERSATION: conversationId,
-        SOLERA_MCP_MEMORY: memoryDir,
-        ...(projectFiling ? { SOLERA_MCP_FILING: '1' } : {}),
-        ...(cardFiling ? { SOLERA_MCP_CARD_FILING: '1' } : {}),
-        ...(decisions ? { SOLERA_MCP_DECISIONS: '1' } : {}),
-        ...(proposeCards ? { SOLERA_MCP_PROPOSE_CARDS: '1' } : {}),
-        SOLERA_MCP_DESIGN_SYSTEM: designSystemState,
-      },
+      type: 'http',
+      url: `${params.baseUrl.replace(/\/+$/, '')}${MCP_ENDPOINT_PATH}`,
+      headers: { Authorization: `Bearer ${params.token}` },
     },
     createdAt: 0,
     updatedAt: 0,
