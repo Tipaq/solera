@@ -142,7 +142,7 @@ function WrittenFileRow({ conversationId, file, manualSaveAt, onOpenFile }: {
           {file.path.split('/').pop()}
         </span>
         <span className="shrink-0 text-micro text-ink-faint">
-          {t('changes.file.passes', { count: file.passes })} · {formatTime(file.ts)}
+          {t(file.passes === 1 ? 'changes.file.passes.one' : 'changes.file.passes.other', { count: file.passes })} · {formatTime(file.ts)}
         </span>
       </button>
 

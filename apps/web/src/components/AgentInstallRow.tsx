@@ -118,7 +118,7 @@ export function AgentInstallProgress({ label, version, progress }: { label: stri
         {progress.current
           ? t('agent.install.progress.fetch', { file: progress.current })
           : t('agent.install.progress.resolving')}
-        {progress.fetched > 0 ? ` · ${t('agent.install.progress.files', { count: progress.fetched })}` : null}
+        {progress.fetched > 0 ? ` · ${t(progress.fetched === 1 ? 'agent.install.progress.files.one' : 'agent.install.progress.files.other', { count: progress.fetched })}` : null}
       </p>
       <p className="text-xs text-ink-faint">{t('agent.install.progress.hint')}</p>
     </div>

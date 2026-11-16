@@ -77,7 +77,7 @@ export function VaultBrowsePage() {
           <ChevronRight size={13} className="shrink-0 text-ink-faint" />
           <span className="min-w-0 truncate">{t('vault.browse.title')}</span>
           <span className="shrink-0 text-meta tabular-nums text-ink-faint">
-            {t('vault.browse.count', { count: String(rows.length) })}
+            {t(rows.length === 1 ? 'vault.browse.count.one' : 'vault.browse.count.other', { count: String(rows.length) })}
           </span>
         </h1>
 

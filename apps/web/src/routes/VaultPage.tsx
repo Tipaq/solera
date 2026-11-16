@@ -194,7 +194,9 @@ export function VaultPage() {
               className="shrink-0"
             >
               <Badge icon={<Link2 size={11} />}>
-                {t('vault.page.incoming', { count: String(facts.incoming.length) })}
+                {t(facts.incoming.length === 1 ? 'vault.page.incoming.one' : 'vault.page.incoming.other', {
+                  count: String(facts.incoming.length),
+                })}
               </Badge>
             </button>
           ) : null}

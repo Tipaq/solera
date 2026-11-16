@@ -81,7 +81,7 @@ const read: ToolView = (tool) => {
   const hint = [
     path,
     offset === null ? null : translate('tool.read.fromLine', { line: offset }),
-    limit === null ? null : translate('tool.read.lines', { count: limit }),
+    limit === null ? null : translate(limit === '1' ? 'tool.read.lines.one' : 'tool.read.lines.other', { count: limit }),
   ]
     .filter((part): part is string => part !== null)
     .join(' · ')
