@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { launchBrowser } from './checks/browser.mjs'
 import { viteDependency } from './checks/vite-deps.mjs'
+import './checks/cleanup.mjs'
 
 // Vrai composer et vraie file de sauvegarde ; API simulée, aucun CLI lancé.
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))

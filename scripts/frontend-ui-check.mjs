@@ -16,12 +16,13 @@ import { checkIde } from './checks/ide.mjs'
 import { checkDownloads } from './checks/downloads.mjs'
 import { checkConversationInstructions } from './checks/conversation-instructions.mjs'
 import { checkMedia } from './checks/media.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // Vrais composants et vraie API, dans une base temporaire. Aucun CLI n'est activé.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-ui-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-ui-check-')))
 const processes = []
 let browser
 

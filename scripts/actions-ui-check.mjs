@@ -9,6 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
 import { viteDependency } from './checks/vite-deps.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // Actions de projet, de bout en bout : vraie API, vrai serveur MCP, vrais terminaux, et
 // sous Linux une vraie unité systemd utilisateur (`solera-app-action-*`), arrêtée et
@@ -16,7 +17,7 @@ import { viteDependency } from './checks/vite-deps.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-actions-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-actions-check-')))
 const shots = process.env.ACTIONS_SHOTS ?? (await mkdtemp(join(tmpdir(), 'solera-actions-shots-')))
 const processes = []
 let browser

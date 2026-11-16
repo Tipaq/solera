@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // La page globale Planifiées (AC-20, PLF-1 à PLF-10) : vrais composants, vraie API, dans
 // une base temporaire semée par la démo. Aucun agent ne tourne : ni CLI ni quota.
@@ -15,7 +16,7 @@ import { launchBrowser } from './checks/browser.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-planned-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-planned-check-')))
 const shots = process.env.PLANNED_SHOTS ?? (await mkdtemp(join(tmpdir(), 'solera-planned-shots-')))
 const processes = []
 let browser

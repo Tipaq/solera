@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 /*
  * Les réglages d'un projet (page projet v2, PP-21) : une page à menu gauche, un
@@ -29,7 +30,7 @@ import { launchBrowser } from './checks/browser.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-project-settings-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-project-settings-check-')))
 const shots = join(root, 'docs/audits/2026-11-11-reglages-projet')
 const processes = []
 let browser

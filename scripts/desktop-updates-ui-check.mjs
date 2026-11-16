@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // Ce que l'interface montre de l'app de bureau, sans Electron : un faux pont
 // `window.soleraDesktop` posé avant le chargement, sur le vrai serveur et le vrai Vite.
@@ -20,7 +21,7 @@ import { launchBrowser } from './checks/browser.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-desktop-updates-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-desktop-updates-check-')))
 const shots = process.env.DESKTOP_UPDATES_SHOTS ?? (await mkdtemp(join(tmpdir(), 'solera-desktop-updates-shots-')))
 const processes = []
 let browser
