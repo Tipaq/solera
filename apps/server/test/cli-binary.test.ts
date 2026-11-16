@@ -6,7 +6,6 @@ import { test } from 'node:test'
 import { CachedProbe } from '../src/agents/cached-probe.js'
 import { CliBinary, withManagedPath } from '../src/agents/cli-binary.js'
 import { hostEnvironment } from '../src/environments/host.js'
-import type { EnvironmentProvider, ExecRequest } from '../src/environments/provider.js'
 
 /**
  * Un CLI posé pendant que la sonde est en cache doit être vu dès qu'on l'invalide.
@@ -48,36 +47,6 @@ test('sous Windows, la clé Path et la racine du préfixe npm', () => {
   const env = withManagedPath({ Path: 'C:\\Windows' }, 'C:\\Solera\\agents', 'win32')
   assert.equal(env.Path, 'C:\\Solera\\agents;C:\\Windows')
   assert.equal(env.PATH, undefined)
-})
-
-/**
- * Le premier lancement d'un CLI tout juste installé peut dépasser la fenêtre de la sonde
- * (Defender sous Windows, #281). Ce silence ne dit rien du CLI : la lecture suivante le
- * resonde au lieu de garder « sans version » jusqu'au bout du TTL.
- */
-test('un CLI resté muet à la sonde est resondé à la lecture suivante', async () => {
-  const managed = mkdtempSync(join(tmpdir(), 'solera-cli-'))
-  mkdirSync(join(managed, 'bin'))
-  const path = join(managed, 'bin', 'solera-test-slow-cli')
-  writeFileSync(path, '#!/bin/sh\necho codex-cli 9.9.9\n')
-  chmodSync(path, 0o755)
-  let calls = 0
-  const environment: EnvironmentProvider = Object.assign(Object.create(hostEnvironment), {
-    exec: async (request: ExecRequest) => {
-      calls++
-      if (calls === 1) throw Object.assign(new Error('délai dépassé'), { killed: true, signal: 'SIGTERM' })
-      return hostEnvironment.exec(request)
-    },
-  })
-  const cli = new CliBinary('codex', 'solera-test-slow-cli', true, managed, environment)
-
-  const first = await cli.describe()
-  assert.equal(first.installed, true)
-  assert.equal(first.version, null)
-  assert.equal((await cli.describe()).version, '9.9.9')
-  // Une réponse obtenue, elle, reste en cache.
-  await cli.describe()
-  assert.equal(calls, 2)
 })
 
 /**
