@@ -66,9 +66,13 @@ try {
   // Le choix du CLI du brouillon : une carte par CLI, celle d'un absent est un bouton
   // « Installer » doublé d'une croix « Ne plus proposer ». Visées par leur nom : Claude
   // Code peut manquer lui aussi sur la machine qui joue la suite.
-  const picker = page.getByRole('group', { name: 'Agent', exact: true })
-  const installCard = (label) => picker.getByRole('button', { name: new RegExp(`^${escapeRegExp(label)} (Installer|Installation…)$`) })
-  const dismiss = (label) => installCard(label).locator('xpath=..').getByRole('button', { name: 'Ne plus proposer' }).click()
+  // `status` restreint la carte à un état, `target` la cherche dans une autre page.
+  const pickerOf = (target) => target.getByRole('group', { name: 'Agent', exact: true })
+  const picker = pickerOf(page)
+  const installCard = (label, { target = page, status = 'Installer|Installation…' } = {}) =>
+    pickerOf(target).getByRole('button', { name: new RegExp(`^${escapeRegExp(label)} (${status})$`) })
+  const dismissButton = (label) => installCard(label).locator('xpath=..').getByRole('button', { name: 'Ne plus proposer' })
+  const dismiss = (label) => dismissButton(label).click()
   const hiddenLine = (labels) => picker.getByText(`Masqués tant qu’ils ne sont pas installés : ${labels}.`)
 
   // 1. Deux CLI manquants, deux cartes « Installer », chacune masquable ; OpenCode,
@@ -111,9 +115,9 @@ try {
     await route.fulfill({ response, json: body })
   })
   await page.reload()
-  await picker.getByRole('button', { name: 'Codex Installation…', exact: true }).waitFor()
+  await installCard('Codex', { status: 'Installation…' }).waitFor()
   assert.ok(await installCard('Codex').isDisabled(), 'carte inactive pendant l’installation')
-  assert.equal(await installCard('Codex').locator('xpath=..').getByRole('button', { name: 'Ne plus proposer' }).count(), 0)
+  assert.equal(await dismissButton('Codex').count(), 0)
   await page.screenshot({ path: join(shots, 'install-running.png') })
   await page.goto(`${base}/settings/comptes-codex`)
   await page.getByRole('tab', { name: 'Codex', selected: true }).waitFor()
@@ -165,7 +169,7 @@ try {
   const phone = await mobile.newPage()
   phone.on('pageerror', (error) => errors.push(error.message))
   await phone.goto(`${base}/p/${project.id}/c/new?agent=claude`)
-  await phone.getByRole('group', { name: 'Agent', exact: true }).getByRole('button', { name: 'Codex Installer', exact: true }).waitFor()
+  await installCard('Codex', { target: phone, status: 'Installer' }).waitFor()
   await delay(800)
   assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'pas de débordement horizontal')
   await phone.screenshot({ path: join(shots, 'mobile.png') })

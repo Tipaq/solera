@@ -5,8 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 
 /**
  * Lancer le serveur, Vite et les scripts d'une suite d'interface, et attendre qu'ils
- * répondent. Une trentaine de suites recopient encore ces trois fonctions : elles
- * peuvent passer ici à mesure qu'on les touche.
+ * répondent, sans en recopier une version de plus dans chaque suite.
  */
 
 /** Un port TCP libre sur 127.0.0.1, au moment de l'appel. */
