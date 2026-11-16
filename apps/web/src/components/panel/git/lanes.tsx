@@ -158,7 +158,6 @@ export function Lanes({ node, lanes, runs, onHoverRun }: {
    */
   const hit = (key: string, run: number, shape: { d: string } | { x1: number; y1: number; x2: number; y2: number }) => {
     const common = {
-      key: `hit-${key}`,
       stroke: 'transparent',
       strokeWidth: 8,
       fill: 'none',
@@ -166,7 +165,7 @@ export function Lanes({ node, lanes, runs, onHoverRun }: {
       onPointerEnter: () => onHoverRun(run),
       onPointerLeave: () => onHoverRun(null),
     }
-    return 'd' in shape ? <path {...common} d={shape.d} /> : <line {...common} {...shape} />
+    return 'd' in shape ? <path key={`hit-${key}`} {...common} d={shape.d} /> : <line key={`hit-${key}`} {...common} {...shape} />
   }
 
   const throughs = node.through.map((lane, index) => ({ lane, run: node.throughRuns[index] ?? lane }))
