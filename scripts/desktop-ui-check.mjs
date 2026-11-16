@@ -233,14 +233,17 @@ try {
     const started = await page.evaluate((name) => fetch(`/api/agents/${name}/install`, { method: 'POST' }).then((r) => r.status), cli)
     assert.equal(started, 202)
     let agent
-    for (let i = 0; i < 120; i++) {
+    // Une échéance en temps plutôt qu'en tours : une sonde muette dure jusqu'à 20 s sous
+    // Windows, et le job n'a pas de limite à lui.
+    const deadline = Date.now() + 10 * 60_000
+    while (Date.now() < deadline) {
       await delay(5000)
       const list = await page.evaluate(() => fetch('/api/agents?refresh=1').then((r) => r.json()))
       agent = list.agents.find((entry) => entry.agent === cli)
       assert.ok(agent, `${cli} absent de /api/agents`)
       // Le premier `--version` après l'installation peut dépasser la fenêtre de la sonde
-      // sous Windows (Defender analyse le binaire neuf) : le serveur le resonde alors à
-      // la lecture suivante, qu'on attend au lieu de conclure au silence (#281).
+      // sous Windows (Defender analyse le binaire neuf) : `refresh=1` la relance à chaque
+      // tour, qu'on attend au lieu de conclure au silence (#281).
       if (agent.install.status === 'failed') break
       if (agent.install.status !== 'running' && (agent.version || !agent.installed)) break
     }
