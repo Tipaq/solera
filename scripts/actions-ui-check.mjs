@@ -761,7 +761,11 @@ async function checkProjectTab(base, env, api) {
     const boxes = await page.locator('[data-action-tile]').evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().toJSON()))
     // À 390, « À supprimer » n'est plus, et « Statique servi » s'est ajouté là où systemd le permet.
     assert.equal(boxes.length, phone && !linuxServices ? 3 : 4)
-    assert.ok(boxes.every((box) => Math.abs(box.height - 152) < 1), `tuiles de 9,5 rem : ${boxes.map((box) => box.height)}`)
+    // 10 rem au doigt : le geste du pied y passe à 44 px, et il mangeait les lignes du milieu.
+    const tileHeight = phone ? 160 : 152
+    assert.ok(boxes.every((box) => Math.abs(box.height - tileHeight) < 1), `tuiles de ${tileHeight} px : ${boxes.map((box) => box.height)}`)
+    const clipped = await page.locator('[data-action-tile] > header + div').evaluateAll((nodes) => nodes.filter((node) => node.scrollHeight > node.clientHeight + 1).map((node) => node.textContent))
+    assert.deepEqual(clipped, [], 'les lignes du milieu ne sont pas coupées')
     assert.ok(boxes.every((box) => Math.abs(box.width - boxes[0].width) < 1), 'tuiles de même largeur')
     if (phone) assert.ok(boxes.every((box) => Math.abs(box.x - boxes[0].x) < 1), 'une colonne au téléphone')
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
