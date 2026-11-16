@@ -33,8 +33,10 @@ import { launchBrowser } from './checks/browser.mjs'
  * - **l'en-tête « Graphe » ne chevauche pas « Message »**, à un couloir, à quelques-uns
  *   et à beaucoup, et reste aligné sur les couloirs dessinés dessous (carte #252).
  *
- * Les images sortent dans `docs/audits/2026-10-15-git/lot-1/`, `lot-2/` et `lot-3/`,
- * une par vue.
+ * Les images sortent dans `docs/audits/2026-10-15-git/lot-1/` à `lot-4/`, une par vue,
+ * et celles de l'en-tête du graphe dans `docs/audits/2026-11-16-graphe-entete/`. Les
+ * `avant-*` de ce dossier ont été prises une fois sur l'ancienne largeur : la suite ne
+ * les réécrit pas.
  *
  * Playwright a besoin de ses bibliothèques, qui ne sont pas dans le système :
  *   export LD_LIBRARY_PATH="$HOME/.local/lib/chromium-deps/usr/lib/x86_64-linux-gnu"
@@ -304,13 +306,13 @@ try {
    * Rend le nombre de couloirs, pour que chaque appel dise ce qu'il a vérifié.
    */
   const graphHeaderClear = async (label) => {
-    const header = panel.locator('[data-graph-label]')
+    const header = panel.locator('[data-graph-lanes]')
     await header.waitFor()
     const layout = await header.evaluate((node) => {
       const lanes = document.querySelector('[data-panel="workspace"] [data-hash] > svg').getBoundingClientRect()
       const box = node.getBoundingClientRect()
       return {
-        count: Number(node.dataset.graphLabel),
+        count: Number(node.dataset.graphLanes),
         clipped: node.scrollWidth > node.clientWidth,
         right: box.right,
         next: node.nextElementSibling.getBoundingClientRect().left,
@@ -328,7 +330,7 @@ try {
   }
   /** L'en-tête et les premières rangées : l'image ne montre que ce qui est en cause. */
   const headerShot = async (name) => {
-    const box = await panel.locator('[data-graph-label]').boundingBox()
+    const box = await panel.locator('[data-graph-lanes]').boundingBox()
     const area = await panel.boundingBox()
     await page.screenshot({
       animations: 'disabled',
@@ -601,11 +603,13 @@ try {
   // plutôt que dans `dirtyWorktree` : il faut un fichier **à plusieurs modifications
   // dans un même bloc**, sans quoi cocher une ligne reviendrait à cocher le fichier et
   // la suite ne mesurerait rien.
-  const demoGit = (...args) => execFileSync('git', args, {
-    cwd: radarPath,
+  /** Git dans un arbre du projet de démo, signé de l'utilisateur de démo. */
+  const gitIn = (cwd) => (...args) => execFileSync('git', args, {
+    cwd,
     encoding: 'utf8',
     env: { ...process.env, GIT_AUTHOR_NAME: 'Alex Demo', GIT_AUTHOR_EMAIL: 'alex@example.com', GIT_COMMITTER_NAME: 'Alex Demo', GIT_COMMITTER_EMAIL: 'alex@example.com' },
   })
+  const demoGit = gitIn(radarPath)
   demoGit('checkout', '--', '.')
   demoGit('clean', '-fd')
   writeFileSync(join(radarPath, 'src/lib/radar-prefetch.ts'), [
@@ -956,11 +960,7 @@ try {
   // Dix branches nées de la même tête, chacune avec son commit : dix pointes, donc dix
   // couloirs ouverts en haut du graphe. `commit-tree` n'écrit que des objets, et ne
   // touche ni l'index ni l'arbre de travail du projet.
-  const rootGit = (...args) => execFileSync('git', args, {
-    cwd: nimbus.workspacePath,
-    encoding: 'utf8',
-    env: { ...process.env, GIT_AUTHOR_NAME: 'Alex Demo', GIT_AUTHOR_EMAIL: 'alex@example.com', GIT_COMMITTER_NAME: 'Alex Demo', GIT_COMMITTER_EMAIL: 'alex@example.com' },
-  }).trim()
+  const rootGit = (...args) => gitIn(nimbus.workspacePath)(...args).trim()
   for (let i = 1; i <= 10; i++) {
     const tip = rootGit('commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', `Lane ${i}`)
     rootGit('branch', '-f', `lanes/${i}`, tip)

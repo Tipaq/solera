@@ -40,7 +40,7 @@ export function GraphHeader({ lanes, hovered, onHead }: {
   const t = useTranslate()
   return (
     <div className="sticky top-0 z-10 flex items-center gap-2 bg-surface px-2.5 py-1 text-micro font-semibold tracking-wide text-ink-faint uppercase">
-      <span className="shrink-0 truncate" style={{ width: graphWidth(lanes) }} data-graph-label={lanes}>
+      <span className="shrink-0 truncate" style={{ width: graphWidth(lanes) }} data-graph-lanes={lanes}>
         {t('git.column.graph')}
       </span>
       {hovered ? (
