@@ -172,9 +172,12 @@ export function RebaseView({
         onClose={onClose}
         action={
           commits.length > 0 ? (
+            // Éteint tant qu'une ligne est tenue au clavier : `steps` suit l'ordre
+            // prévisualisé, et un clic à la souris lancerait un ordre que personne
+            // n'a encore posé.
             <button
               type="button"
-              disabled={frozen || steps.length === 0}
+              disabled={frozen || steps.length === 0 || drag.held !== null}
               onClick={() =>
                 plan.data?.onto && run({ kind: 'rebase-start', onto: plan.data.onto.ref, plan: steps })
               }

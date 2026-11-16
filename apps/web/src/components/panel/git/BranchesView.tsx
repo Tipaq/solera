@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowDown,
   ArrowUp,
@@ -346,7 +346,7 @@ function Section({
           </div>
         )
 
-        if (!movable) return <div key={line.fullName}>{row(null)}</div>
+        if (!movable) return <Fragment key={line.fullName}>{row(null)}</Fragment>
 
         return (
           <BranchMenu
