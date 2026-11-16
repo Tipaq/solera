@@ -753,8 +753,12 @@ test('a run in « new worktree » mode opens its session in a fresh worktree nam
   // Le nom porte la minute du tir : l'horloge est figée, sinon deux tirs à cheval sur
   // un changement de minute ne prendraient pas le chemin du suffixe (#286). Seul `Date`
   // est simulé : les minuteries restent vraies, git et la base en dépendent.
-  const minute = new Date(2026, 10, 11, 9, 30, 59, 900).getTime()
-  t.mock.timers.enable({ apis: ['Date'], now: minute })
+  const beforeMinuteTurns = new Date(2026, 10, 11, 9, 30, 59, 900).getTime()
+  t.mock.timers.enable({ apis: ['Date'], now: beforeMinuteTurns })
+  const treeOf = (run: { conversationId: string | null }) => {
+    const thread = db.select().from(conversations).where(eq(conversations.id, run.conversationId!)).get()!
+    return db.select().from(worktrees).where(eq(worktrees.id, thread.worktreeId!)).get()!
+  }
   initRepository(dir)
   const created = createScheduledTask(db, { projectId: 'project', userId: 'owner' }, onDemandInput({ name: 'Revue nocturne', worktreeMode: 'new' }))
   assert.equal(tasksToDto(db, [created])[0]!.worktreeMode, 'new')
@@ -774,18 +778,15 @@ test('a run in « new worktree » mode opens its session in a fresh worktree nam
   // Le tir suivant, dans la même minute, ne reprend pas la branche du précédent.
   db.update(scheduledRuns).set({ status: 'succeeded', finishedAt: Date.now() }).where(eq(scheduledRuns.id, first.id)).run()
   const second = await scheduler.runNow(created.id)
-  const secondThread = db.select().from(conversations).where(eq(conversations.id, second.conversationId!)).get()!
-  assert.notEqual(secondThread.worktreeId, thread.worktreeId)
-  const secondTree = db.select().from(worktrees).where(eq(worktrees.id, secondThread.worktreeId!)).get()!
+  const secondTree = treeOf(second)
+  assert.notEqual(secondTree.id, tree.id)
   assert.equal(secondTree.name, `${tree.name}-2`)
 
   // À la minute suivante, le tir repart d'un nom neuf, sans suffixe.
   db.update(scheduledRuns).set({ status: 'succeeded', finishedAt: Date.now() }).where(eq(scheduledRuns.id, second.id)).run()
-  t.mock.timers.setTime(minute + 100)
+  t.mock.timers.setTime(beforeMinuteTurns + 100)
   const third = await scheduler.runNow(created.id)
-  const thirdThread = db.select().from(conversations).where(eq(conversations.id, third.conversationId!)).get()!
-  const thirdTree = db.select().from(worktrees).where(eq(worktrees.id, thirdThread.worktreeId!)).get()!
-  assert.equal(thirdTree.name, 'planifiee/revue-nocturne-20261111-0931')
+  assert.equal(treeOf(third).name, 'planifiee/revue-nocturne-20261111-0931')
 })
 
 test('a « new worktree » run that produced nothing gives its worktree and branch back (#249)', async (t) => {
