@@ -9,6 +9,7 @@ import { locale, useTranslate } from '../../lib/i18n'
 import type { ServedVersion } from '../../lib/served'
 import { useServerTimeZone } from '../../lib/schedules'
 import { WebLink } from '../WebLink'
+import { OutboundMark, isLocalOnly } from './session-works/parts'
 import { LaunchButton } from './ActionGestures'
 import { KindChip, NatureIcon } from './ActionMarks'
 import type { ActionHandlers } from './useActionGestures'
@@ -131,8 +132,8 @@ function LiveGestures({ item, handlers }: { item: Automation; handlers: ActionHa
     return (
       <span className="flex items-center gap-1">
         {live.href ? (
-          <WebLink href={live.href} className={LINK}>
-            {t('launcher.gesture.open')} <ArrowUpRight size={12} aria-hidden />
+          <WebLink href={live.href} className={LINK} title={isLocalOnly(live.href) ? t('automation.link.remoteTitle') : undefined}>
+            {t('launcher.gesture.open')} <OutboundMark href={live.href} size={12} />
           </WebLink>
         ) : null}
         <Button

@@ -247,7 +247,7 @@ function FreeThreadsGroup({ conversations, onNavigate }: {
 
   return (
     <li>
-      <div className="group flex h-11 items-center gap-0.5 rounded-md pr-1 text-ink transition-colors hover:bg-surface-high md:h-9 pointer-coarse:h-11">
+      <div className="group flex h-11 items-center gap-0.5 rounded-md pr-1 text-ink transition-colors hover:bg-surface-high md:h-9 pointer-coarse:h-11 pointer-coarse:pr-0">
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
@@ -272,7 +272,7 @@ function FreeThreadsGroup({ conversations, onNavigate }: {
             to="/c/new"
             onClick={onNavigate}
             aria-label={t('shell.conversation.new')}
-            className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-surface-high hover:text-ink"
+            className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-surface-high hover:text-ink pointer-coarse:size-11"
           >
             <Plus size={14} />
           </NavLink>
@@ -384,7 +384,7 @@ function ProjectGroup({
         {...listeners}
         // Sur l'en-tête seul : les conversations dessous ont le leur.
         onContextMenu={openRowMenu}
-        className="group flex h-11 items-center gap-0.5 rounded-md pr-1 text-ink transition-colors hover:bg-surface-high md:h-9 pointer-coarse:h-11"
+        className="group flex h-11 items-center gap-0.5 rounded-md pr-1 text-ink transition-colors hover:bg-surface-high md:h-9 pointer-coarse:h-11 pointer-coarse:pr-0"
       >
         {editing ? (
           <RenameInput
@@ -454,7 +454,7 @@ function ProjectGroup({
               to={`/p/${project.id}/c/new`}
               onClick={onNavigate}
               aria-label={t('shell.project.newConversation', { name: project.name })}
-              className="inline-flex size-7 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-surface-high hover:text-ink pointer-coarse:size-9"
+              className="inline-flex size-7 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-surface-high hover:text-ink pointer-coarse:size-11"
             >
               <Plus size={14} />
             </NavLink>
@@ -650,11 +650,16 @@ export function useFocusFollowsConversation(conversations: ConversationDto[]) {
 /**
  * Le mode projet : **une ligne**, puis les conversations du projet, directement.
  *
- * - **⇅ en tête** ouvre la liste des projets : « Tous les projets » en haut, qui revient
- *   à l'arbre, puis *Sans projet*, puis chaque projet dans l'ordre de l'arbre, avec son
- *   point de nouveauté. Un point sur ⇅ dit qu'il y a du nouveau ailleurs ;
- * - le **nom** ouvre l'Aperçu, comme dans l'arbre ;
- * - **+** et **⋯** sont ceux de l'arbre.
+ * - l'**avatar et le nom** sont posés comme dans l'arbre — l'avatar sur la colonne
+ *   d'icônes, le nom sur celle des titres — et ouvrent l'Aperçu ;
+ * - **+** et **⋯** sont ceux de l'arbre ;
+ * - **⇅ en bout de ligne**, là où l'arbre a son chevron, ouvre la liste des projets :
+ *   « Tous les projets » en haut, qui revient à l'arbre, puis *Sans projet*, puis chaque
+ *   projet dans l'ordre de l'arbre, avec son point de nouveauté. Un point sur ⇅ dit
+ *   qu'il y a du nouveau ailleurs.
+ *
+ * Le ⇅ était en tête : il prenait la colonne d'icônes, repoussait l'avatar et décalait
+ * le nom de celui des sessions dessous — au doigt, avec sa cible de 44 px, de 36 px.
  *
  * Ni Tableau, ni Worktrees, ni Planifiées en lignes dessous : ils sont dans le ⋯ et sur la
  * page du projet. Réordonner les projets se fait dans l'arbre.
@@ -690,26 +695,78 @@ function FocusedProject({ project, projects, conversations, onNavigate }: {
 
   return (
     // Un peu d'air sous le filet de la section. La ligne n'a pas de fond au survol :
-    // elle porte quatre gestes (⇅, nom, +, ⋯) qui ont chacun le leur, et un fond commun
+    // elle porte quatre gestes (nom, +, ⋯, ⇅) qui ont chacun le leur, et un fond commun
     // collait au filet et doublait celui des boutons.
     <div className="px-2 pt-2 pb-4">
       <div
         data-project-focus
-        // `pl-1` pose le ⇅ (28 px) sur la colonne d'icônes : son centre tombe à 26 px.
-        className="group mb-1 flex h-11 items-center gap-0.5 pr-1 pl-1 text-ink md:h-9 pointer-coarse:h-11"
+        // Les marges de la ligne d'un projet dans l'arbre : le ⇅ tombe à l'aplomb de
+        // son chevron, le ⋯ et le + à l'aplomb des siens.
+        className="group mb-1 flex h-11 items-center gap-0.5 pr-1 text-ink md:h-9 pointer-coarse:h-11 pointer-coarse:pr-0"
       >
+        {editing && project ? (
+          <RenameInput
+            value={project.name}
+            onCommit={commitRename}
+            onCancel={() => setEditing(false)}
+            className="h-7 min-w-0 flex-1 rounded border border-accent bg-sunken px-1.5 text-sm text-ink outline-none"
+          />
+        ) : project ? (
+          <NavLink
+            to={`/p/${project.id}`}
+            onClick={onNavigate}
+            title={project.name}
+            className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-md px-2.5 text-sm font-semibold transition-colors hover:bg-surface-high"
+          >
+            <ProjectAvatar project={project} className="size-4" />
+            <span className="truncate">{project.name}</span>
+          </NavLink>
+        ) : (
+          <span className="flex h-full min-w-0 flex-1 items-center gap-2.5 px-2.5 text-sm font-semibold">
+            <MessagesSquare size={16} className="shrink-0 text-ink-faint" />
+            <span className="truncate">{name}</span>
+          </span>
+        )}
+
+        <Tooltip label={project ? t('shell.project.newConversation', { name }) : t('shell.conversation.new')}>
+          <NavLink
+            to={project ? `/p/${project.id}/c/new` : '/c/new'}
+            onClick={onNavigate}
+            aria-label={project ? t('shell.project.newConversation', { name }) : t('shell.conversation.new')}
+            className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-surface-high hover:text-ink pointer-coarse:size-11"
+          >
+            <Plus size={14} />
+          </NavLink>
+        </Tooltip>
+
+        {project?.isOwner ? (
+          <Menu
+            trigger={
+              <IconButton label={t('shell.project.actions', { name })} size="sm" data-row-menu>
+                <MoreHorizontal size={14} />
+              </IconButton>
+            }
+          >
+            <ProjectMenuEntries project={project} onNavigate={onNavigate} onRename={() => setEditing(true)} />
+          </Menu>
+        ) : null}
+
         <Menu
-          align="start"
+          align="end"
           trigger={
             <button
               type="button"
               aria-label={newElsewhere ? t('shell.focus.switchNew') : t('shell.focus.switch')}
-              className="relative inline-flex size-7 shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-surface-high hover:text-ink pointer-coarse:size-11"
+              className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-surface-high hover:text-ink pointer-coarse:size-11"
             >
-              <ChevronsUpDown size={14} />
-              {newElsewhere ? (
-                <span aria-hidden className="absolute top-0.5 right-0.5"><StateDot state="unread" labelled={false} /></span>
-              ) : null}
+              {/* Le point s'accroche à l'icône et non au coin du bouton : au doigt, le
+                  bouton fait 44 px et le point flottait loin d'elle. */}
+              <span className="relative">
+                <ChevronsUpDown size={14} />
+                {newElsewhere ? (
+                  <span aria-hidden className="absolute -top-1.5 -right-1.5"><StateDot state="unread" labelled={false} /></span>
+                ) : null}
+              </span>
             </button>
           }
         >
@@ -735,53 +792,6 @@ function FocusedProject({ project, projects, conversations, onNavigate }: {
             />
           ))}
         </Menu>
-
-        {editing && project ? (
-          <RenameInput
-            value={project.name}
-            onCommit={commitRename}
-            onCancel={() => setEditing(false)}
-            className="h-7 min-w-0 flex-1 rounded border border-accent bg-sunken px-1.5 text-sm text-ink outline-none"
-          />
-        ) : project ? (
-          <NavLink
-            to={`/p/${project.id}`}
-            onClick={onNavigate}
-            title={project.name}
-            className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-sm font-semibold transition-colors hover:bg-surface-high"
-          >
-            <ProjectAvatar project={project} className="size-4" />
-            <span className="truncate">{project.name}</span>
-          </NavLink>
-        ) : (
-          <span className="flex h-full min-w-0 flex-1 items-center gap-2 px-1.5 text-sm font-semibold">
-            <MessagesSquare size={16} className="shrink-0 text-ink-faint" />
-            <span className="truncate">{name}</span>
-          </span>
-        )}
-
-        <Tooltip label={project ? t('shell.project.newConversation', { name }) : t('shell.conversation.new')}>
-          <NavLink
-            to={project ? `/p/${project.id}/c/new` : '/c/new'}
-            onClick={onNavigate}
-            aria-label={project ? t('shell.project.newConversation', { name }) : t('shell.conversation.new')}
-            className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-surface-high hover:text-ink pointer-coarse:size-9"
-          >
-            <Plus size={14} />
-          </NavLink>
-        </Tooltip>
-
-        {project?.isOwner ? (
-          <Menu
-            trigger={
-              <IconButton label={t('shell.project.actions', { name })} size="sm" data-row-menu>
-                <MoreHorizontal size={14} />
-              </IconButton>
-            }
-          >
-            <ProjectMenuEntries project={project} onNavigate={onNavigate} onRename={() => setEditing(true)} />
-          </Menu>
-        ) : null}
       </div>
 
       <ProjectSessions conversations={mine} projectId={projectId} onNavigate={onNavigate} />
