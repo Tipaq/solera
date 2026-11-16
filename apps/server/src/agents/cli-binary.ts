@@ -148,31 +148,44 @@ function pathExt(env: NodeJS.ProcessEnv): string | undefined {
  * premier groupe qui ressemble à une version, et à défaut la ligne telle quelle.
  * Null quand le binaire n'a rien répondu d'exploitable : présent vaut mieux
  * qu'introuvable, même sans numéro.
+ *
+ * `settled` est faux quand le CLI n'a pas répondu du tout (délai dépassé, lancement
+ * refusé) : son silence ne dit rien de lui, et ne doit pas rester en cache. C'est le cas
+ * du premier lancement de Codex juste après son installation sous Windows, que Defender
+ * retient au-delà de la fenêtre (#281) ; le suivant répond en cent millisecondes.
  */
-async function probeVersion(environment: EnvironmentProvider, binary: string): Promise<string | null> {
+async function probeVersion(
+  environment: EnvironmentProvider,
+  binary: string,
+): Promise<{ version: string | null; settled: boolean }> {
   try {
     const { stdout, code } = await environment.exec({
       command: binary,
       args: ['--version'],
       timeoutMs: VERSION_TIMEOUT_MS,
     })
-    if (code !== 0) return null
+    if (code !== 0) return { version: null, settled: true }
     const line = stdout.trim().split('\n')[0]?.trim()
-    if (!line) return null
-    return /\d+\.\d+(?:\.\d+)?(?:[-+][\w.]+)?/.exec(line)?.[0] ?? line
+    if (!line) return { version: null, settled: true }
+    return { version: /\d+\.\d+(?:\.\d+)?(?:[-+][\w.]+)?/.exec(line)?.[0] ?? line, settled: true }
   } catch {
-    return null
+    return { version: null, settled: false }
   }
 }
 
-async function probe(environment: EnvironmentProvider, binary: string, managedDir: string): Promise<CliStatus> {
+async function probe(
+  environment: EnvironmentProvider,
+  binary: string,
+  managedDir: string,
+): Promise<{ status: CliStatus; settled: boolean }> {
   const path = environment.resolveBinary(binary, managedDir)
   if (!path) {
     // Distinguer les deux cas vaut la peine : un binaire présent mais sans bit
     // d'exécution se répare d'un `chmod`, une absence demande une installation.
-    return { found: false, reason: nodePath.isAbsolute(binary) ? 'not_executable' : 'not_on_path' }
+    return { status: { found: false, reason: nodePath.isAbsolute(binary) ? 'not_executable' : 'not_on_path' }, settled: true }
   }
-  return { found: true, path, version: await probeVersion(environment, path) }
+  const { version, settled } = await probeVersion(environment, path)
+  return { status: { found: true, path, version }, settled }
 }
 
 /**
@@ -192,7 +205,7 @@ export interface CliLauncher {
  * l'API : les deux adaptateurs la recomposeraient à l'identique.
  */
 export class CliBinary implements CliLauncher {
-  private readonly cache: CachedProbe<{ status: CliStatus }>
+  private readonly cache: CachedProbe<{ status: CliStatus; settled: boolean }>
 
   constructor(
     private readonly kind: AgentKind,
@@ -203,13 +216,14 @@ export class CliBinary implements CliLauncher {
     /** Où le CLI est cherché et sondé, et où le lancer ensuite. */
     readonly environment: EnvironmentProvider,
   ) {
-    this.cache = new CachedProbe(TTL_MS, async () => ({
-      status: await probe(environment, configured, managedDir),
-    }))
+    this.cache = new CachedProbe(TTL_MS, () => probe(environment, configured, managedDir))
   }
 
   async status(force = false): Promise<CliStatus> {
-    return (await this.cache.read(force)).status
+    const { status, settled } = await this.cache.read(force)
+    // Un CLI resté muet sera relancé à la prochaine lecture plutôt qu'au bout du TTL.
+    if (!settled) this.cache.invalidate()
+    return status
   }
 
   /**

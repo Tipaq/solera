@@ -8,6 +8,8 @@
 export class CachedProbe<T extends object> {
   private cache: (T & { fetchedAt: number }) | null = null
   private inflight: Promise<T> | null = null
+  /** Avance à chaque invalidation : une sonde lancée avant n'a plus droit au cache. */
+  private generation = 0
 
   constructor(
     private readonly ttlMs: number,
@@ -19,17 +21,27 @@ export class CachedProbe<T extends object> {
       return this.cache
     }
 
-    this.inflight ??= this.probe().finally(() => {
-      this.inflight = null
-    })
+    const generation = this.generation
+    const inflight = (this.inflight ??= this.probe().finally(() => {
+      if (this.inflight === inflight) this.inflight = null
+    }))
 
-    this.cache = { ...(await this.inflight), fetchedAt: Date.now() }
-    return this.cache
+    const value = { ...(await inflight), fetchedAt: Date.now() }
+    // Une invalidation survenue pendant la sonde la périme : son résultat sert à qui
+    // l'attendait, mais ne s'installe pas en cache.
+    if (generation === this.generation) this.cache = value
+    return value
   }
 
-  /** Oublie la valeur : la prochaine lecture sondera, TTL ou pas. */
+  /**
+   * Oublie la valeur : la prochaine lecture sondera, TTL ou pas. Une sonde déjà en vol
+   * est lâchée aussi, parce qu'elle a pu commencer avant le changement qu'on signale (un
+   * CLI sondé pendant son installation).
+   */
   invalidate(): void {
     this.cache = null
+    this.inflight = null
+    this.generation++
   }
 
   /** Périmée et sans lecture en vol : plus rien à garder. */

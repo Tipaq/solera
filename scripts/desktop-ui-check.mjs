@@ -238,7 +238,11 @@ try {
       const list = await page.evaluate(() => fetch('/api/agents?refresh=1').then((r) => r.json()))
       agent = list.agents.find((entry) => entry.agent === cli)
       assert.ok(agent, `${cli} absent de /api/agents`)
-      if (agent.install.status !== 'running') break
+      // Le premier `--version` après l'installation peut dépasser la fenêtre de la sonde
+      // sous Windows (Defender analyse le binaire neuf) : le serveur le resonde alors à
+      // la lecture suivante, qu'on attend au lieu de conclure au silence (#281).
+      if (agent.install.status === 'failed') break
+      if (agent.install.status !== 'running' && (agent.version || !agent.installed)) break
     }
     assert.equal(agent.install.status, 'idle', `installation de ${cli} : ${JSON.stringify(agent.install)}`)
     assert.ok(agent.installed && agent.managed, `${cli} non détecté : ${JSON.stringify(agent)}`)
