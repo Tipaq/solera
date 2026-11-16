@@ -3880,7 +3880,7 @@ export const fr: Catalog = {
   'error.working_directory_missing': "Le dossier de travail de cette conversation n'existe plus : {path}.",
   'error.agent_account_required': "Aucun compte {agent} n'est connecté : connecte-en un dans Réglages › Agents pour lancer cette conversation.",
   'error.agent_cli_not_found': "CLI {agent} introuvable : « {binary} » n'est ni dans {managedDir} ni dans le PATH du service Solera. Installe-le depuis Réglages › Agents.",
-  'error.agent_cli_unavailable': "CLI {agent} introuvable : « {binary} » n'existe pas ou n'est pas exécutable dans l'environnement de cette session.",
+  'error.agent_cli_unavailable': "Le CLI {agent} ne peut pas être lancé : « {binary} » n'existe pas ou n'est pas exécutable dans l'environnement de cette session.",
   'error.worktree_not_gone': "Cette conversation a encore son worktree.",
   'error.conversation_not_in_worktree': "Cette conversation travaille déjà à la racine du projet.",
   'error.conversation_busy_return_to_root': "Un tour est en cours : attends sa fin avant de ramener la session à la racine.",

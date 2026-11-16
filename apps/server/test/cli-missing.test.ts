@@ -16,7 +16,7 @@ import {
 import type { AgentRegistry } from '../src/agents/registry.js'
 import type { Config } from '../src/config.js'
 import { EventLog } from '../src/events/event-log.js'
-import { HttpError } from '../src/http/errors.js'
+import { describeHttpError, HttpError } from '../src/http/errors.js'
 import { TaskScheduler } from '../src/scheduler/task-scheduler.js'
 import { createScheduledTask } from '../src/scheduler/tasks.js'
 import type { SecretStore } from '../src/secrets/store.js'
@@ -77,13 +77,18 @@ async function harness(t: TestContext, agent: AgentKind, label: string, binary =
   const log = new EventLog(db)
   const sessions = new SessionManager(db, log, config, registry, {} as SecretStore, {} as never, {} as never)
   const scheduler = new TaskScheduler({ db, config }, sessions, registry, log)
-  return { db, dir, managedDir, sessions, scheduler, runners }
+  const send = (agent: AgentKind, config: AgentConfig) =>
+    createConversation(db, sessions, {
+      projectId: 'project', userId: 'owner', agent, config, worktreeId: null, cardId: null,
+      firstMessage: { clientMessageId: 'c1', text: 'bonjour', attachments: [], mentions: [], skills: [] },
+    } as Parameters<typeof createConversation>[2])
+  return { db, dir, managedDir, sessions, scheduler, runners, send }
 }
 
 const refusal = (code: string, ...fragments: string[]) => (err: unknown) => {
   assert.ok(err instanceof HttpError, String(err))
   assert.equal(err.code, code)
-  const message = err.message.replace(/\{(\w+)\}/g, (_, key: string) => String(err.params?.[key]))
+  const message = describeHttpError(err)
   for (const fragment of fragments) assert.ok(message.includes(fragment), `« ${fragment} » manque à : ${message}`)
   return true
 }
@@ -92,10 +97,7 @@ for (const [agent, config, label] of AGENTS) {
   test(`${agent} : un CLI introuvable refuse l'envoi en le nommant, sans lancer de runner`, async (t) => {
     const h = await harness(t, agent, label)
     await assert.rejects(
-      createConversation(h.db, h.sessions, {
-        projectId: 'project', userId: 'owner', agent, config, worktreeId: null, cardId: null,
-        firstMessage: { clientMessageId: 'c1', text: 'bonjour', attachments: [], mentions: [], skills: [] },
-      } as Parameters<typeof createConversation>[2]),
+      h.send(agent, config),
       refusal('agent_cli_not_found', label, `"solera-absent-${agent}"`, join(h.managedDir, 'bin'), 'PATH'),
     )
     assert.deepEqual(h.runners, [])
@@ -127,10 +129,7 @@ test('un chemin réglé qui n\'est pas exécutable est refusé en le citant', as
   await chmod(configured, 0o600)
   const h = await harness(t, 'claude', 'Claude Code', configured)
   await assert.rejects(
-    createConversation(h.db, h.sessions, {
-      projectId: 'project', userId: 'owner', agent: 'claude', config: DEFAULT_CLAUDE_CONFIG, worktreeId: null, cardId: null,
-      firstMessage: { clientMessageId: 'c1', text: 'bonjour', attachments: [], mentions: [], skills: [] },
-    } as Parameters<typeof createConversation>[2]),
+    h.send('claude', DEFAULT_CLAUDE_CONFIG),
     refusal('agent_cli_unavailable', 'Claude Code', `"${configured}"`),
   )
   assert.deepEqual(h.runners, [])
