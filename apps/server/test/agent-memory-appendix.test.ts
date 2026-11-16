@@ -6,13 +6,7 @@ import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { conversations, openDatabase, projects, runMigrations, users, type ConversationRow } from '@solera/db'
-import {
-  DEFAULT_CLAUDE_CONFIG,
-  DEFAULT_CODEX_CONFIG,
-  DEFAULT_OPENCODE_CONFIG,
-  MEMORY_INDEX_FILE,
-  type AgentConfig,
-} from '@solera/protocol'
+import { MEMORY_INDEX_FILE, defaultConfigFor, type AgentConfig, type AgentKind } from '@solera/protocol'
 import type { AgentRegistry } from '../src/agents/registry.js'
 import type { RunnerContext } from '../src/agents/types.js'
 import { CodexAccountHomes } from '../src/codex-accounts/homes.js'
@@ -31,12 +25,19 @@ import { SessionManager } from '../src/sessions/session-manager.js'
  * `memoryAppendixForCodex` lui-même.
  */
 
-// Une ligne qu'on ne trouve que dans l'index semé : sa présence dit que l'index est
-// entré, son absence qu'il est resté dehors.
+// Une ligne qu'on ne trouve que dans l'index semé.
 const MARKER = 'Note témoin du garde agentMemory'
 
-type Agent = 'claude' | 'codex' | 'opencode'
-const DEFAULTS = { claude: DEFAULT_CLAUDE_CONFIG, codex: DEFAULT_CODEX_CONFIG, opencode: DEFAULT_OPENCODE_CONFIG }
+/**
+ * L'index absent, vu des deux façons dont le garde peut lâcher. Sans `memory !== null`,
+ * l'appendice part avec un dossier nul : l'index ne se lit pas, mais l'en-tête et « La
+ * mémoire est encore vide » entrent quand même — seul le titre le voit. Un garde qui
+ * retomberait sur le vrai dossier ferait, lui, entrer la note témoin.
+ */
+function assertNoMemory(text: string) {
+  assert.ok(!text.includes(MARKER), text)
+  assert.doesNotMatch(text, /# Mémoire du projet/)
+}
 
 async function manager(t: TestContext, instance: { agentMemory: boolean } = { agentMemory: true }) {
   const dir = await mkdtemp(join(tmpdir(), 'solera-agent-memory-'))
@@ -59,7 +60,7 @@ async function manager(t: TestContext, instance: { agentMemory: boolean } = { ag
 
   const memoryRoot = join(dir, 'memory')
   const registry = {
-    adapter: (agent: Agent) => ({ rawFormat: 'test@1', binary: agent, cli: { managedDir: join(dir, 'agents') } }),
+    adapter: (agent: AgentKind) => ({ rawFormat: 'test@1', binary: agent, cli: { managedDir: join(dir, 'agents') } }),
   } as unknown as AgentRegistry
   const config = {
     server: { host: '0.0.0.0', port: 7517, publicUrl: '', agentUrl: '' },
@@ -73,67 +74,65 @@ async function manager(t: TestContext, instance: { agentMemory: boolean } = { ag
   const seedIndex = async () => {
     const memory = ensureProjectMemory(memoryRoot, 'project', workspace)
     await writeFile(join(memory, MEMORY_INDEX_FILE), `- [Témoin](temoin.md) — ${MARKER}\n`)
-    return memory
   }
-  const overview = (id: string, agent: Agent, agentMemory: boolean) => {
-    const config = { ...DEFAULTS[agent], account: null, agentMemory } as AgentConfig
+  // Crée la conversation, puis rend le contexte que son runner transmettrait au CLI.
+  const overviewOfNew = (id: string, agent: AgentKind, agentMemory: boolean) => {
+    const agentConfig = { ...defaultConfigFor(agent), account: null, agentMemory } as AgentConfig
     db.insert(conversations).values({
       id, projectId: 'project', userId: 'owner', title: id, agent,
-      config: JSON.stringify(config), status: 'idle', createdAt: 1, updatedAt: 1,
+      config: JSON.stringify(agentConfig), status: 'idle', createdAt: 1, updatedAt: 1,
     }).run()
     const row = db.select().from(conversations).all().find((conversation) => conversation.id === id)!
     const context = (sessions as unknown as { buildContext(row: ConversationRow): RunnerContext }).buildContext(row)
-    return context.projectOverview(config) ?? ''
+    return context.projectOverview(agentConfig) ?? ''
   }
-  return { memoryRoot, seedIndex, overview }
+  return { memoryRoot, seedIndex, overviewOfNew }
 }
 
-test('Codex, mémoire permise : l index entre dans le contexte transmis', async (t) => {
-  const { seedIndex, overview } = await manager(t)
+test('Codex, mémoire permise : l’index entre dans le contexte transmis', async (t) => {
+  const { seedIndex, overviewOfNew } = await manager(t)
   await seedIndex()
-  const text = overview('codex-on', 'codex', true)
+  const text = overviewOfNew('codex-on', 'codex', true)
   // Le témoin positif : sans lui, l'absence vérifiée plus bas pourrait venir d'un
   // contexte qui ne contient jamais l'index, quoi qu'on fasse.
   assert.match(text, /# Mémoire du projet/)
   assert.ok(text.includes(MARKER), text)
 })
 
-test('Codex, mémoire refusée par la conversation : l index reste dehors', async (t) => {
-  const { seedIndex, overview } = await manager(t)
+test('Codex, mémoire refusée par la conversation : l’index reste dehors', async (t) => {
+  const { seedIndex, overviewOfNew } = await manager(t)
   await seedIndex()
-  const text = overview('codex-off', 'codex', false)
-  assert.ok(!text.includes(MARKER), text)
-  assert.doesNotMatch(text, /# Mémoire du projet/)
-  // Le reste du contexte est bien là : c'est l'index seul qui manque, pas tout.
-  assert.notEqual(text, '')
+  const text = overviewOfNew('codex-off', 'codex', false)
+  assertNoMemory(text)
+  // Le reste du contexte est bien là, serveur MCP compris : c'est la mémoire seule
+  // qui manque, pas un contexte vide ou un serveur coupé qui l'aurait emportée avec lui.
+  assert.match(text, /read_instructions/)
 })
 
-test('Codex, mémoire refusée par l instance : la conversation qui la veut ne l a pas', async (t) => {
-  const { seedIndex, overview } = await manager(t, { agentMemory: false })
+test('Codex, mémoire refusée par l’instance : la conversation qui la veut ne l’a pas', async (t) => {
+  const { seedIndex, overviewOfNew } = await manager(t, { agentMemory: false })
   await seedIndex()
-  const text = overview('codex-instance-off', 'codex', true)
-  assert.ok(!text.includes(MARKER), text)
-  assert.doesNotMatch(text, /# Mémoire du projet/)
+  const text = overviewOfNew('codex-instance-off', 'codex', true)
+  assertNoMemory(text)
 })
 
-test('Codex, mémoire refusée sans index semé : le dossier n est même pas créé', async (t) => {
-  const { memoryRoot, overview } = await manager(t)
-  const text = overview('codex-off-empty', 'codex', false)
-  assert.doesNotMatch(text, /# Mémoire du projet/)
+test('Codex, mémoire refusée sans index semé : le dossier n’est même pas créé', async (t) => {
+  const { memoryRoot, overviewOfNew } = await manager(t)
+  const text = overviewOfNew('codex-off-empty', 'codex', false)
+  assertNoMemory(text)
   assert.equal(existsSync(join(memoryRoot, 'projects')), false, 'une mémoire refusée ne laisse pas de trace')
 })
 
 test('opencode suit le même garde que Codex', async (t) => {
-  const { seedIndex, overview } = await manager(t)
+  const { seedIndex, overviewOfNew } = await manager(t)
   await seedIndex()
-  assert.ok(overview('opencode-on', 'opencode', true).includes(MARKER))
-  assert.ok(!overview('opencode-off', 'opencode', false).includes(MARKER))
+  assert.ok(overviewOfNew('opencode-on', 'opencode', true).includes(MARKER))
+  assertNoMemory(overviewOfNew('opencode-off', 'opencode', false))
 })
 
-test('Claude, mémoire permise : pas d index injecté, il le charge de lui-même', async (t) => {
-  const { seedIndex, overview } = await manager(t)
+test('Claude, mémoire permise : pas d’index injecté, il le charge de lui-même', async (t) => {
+  const { seedIndex, overviewOfNew } = await manager(t)
   await seedIndex()
-  const text = overview('claude-on', 'claude', true)
-  assert.ok(!text.includes(MARKER), text)
-  assert.doesNotMatch(text, /# Mémoire du projet/)
+  const text = overviewOfNew('claude-on', 'claude', true)
+  assertNoMemory(text)
 })
