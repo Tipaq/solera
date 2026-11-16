@@ -127,5 +127,12 @@ export interface ClaudeLoginStatusDto {
   state: 'starting' | 'waiting_code' | 'checking' | 'done' | 'failed'
   authUrl: string | null
   error: string | null
+  /**
+   * Le code d'un refus de Solera (`error.<code>` au catalogue de l'interface) et ce que
+   * sa phrase interpole ; `error` en porte alors le texte anglais, de repli. Absent quand
+   * c'est le CLI qui échoue : `error` cite sa sortie.
+   */
+  errorCode?: string
+  errorParams?: Record<string, string>
   account: ClaudeAccount | null
 }

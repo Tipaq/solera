@@ -108,7 +108,8 @@ test('reconnexion : même adresse, jeton remplacé ; autre adresse, refusée san
   withEnv(t, 'FIXTURE_CLAUDE_TOKEN', OTHER_TOKEN)
   const wrong = await run(login.start('tim', null, account.id))
   assert.equal(wrong.state, 'failed')
-  assert.match(wrong.error ?? '', /perso@exemple\.fr, pas boulot@exemple\.fr/)
+  assert.equal(wrong.errorCode, 'claude_login_token_mismatch')
+  assert.deepEqual(wrong.errorParams, { email: 'perso@exemple.fr', expected: 'boulot@exemple.fr' })
   assert.equal(store.resolveToken('tim', account.id)?.token, 'sk-ant-oat01-' + 'z'.repeat(80))
   assert.equal(store.list('tim').length, 1)
 
@@ -125,6 +126,19 @@ test('reconnexion : même adresse, jeton remplacé ; autre adresse, refusée san
   assert.equal(revived.account?.label, 'Perso · perso@exemple.fr')
 })
 
+test('reconnexion : une adresse déjà prise par un autre compte est refusée', async (t) => {
+  const { store, login, run } = await harness(t)
+  const twin = store.create('tim', { email: 'perso@exemple.fr', alias: 'Perso' }, TOKEN)
+  const old = store.create('tim', { email: null, alias: 'Ancien' }, 'sk-ant-oat01-' + 'y'.repeat(80))
+
+  withEnv(t, 'FIXTURE_CLAUDE_TOKEN', OTHER_TOKEN)
+  const taken = await run(login.start('tim', null, old.id))
+  assert.equal(taken.state, 'failed')
+  assert.equal(taken.errorCode, 'claude_login_email_taken')
+  assert.deepEqual(taken.errorParams, { email: 'perso@exemple.fr', label: store.find('tim', twin.id)!.label })
+  assert.equal(store.find('tim', old.id)?.email, null)
+})
+
 test('jauge : adoptée si elle mène à l’adresse du compte, refusée sinon', async (t) => {
   const { store, login, run } = await harness(t)
   const account = store.create('tim', { email: 'boulot@exemple.fr', alias: null }, TOKEN)
@@ -133,13 +147,14 @@ test('jauge : adoptée si elle mène à l’adresse du compte, refusée sinon', 
   withEnv(t, 'FIXTURE_CLAUDE_EMAIL', 'muette')
   const mute = await run(login.startGauge('tim', account.id))
   assert.equal(mute.state, 'failed')
-  assert.match(mute.error ?? '', /ne dit pas à quel compte/)
+  assert.equal(mute.errorCode, 'claude_login_email_unknown')
   assert.equal(store.find('tim', account.id)?.gauge, false)
 
   process.env.FIXTURE_CLAUDE_EMAIL = 'perso@exemple.fr'
   const wrong = await run(login.startGauge('tim', account.id))
   assert.equal(wrong.state, 'failed')
-  assert.match(wrong.error ?? '', /perso@exemple\.fr, pas boulot@exemple\.fr/)
+  assert.equal(wrong.errorCode, 'claude_login_gauge_mismatch')
+  assert.deepEqual(wrong.errorParams, { email: 'perso@exemple.fr', expected: 'boulot@exemple.fr' })
   assert.equal(store.find('tim', account.id)?.gauge, false)
 
   process.env.FIXTURE_CLAUDE_EMAIL = 'boulot@exemple.fr'
@@ -227,7 +242,8 @@ test('reconnexion sous le vrai CLI : le jeton attend que la jauge confirme l’a
   withEnv(t, 'FIXTURE_CLAUDE_EMAIL', 'perso@exemple.fr')
   const wrong = await run(login.startGauge('tim', account.id))
   assert.equal(wrong.state, 'failed')
-  assert.match(wrong.error ?? '', /perso@exemple\.fr, pas boulot@exemple\.fr/)
+  assert.equal(wrong.errorCode, 'claude_login_gauge_mismatch')
+  assert.deepEqual(wrong.errorParams, { email: 'perso@exemple.fr', expected: 'boulot@exemple.fr' })
   assert.equal(store.resolveToken('tim', account.id)?.token, OLD)
 
   // Le bon compte : la jauge confirme, le jeton remplace l'ancien.
