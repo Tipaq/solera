@@ -319,7 +319,9 @@ Une suite lance son navigateur par `launchBrowser()` (`scripts/checks/browser.mj
 par `chromium.launch` : Playwright logerait la mémoire partagée de Chromium dans `/tmp`, et
 un `/tmp` presque plein donne une page Vite blanche, en `ERR_INSUFFICIENT_RESOURCES`, à
 une étape au hasard. Une suite qui monte un composant seul prend ses fournisseurs (React
-Query, routeur, `@solera/ui`) par `viteDependency()` (`scripts/checks/vite-deps.mjs`).
+Query, routeur, `@solera/ui`) par `viteDependency()` (`scripts/checks/vite-deps.mjs`). Elle lance serveur et Vite par
+`freePort()`, `run()` et `ready()` (`scripts/checks/servers.mjs`), plutôt que d'en
+recopier une version de plus.
 
 Une suite nouvelle se range dans `scripts/ui-suites.mjs`, dans un des lots que la CI
 lance en parallèle (job `ui-batch`), ou hors CI avec sa raison : sinon la CI échoue.

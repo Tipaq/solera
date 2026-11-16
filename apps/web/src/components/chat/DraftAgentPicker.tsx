@@ -4,7 +4,7 @@ import { agentKindSchema } from '@solera/protocol'
 import { cx } from '@solera/ui'
 import { AGENT_LABELS, AGENT_META, AgentIcon } from '../AgentIcon'
 import { hiddenAgent, useInstallAgent } from '../../lib/agents'
-import { useTranslate } from '../../lib/i18n'
+import { locale, useTranslate } from '../../lib/i18n'
 import { openSettings } from '../../lib/settings-dialog'
 import { peekOf, peekSummary, type PeekTone } from '../../lib/usage-peek'
 
@@ -65,8 +65,9 @@ export function DraftAgentPicker({
   const install = useInstallAgent()
 
   const entryOf = (kind: AgentKind) => availability?.find((candidate) => candidate.agent === kind)
-  const masked = agentKindSchema.options.filter((kind) => entryOf(kind)?.reason !== 'disabled' && hiddenAgent(entryOf(kind), hidden))
-  const shown = agentKindSchema.options.filter((kind) => entryOf(kind)?.reason !== 'disabled' && !masked.includes(kind))
+  const offered = agentKindSchema.options.filter((kind) => entryOf(kind)?.reason !== 'disabled')
+  const masked = offered.filter((kind) => hiddenAgent(entryOf(kind), hidden))
+  const shown = offered.filter((kind) => !masked.includes(kind))
 
   return (
     <fieldset>
@@ -168,7 +169,7 @@ export function DraftAgentPicker({
       </div>
       {masked.length > 0 ? (
         <p className="mt-2 text-xs text-ink-faint">
-          {t('agent.install.hidden', { labels: masked.map((kind) => AGENT_LABELS[kind]).join(', ') })}{' '}
+          {t('agent.install.hidden', { labels: new Intl.ListFormat(locale(), { type: 'conjunction' }).format(masked.map((kind) => AGENT_LABELS[kind])) })}{' '}
           <button type="button" className="underline hover:text-ink" onClick={onReveal}>
             {t('agent.install.reveal')}
           </button>

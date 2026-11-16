@@ -1,13 +1,12 @@
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { freePort, ready, run } from './checks/servers.mjs'
 
 // Retours d'un utilisateur Windows de Sillage (20 oct. 2026), repris chez nous :
 // avancement de l'installation d'un CLI, CLI manquants masquables, sélection de texte
@@ -23,32 +22,8 @@ const shots = process.env.WINDOWS_FEEDBACK_SHOTS ?? (await mkdtemp(join(tmpdir()
 const processes = []
 let browser
 
-async function freePort() {
-  const socket = createServer().listen(0, '127.0.0.1')
-  await once(socket, 'listening')
-  const port = socket.address().port
-  await new Promise((resolve) => socket.close(resolve))
-  return port
-}
-
-function run(args, cwd, env) {
-  const child = spawn(process.execPath, args, { cwd, env, stdio: 'pipe' })
-  processes.push(child)
-  child.diagnostics = ''
-  for (const stream of [child.stdout, child.stderr]) {
-    stream.on('data', (chunk) => { child.diagnostics = (child.diagnostics + chunk).slice(-6000) })
-  }
-  return child
-}
-
-async function ready(url, child) {
-  for (let i = 0; i < 150; i++) {
-    if (child.exitCode !== null) throw new Error(child.diagnostics)
-    if (await fetch(url).then((response) => response.ok).catch(() => false)) return
-    await delay(100)
-  }
-  throw new Error(`Server did not start: ${child.diagnostics}`)
-}
+// Node 22, celui de la CI, n'a pas encore `RegExp.escape`.
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 async function newContext(base, options) {
   const context = await browser.newContext({ locale: 'fr-FR', serviceWorkers: 'block', ...options })
@@ -73,11 +48,11 @@ try {
     SOLERA_DATA_DIR: join(data, 'data'),
     SOLERA_WEB_ROOT: join(data, 'web'),
   }
-  const server = run(['--import', 'tsx', 'src/main.ts'], serverDir, env)
-  const vite = run([join(webDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webDir, env)
+  const server = run(['--import', 'tsx', 'src/main.ts'], serverDir, env, processes)
+  const vite = run([join(webDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webDir, env, processes)
   const base = `http://127.0.0.1:${webPort}`
   await Promise.all([ready(`http://127.0.0.1:${apiPort}/api/health`, server), ready(base, vite)])
-  const seed = run(['--import', 'tsx', 'src/cli/demo-seed.ts'], serverDir, env)
+  const seed = run(['--import', 'tsx', 'src/cli/demo-seed.ts'], serverDir, env, processes)
   const [seedCode] = await once(seed, 'exit')
   assert.equal(seedCode, 0, seed.diagnostics)
 
@@ -92,7 +67,7 @@ try {
   // « Installer » doublé d'une croix « Ne plus proposer ». Visées par leur nom : Claude
   // Code peut manquer lui aussi sur la machine qui joue la suite.
   const picker = page.getByRole('group', { name: 'Agent', exact: true })
-  const installCard = (label) => picker.getByRole('button', { name: new RegExp(`^${label} (Installer|Installation…)$`) })
+  const installCard = (label) => picker.getByRole('button', { name: new RegExp(`^${escapeRegExp(label)} (Installer|Installation…)$`) })
   const dismiss = (label) => installCard(label).locator('xpath=..').getByRole('button', { name: 'Ne plus proposer' }).click()
   const hiddenLine = (labels) => picker.getByText(`Masqués tant qu’ils ne sont pas installés : ${labels}.`)
 
@@ -108,10 +83,10 @@ try {
   await hiddenLine('Codex').waitFor()
   await dismiss('Grok Build')
   await installCard('Grok Build').waitFor({ state: 'detached' })
-  await hiddenLine('Codex, Grok Build').waitFor()
+  await hiddenLine('Codex et Grok Build').waitFor()
   // Le masque est au compte : il survit au rechargement.
   await page.reload()
-  await hiddenLine('Codex, Grok Build').waitFor()
+  await hiddenLine('Codex et Grok Build').waitFor()
   const settings = await (await context.request.get(`${base}/api/me/settings`)).json()
   assert.deepEqual(settings.hiddenAgents, ['codex', 'grok'])
   await page.screenshot({ path: join(shots, 'install-hidden.png') })
@@ -119,7 +94,7 @@ try {
   await picker.getByRole('button', { name: 'Afficher', exact: true }).click()
   await installCard('Codex').waitFor()
   await installCard('Grok Build').waitFor()
-  await hiddenLine('Codex, Grok Build').waitFor({ state: 'detached' })
+  await hiddenLine('Codex et Grok Build').waitFor({ state: 'detached' })
 
   // 2. L'avancement d'une installation : l'état « running » est injecté dans la
   //    réponse de la sonde, l'installation réelle durant plusieurs minutes. La carte
