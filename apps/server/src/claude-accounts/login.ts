@@ -9,7 +9,7 @@ import type { AgentAuth } from '../agents/auth.js'
 import type { CliLauncher } from '../agents/cli-binary.js'
 import { agentProcessEnv } from '../agents/process-env.js'
 import type { ClaudeAccountGauges } from './gauges.js'
-import { otherAddress, type ClaudeIdentify } from './identity.js'
+import { addressesDiffer, type ClaudeIdentify } from './identity.js'
 import type { ClaudeAccountStore } from './store.js'
 
 /**
@@ -75,10 +75,14 @@ class LoginRefusal extends Error {
   ) {
     super(message)
   }
+}
 
-  get status(): Pick<ClaudeLoginStatusDto, 'state' | 'error' | 'errorCode' | 'errorParams'> {
-    return { state: 'failed', error: this.message, errorCode: this.code, errorParams: this.params }
+/** L'état d'une connexion après un échec : un refus avec son code, ou le texte tel quel. */
+function failed(status: ClaudeLoginStatusDto, err: unknown): ClaudeLoginStatusDto {
+  if (err instanceof LoginRefusal) {
+    return { ...status, state: 'failed', error: err.message, errorCode: err.code, errorParams: err.params }
   }
+  return { ...status, state: 'failed', error: err instanceof Error ? err.message : String(err), errorCode: undefined, errorParams: undefined }
 }
 
 interface Login {
@@ -283,7 +287,7 @@ export class ClaudeLoginService {
     // donne, puis le code. Un code collé avec ses espaces ou sauts de ligne est nettoyé,
     // le CLI le refuserait tel quel.
     if (login.status.state === 'failed' && login.purpose === 'token') login.pty.write('\r')
-    login.status = { ...login.status, state: 'checking', error: null }
+    login.status = { ...login.status, state: 'checking', error: null, errorCode: undefined, errorParams: undefined }
     const since = login.output.length
     // Le code et l'Entrée en deux écritures, espacées : arrivés d'un bloc, le CLI tient
     // un code long pour un collage et l'Entrée qui le suit en fait partie, rien n'est
@@ -486,7 +490,7 @@ export class ClaudeLoginService {
     const kept = this.keep(login, token, email)
     login.status =
       kept instanceof LoginRefusal
-        ? { ...login.status, ...kept.status }
+        ? failed(login.status, kept)
         : { ...login.status, state: 'done', error: null, account: kept }
     void this.finish(loginId, null)
   }
@@ -503,10 +507,10 @@ export class ClaudeLoginService {
     if (login.accountId) {
       const account = this.store.find(ownerId, login.accountId)
       if (!account) return new LoginRefusal('claude_login_account_deleted', 'This account was deleted during the sign-in.')
-      if (otherAddress(account.email, email)) {
+      if (addressesDiffer(account.email, email)) {
         return new LoginRefusal(
           'claude_login_token_mismatch',
-          `This code signs in ${email}, not ${account.email}. Nothing was replaced: close and start again, choosing ${account.email} on the authorization page.`,
+          'This code signs in {email}, not {expected}. Nothing was replaced: close and start again, choosing {expected} on the authorization page.',
           { email: email!, expected: account.email! },
         )
       }
@@ -514,7 +518,7 @@ export class ClaudeLoginService {
       if (other && other.id !== account.id) {
         return new LoginRefusal(
           'claude_login_email_taken',
-          `${email} is already the account “${other.label}”. Reconnect that one instead, or delete one of the two.`,
+          '{email} is already the account “{label}”. Reconnect that one instead, or delete one of the two.',
           { email: email!, label: other.label },
         )
       }
@@ -563,10 +567,10 @@ export class ClaudeLoginService {
             )
           }
           // La jauge d'une autre adresse montrerait la consommation d'un autre compte.
-          if (otherAddress(account?.email, email)) {
+          if (addressesDiffer(account?.email, email)) {
             throw new LoginRefusal(
               'claude_login_gauge_mismatch',
-              `This authorization signs in ${email}, not ${account!.email}: the usage shown would be another account's. Nothing was saved, nor the account's token; start again, choosing ${account!.email} on the authorization page.`,
+              "This authorization signs in {email}, not {expected}: the usage shown would be another account's. Nothing was saved, nor the account's token; start again, choosing {expected} on the authorization page.",
               { email: email!, expected: account!.email! },
             )
           }
@@ -581,10 +585,7 @@ export class ClaudeLoginService {
           }
           login.status = { ...login.status, state: 'done', error: null, account: this.store.find(login.ownerId, accountId) ?? null }
         } catch (err) {
-          login.status =
-            err instanceof LoginRefusal
-              ? { ...login.status, ...err.status }
-              : { ...login.status, state: 'failed', error: err instanceof Error ? err.message : String(err) }
+          login.status = failed(login.status, err)
         }
         void this.finish(loginId, null)
       })()

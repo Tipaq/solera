@@ -129,8 +129,8 @@ export interface ClaudeLoginStatusDto {
   error: string | null
   /**
    * Le code d'un refus de Solera (`error.<code>` au catalogue de l'interface) et ce que
-   * sa phrase interpole ; `error` en porte alors le texte anglais, de repli. Absent quand
-   * c'est le CLI qui échoue : `error` cite sa sortie.
+   * sa phrase interpole ; `error` en porte alors le gabarit anglais, de repli. Absent pour
+   * les autres échecs, dont `error` se montre tel quel.
    */
   errorCode?: string
   errorParams?: Record<string, string>

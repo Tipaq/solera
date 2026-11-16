@@ -27,7 +27,7 @@ export type ClaudeIdentify = (source: { token: string } | { configDir: string })
  * démarrage. Deux adresses connues qui diffèrent sont deux comptes ; une adresse que rien
  * ne dit ne contredit rien.
  */
-export function otherAddress(expected: string | null | undefined, read: string | null | undefined): boolean {
+export function addressesDiffer(expected: string | null | undefined, read: string | null | undefined): boolean {
   return Boolean(expected && read && read !== expected)
 }
 
@@ -101,7 +101,7 @@ export async function checkGauges(store: ClaudeAccountStore, identify: ClaudeIde
   const removed: string[] = []
   for (const { id, email } of store.withGauge()) {
     const gaugeEmail = await identify({ configDir: gauges.path(id) })
-    if (!otherAddress(email, gaugeEmail)) continue
+    if (!addressesDiffer(email, gaugeEmail)) continue
     gauges.forget(id)
     removed.push(id)
   }
