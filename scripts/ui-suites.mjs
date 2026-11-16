@@ -4,7 +4,7 @@ import { once } from 'node:events'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { interruption } from './checks/cleanup.mjs'
+import { receivedSignal } from './checks/cleanup.mjs'
 
 /**
  * Lance un lot des suites d'interface `scripts/*-ui-check.mjs`, pour la matrice `ui-batch`
@@ -124,7 +124,7 @@ for (const name of BATCHES[Number(match[1]) - 1]) {
   const start = Date.now()
   const suite = spawn(process.execPath, [join(root, 'scripts', `${name}-ui-check.mjs`)], { cwd: root, stdio: 'inherit' })
   const [status] = await once(suite, 'exit')
-  if (interruption()) process.exit()
+  if (receivedSignal()) process.exit()
   console.log('::endgroup::')
   const seconds = Math.round((Date.now() - start) / 1000)
   if (status !== 0) console.log(`::error::${name}-ui-check a échoué (${seconds} s)`)

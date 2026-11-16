@@ -30,7 +30,8 @@ import { removeOnExit } from './checks/cleanup.mjs'
  */
 const root = fileURLToPath(new URL('../', import.meta.url))
 const executable = process.argv[2] ?? join(root, 'apps/desktop/release', packagedApp())
-const scratch = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-desktop-check-')))
+const scratch = await mkdtemp(join(tmpdir(), 'solera-desktop-check-'))
+if (process.env.KEEP_DESKTOP_CHECK !== '1') removeOnExit(scratch)
 const userData = join(scratch, 'user-data')
 const shots = join(scratch, 'shots')
 await mkdir(shots)
