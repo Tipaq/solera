@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { Cron } from 'croner'
 import type { ScheduleCadence } from '@solera/protocol'
 import type { Automation, UnifiedRun } from '../../web/src/lib/automations.js'
 import type { AgendaColumn, Shot } from '../../web/src/lib/agenda-layout.js'
@@ -19,7 +20,7 @@ const {
   typicalDuration,
   yOf,
 } = await import('../../web/src/lib/agenda-layout.js')
-const { zonedParts } = await import('../../web/src/lib/schedule-rule.js')
+const { cronRunsIn, upcoming, zonedParts } = await import('../../web/src/lib/schedule-rule.js')
 
 const MIN = 60_000
 const HOUR = 60 * MIN
@@ -169,6 +170,59 @@ test('shotsOf : un intervalle part du prochain passage connu, pas de maintenant'
   const later = shotsOf([every], paris(18, 0), paris(19, 0), NOW, PARIS)
   assert.ok(later.every((entry) => (entry.start - (NOW + 50 * MIN)) % (180 * MIN) === 0))
   assert.equal(later.length, 8)
+})
+
+/** Les passages prévus d'un motif, un `nextRun` après l'autre : le témoin de `cronRunsIn`. */
+const witness = (expression: string, from: number, to: number, now: number, count = 1000) =>
+  upcoming(cron(expression), count, { after: Math.max(now + 1, from) - 1, horizon: to - 1, timeZone: PARIS })
+
+test('cronRunsIn : les mêmes passages qu’un nextRun après l’autre, changements d’heure compris', () => {
+  const weeks = [
+    [paris(9, 0), paris(16, 0), NOW],
+    // La semaine du passage à l'heure d'hiver, le dimanche 25 octobre.
+    [Date.UTC(2026, 9, 18, 22), Date.UTC(2026, 9, 25, 23), 0],
+    // Celle du passage à l'heure d'été, le dimanche 29 mars 2026.
+    [Date.UTC(2026, 2, 22, 23), Date.UTC(2026, 2, 29, 22), 0],
+  ] as const
+  for (const expression of ['0 3 * * *', '*/15 * * * *', '30 2 * * *', '0 8-20/6 * * 1-5', '0 3 L * *', '15 10 * * 0', '*/20 * * * * *']) {
+    for (const [from, to, now] of weeks) {
+      const got = cronRunsIn(expression, { from: Math.max(now + 1, from), to, count: 1000, timeZone: PARIS })
+      assert.deepEqual(got, witness(expression, from, to, now), `${expression} dès ${new Date(from).toISOString()}`)
+    }
+  }
+  assert.deepEqual(cronRunsIn('pas un motif', { from: NOW, to: NOW + DAY, count: 10, timeZone: PARIS }), [])
+})
+
+/** Ce que `run` coûte en `Cron.nextRun`, le motif relu à chaque passage avant #283. */
+function nextRunsOf<T>(run: () => T): { result: T; calls: number } {
+  const nextRun = Cron.prototype.nextRun
+  let calls = 0
+  Cron.prototype.nextRun = function (this: Cron, ...args: Parameters<Cron['nextRun']>) {
+    calls += 1
+    return nextRun.apply(this, args)
+  }
+  try {
+    return { result: run(), calls }
+  } finally {
+    Cron.prototype.nextRun = nextRun
+  }
+}
+
+test('shotsOf : « chaque minute » sur un mois, plafonné, sans un nextRun par passage (#283)', () => {
+  const minutely = item('minutely', { schedule: { cadence: cron('* * * * *'), enabled: true, nextRunAt: null } })
+  const from = paris(1, 0)
+  const to = Date.UTC(2026, 11, 1) - HOUR
+  const month = nextRunsOf(() => shotsOf([minutely], from, to, NOW, PARIS))
+  // Les mêmes 1 000 premiers passages qu'un nextRun après l'autre, à partir de maintenant.
+  assert.deepEqual(month.result.map((entry) => entry.start), witness('* * * * *', from, to, NOW))
+  // Un `nextRun` par jour lu : le plafond tombe le lendemain.
+  assert.ok(month.calls <= 2, `${month.calls} nextRun`)
+
+  // Une semaine entière, sans maintenant pour la couper : un `nextRun` par jour.
+  const quarter = item('quarter', { schedule: { cadence: cron('*/15 * * * *'), enabled: true, nextRunAt: null } })
+  const week = nextRunsOf(() => shotsOf([quarter], paris(16, 0), paris(23, 0), NOW, PARIS))
+  assert.equal(week.result.length, 7 * 96)
+  assert.equal(week.calls, 7)
 })
 
 test('liveServices : les services en marche, pas une commande dans un terminal', () => {

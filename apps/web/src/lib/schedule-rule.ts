@@ -400,6 +400,62 @@ export function upcoming(
 /** Au-delà, un jour de changement d'heure se compte comme un autre, à une heure près. */
 const DST_EXACT_RUNS = 96
 
+/** Un motif cron, et les secondes, minutes et heures où il sonne. Null : un motif invalide. */
+function cronClock(expression: string, timeZone: string): { pattern: Cron; seconds: number[]; minutes: number[]; hours: number[] } | null {
+  try {
+    const pattern = new Cron(expression, { paused: true, timezone: timeZone })
+    const fields = new CronPattern(expression, timeZone)
+    const ringing = (flags: number[]) => flags.flatMap((flag, index) => (flag ? [index] : []))
+    return { pattern, seconds: ringing(fields.second), minutes: ringing(fields.minute), hours: ringing(fields.hour) }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Les `count` premiers passages d'un motif cron dans `[from, to)`, comme `upcoming`, sans
+ * un `nextRun` par passage : un motif « chaque minute » en a 10 080 par semaine (#283).
+ * Un jour se lit par un seul `nextRun`, puis ses heures, minutes et secondes s'énumèrent.
+ * Un jour de changement d'heure n'est demandé à croner que pour un motif d'au plus
+ * `DST_EXACT_RUNS` passages par jour ; un motif plus dense s'y lit à une heure près.
+ */
+export function cronRunsIn(
+  expression: string,
+  { from, to, count, timeZone }: { from: number; to: number; count: number; timeZone: string },
+): number[] {
+  const runs: number[] = []
+  const clock = cronClock(expression, timeZone)
+  if (!clock) return runs
+  const { pattern, seconds, minutes, hours } = clock
+  const perDay = hours.length * minutes.length * seconds.length
+  const first = dayOf(from, timeZone)
+  for (let index = 0; runs.length < count; index++) {
+    const start = zonedTime({ ...first, day: first.day + index }, 0, 0, timeZone)
+    if (start >= to) break
+    const end = zonedTime({ ...first, day: first.day + index + 1 }, 0, 0, timeZone)
+    const lo = Math.max(from, start)
+    const hi = Math.min(end, to)
+    const next = pattern.nextRun(new Date(lo - 1))?.getTime()
+    if (next === undefined) break
+    if (next >= hi) continue
+    if (end - start !== DAY && perDay <= DST_EXACT_RUNS) {
+      runs.push(...upcoming({ kind: 'cron', expression }, count - runs.length, { after: lo - 1, horizon: hi - 1, timeZone }))
+      continue
+    }
+    for (const h of hours) {
+      for (const m of minutes) {
+        for (const s of seconds) {
+          const at = start + (h * 3600 + m * 60 + s) * 1000
+          if (at < lo) continue
+          if (at >= hi || runs.length >= count) break
+          runs.push(at)
+        }
+      }
+    }
+  }
+  return runs
+}
+
 /**
  * Les passages de chaque jour d'un mois du fuseau à venir après `now`, en clés de
  * `MonthGrid`. Sans les énumérer : un motif « chaque minute » en a 44 640 par mois, et
@@ -438,18 +494,9 @@ export function monthMarks(
     return marks
   }
 
-  let pattern: Cron
-  let fields: CronPattern
-  try {
-    pattern = new Cron(cadence.expression, { paused: true, timezone: timeZone })
-    fields = new CronPattern(cadence.expression, timeZone)
-  } catch {
-    return marks
-  }
-  const ringing = (flags: number[]) => flags.flatMap((flag, index) => (flag ? [index] : []))
-  const seconds = ringing(fields.second)
-  const minutes = ringing(fields.minute)
-  const hours = ringing(fields.hour)
+  const clock = cronClock(cadence.expression, timeZone)
+  if (!clock) return marks
+  const { pattern, seconds, minutes, hours } = clock
   // Les instants du jour (en secondes depuis minuit) que le motif sonne à partir de `second`.
   const countFrom = (second: number) => {
     let count = 0
