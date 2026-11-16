@@ -628,7 +628,7 @@ export class ClaudeLoginService {
       login.checking = null
     }
     if (error !== null && login.status.state !== 'done') {
-      login.status = { ...login.status, state: 'failed', error }
+      login.status = { ...login.status, state: 'failed', error, errorCode: undefined, errorParams: undefined }
     }
     // Le dossier ne s'efface qu'une fois le CLI parti : il y écrit encore en mourant,
     // et un dossier supprimé sous lui renaissait à moitié.
