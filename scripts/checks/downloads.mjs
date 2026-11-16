@@ -107,7 +107,8 @@ export async function checkDownloads({ page, context, base, project, hero, data 
   const typeWhilePdfLoads = async ({ release, loaded, unroute }) => {
     await page.evaluate(() => {
       window.pdfFocusSteals = 0
-      addEventListener('blur', () => { if (document.activeElement?.tagName === 'IFRAME') window.pdfFocusSteals++ })
+      window.countPdfFocusSteals = () => { if (document.activeElement?.tagName === 'IFRAME') window.pdfFocusSteals++ }
+      addEventListener('blur', window.countPdfFocusSteals)
     })
     const picker = page.getByRole('dialog', { name: 'Ouvrir un fichier', exact: true })
     const field = picker.getByRole('combobox')
@@ -119,7 +120,11 @@ export async function checkDownloads({ page, context, base, project, hero, data 
     await loaded
     await field.pressSequentially(typed.slice(4), { delay: 60 })
     await unroute()
-    assert.ok(await page.evaluate(() => window.pdfFocusSteals) > 0, 'The PDF viewer took the focus while loading')
+    const steals = await page.evaluate(() => {
+      removeEventListener('blur', window.countPdfFocusSteals)
+      return window.pdfFocusSteals
+    })
+    assert.ok(steals > 0, 'The PDF viewer took the focus while loading')
     assert.equal(await field.inputValue(), typed, 'Typing must stay in the field while a PDF finishes loading')
     assert.equal(await field.evaluate((element) => element === document.activeElement), true)
     await page.keyboard.press('Escape')
