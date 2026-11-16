@@ -240,7 +240,7 @@ export function ProjectTimelinePage() {
       {unplaced.length > 0 ? (
         <p className={cx('mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-xs text-ink-faint')}>
           <Inbox size={14} className="shrink-0" />
-          {t('timeline.unplaced', { count: unplaced.length })}
+          {t(unplaced.length === 1 ? 'timeline.unplaced.one' : 'timeline.unplaced.other', { count: unplaced.length })}
           <span className="flex flex-wrap gap-x-1.5">
             {unplaced.map((card) => (
               <button

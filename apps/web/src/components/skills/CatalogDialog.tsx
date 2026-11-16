@@ -211,7 +211,7 @@ export function CatalogDialog({
                 {busy ? t('skills.catalog.installing') : t('skills.batch.install', { count: checked.size })}
               </Button>
             </div>
-            {completed > 0 ? <p role="status" className="mt-2 text-sm text-positive">{t('skills.batch.completed', { count: completed })}</p> : null}
+            {completed > 0 ? <p role="status" className="mt-2 text-sm text-positive">{t(completed === 1 ? 'skills.batch.completed.one' : 'skills.batch.completed.other', { count: completed })}</p> : null}
           </footer> : null}
         </Dialog.Content>
       </Dialog.Portal>

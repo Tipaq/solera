@@ -852,7 +852,7 @@ function SelectionBar({ actions }: { actions: Actions }) {
       />
       <RootAction
         compact
-        label={t('filetree.selection.delete', { count })}
+        label={t(count === 1 ? 'filetree.selection.delete.one' : 'filetree.selection.delete.other', { count })}
         icon={<Trash2 size={13} />}
         onClick={() => actions.onDelete(targets())}
       />
@@ -1317,7 +1317,7 @@ function selectionActions(targets: Picked[], actions: Actions): EntryAction[] {
       key: 'delete',
       group: 'edit',
       icon: <Trash2 size={14} />,
-      label: translate('filetree.selection.delete', { count: targets.length }),
+      label: translate(targets.length === 1 ? 'filetree.selection.delete.one' : 'filetree.selection.delete.other', { count: targets.length }),
       hint: deleteHint(),
       tone: 'critical' as const,
       run: () => actions.onDelete(targets),

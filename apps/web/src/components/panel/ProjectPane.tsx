@@ -338,7 +338,7 @@ function NoCard({ projectId, conversationId, session, cards }: {
           <span className="shrink-0 text-meta tabular-nums text-ink-faint">#{suggestion.card.number}</span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm text-ink">{suggestion.card.title}</span>
-            <span className="block text-micro text-ink-faint">{t('project.pane.suggestion', { count: suggestion.mentions })}</span>
+            <span className="block text-micro text-ink-faint">{t(suggestion.mentions === 1 ? 'project.pane.suggestion.one' : 'project.pane.suggestion.other', { count: suggestion.mentions })}</span>
           </span>
         </div>
       ) : null}
@@ -400,7 +400,7 @@ function ProjectSegment({ projectId, cards, current, board, onOpen }: {
           {project?.name}
           {/* Le compte attend le board : « 0 carte » pendant un chargement ou après une
               erreur affirmerait un board vide qu'on n'a pas lu. */}
-          {cards ? <span className="font-normal text-ink-faint"> · {t('project.pane.cards', { count: cards.length })}</span> : null}
+          {cards ? <span className="font-normal text-ink-faint"> · {t(cards.length === 1 ? 'project.pane.cards.one' : 'project.pane.cards.other', { count: cards.length })}</span> : null}
         </span>
         {empty ? null : (
           <Button size="sm" variant="secondary" icon={<Plus size={14} />} onClick={() => setCreating(true)}>{t('project.pane.newCard')}</Button>

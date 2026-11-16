@@ -616,7 +616,7 @@ function ProjectSessions({ conversations, onNavigate }: {
           <MessagesSquare size={14} className="shrink-0" />
           {showAll
             ? t('shell.sessions.less')
-            : t('shell.sessions.more', { count: sessions.length - visible.length })}
+            : t(sessions.length - visible.length === 1 ? 'shell.sessions.more.one' : 'shell.sessions.more.other', { count: sessions.length - visible.length })}
         </button>
       ) : null}
 

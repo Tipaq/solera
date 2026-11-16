@@ -197,7 +197,7 @@ function ViewBar({ band, closable, tab, facts }: {
           jamais — une note citée quatre fois doit le dire même l'onglet fermé. */}
       <Tab icon={<Link2 size={15} />} label={t('vault.panel.links')} keepLabel={!band}
         badge={facts?.incoming.length ?? 0}
-        announce={t('vault.panel.links.badge', { count: String(facts?.incoming.length ?? 0) })}
+        announce={t(facts?.incoming.length === 1 ? 'vault.panel.links.badge.one' : 'vault.panel.links.badge.other', { count: String(facts?.incoming.length ?? 0) })}
         active={tab === 'links'} onSelect={() => setVaultPanelTab('links')} />
       <Tab icon={<History size={15} />} label={t('vault.panel.history')} keepLabel={!band}
         active={tab === 'history'} onSelect={() => setVaultPanelTab('history')} />

@@ -90,7 +90,7 @@ export function AgentWritings({ conversationId, scope, turns, onOpenFile }: {
   return (
     <section>
       <h3 className="px-2.5 pt-2 pb-1 text-micro font-semibold tracking-wide text-ink-faint uppercase">
-        {t('changes.writings.title', { count: files.length })}
+        {t(files.length === 1 ? 'changes.writings.title.one' : 'changes.writings.title.other', { count: files.length })}
       </h3>
       <ul>
         {files.map((file) => (

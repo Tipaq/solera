@@ -105,7 +105,7 @@ function SourceRow({ source, isAdmin, onBrowse }: { source: SkillSourceDto; isAd
             </p>
             <p className="text-xs text-ink-faint">
               {fetched && source.lastFetchedAt !== null
-                ? t('skills.sources.fetched', {
+                ? t(source.skillCount === 1 ? 'skills.sources.fetched.one' : 'skills.sources.fetched.other', {
                     count: source.skillCount ?? 0,
                     commit: shortCommit(source.lastCommit),
                     when: relativeDate(source.lastFetchedAt),
@@ -282,7 +282,7 @@ function SkillsShSearch({ onOpen }: { onOpen: (browsing: Browsing) => void }) {
                     <span className="truncate text-xs text-ink-faint">
                       <span className="font-mono">{result.repository}</span>
                       {' · '}
-                      {t('skills.search.installs', { count: result.installs.toLocaleString(locale()) })}
+                      {t(result.installs === 1 ? 'skills.search.installs.one' : 'skills.search.installs.other', { count: result.installs.toLocaleString(locale()) })}
                     </span>
                   </span>
                   {source && !source.enabled ? (

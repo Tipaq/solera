@@ -152,7 +152,7 @@ export function ArchivingSettingsPage() {
               {run.data ? (
                 <span className="text-xs text-ink-faint">
                   {run.data.archived > 0
-                    ? t('archiving.run.done', { count: String(run.data.archived) })
+                    ? t(run.data.archived === 1 ? 'archiving.run.done.one' : 'archiving.run.done.other', { count: String(run.data.archived) })
                     : t('archiving.run.none')}
                 </span>
               ) : null}

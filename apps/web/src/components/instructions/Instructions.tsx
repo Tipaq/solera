@@ -113,7 +113,7 @@ export function MarkdownEditor({
           </>
         ) : null}
         <span className="text-xs text-ink-faint">
-          {t('instructions.count', { count: text.length.toLocaleString(locale()) })}
+          {t(text.length === 1 ? 'instructions.count.one' : 'instructions.count.other', { count: text.length.toLocaleString(locale()) })}
         </span>
         {footer}
       </div>

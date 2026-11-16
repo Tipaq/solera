@@ -337,7 +337,7 @@ function Section({
             {line.ahead ? (
               <span
                 className="flex items-center gap-0.5 text-micro text-ink-faint tabular-nums"
-                title={t('git.branches.ahead', { count: line.ahead, upstream: line.upstream ?? '' })}
+                title={t(line.ahead === 1 ? 'git.branches.ahead.one' : 'git.branches.ahead.other', { count: line.ahead, upstream: line.upstream ?? '' })}
               >
                 <ArrowUp size={9} />
                 {line.ahead}
@@ -346,7 +346,7 @@ function Section({
             {line.behind ? (
               <span
                 className="flex items-center gap-0.5 text-micro text-ink-faint tabular-nums"
-                title={t('git.branches.behind', { count: line.behind, upstream: line.upstream ?? '' })}
+                title={t(line.behind === 1 ? 'git.branches.behind.one' : 'git.branches.behind.other', { count: line.behind, upstream: line.upstream ?? '' })}
               >
                 <ArrowDown size={9} />
                 {line.behind}

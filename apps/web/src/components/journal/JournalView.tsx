@@ -284,8 +284,8 @@ function provenance(entry: JournalEntryDto, t: ReturnType<typeof useTranslate>):
   if (entry.count) {
     parts.push(
       entry.kind === 'branch'
-        ? t('journal.commits', { count: entry.count })
-        : t('journal.sessions', { count: entry.count }),
+        ? t(entry.count === 1 ? 'journal.commits.one' : 'journal.commits.other', { count: entry.count })
+        : t(entry.count === 1 ? 'journal.sessions.one' : 'journal.sessions.other', { count: entry.count }),
     )
   }
   if (entry.status) parts.push(t(`journal.run.${entry.status}`))

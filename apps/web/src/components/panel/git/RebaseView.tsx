@@ -134,7 +134,7 @@ export function RebaseView({
           ) : null}
           {running.conflicted.length > 0 ? (
             <p className="text-xs text-caution">
-              {t('git.rebase.conflicted', { count: running.conflicted.length })}
+              {t(running.conflicted.length === 1 ? 'git.rebase.conflicted.one' : 'git.rebase.conflicted.other', { count: running.conflicted.length })}
             </p>
           ) : null}
           <Suspended />
