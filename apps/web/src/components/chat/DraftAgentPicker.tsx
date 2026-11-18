@@ -4,7 +4,7 @@ import { agentKindSchema } from '@solera/protocol'
 import { cx } from '@solera/ui'
 import { AGENT_LABELS, AGENT_META, AgentIcon } from '../AgentIcon'
 import { hiddenAgent, useInstallAgent } from '../../lib/agents'
-import { useTranslate } from '../../lib/i18n'
+import { locale, useTranslate } from '../../lib/i18n'
 import { openSettings } from '../../lib/settings-dialog'
 import { peekOf, peekSummary, type PeekTone } from '../../lib/usage-peek'
 
@@ -65,8 +65,10 @@ export function DraftAgentPicker({
   const install = useInstallAgent()
 
   const entryOf = (kind: AgentKind) => availability?.find((candidate) => candidate.agent === kind)
-  const masked = agentKindSchema.options.filter((kind) => entryOf(kind)?.reason !== 'disabled' && hiddenAgent(entryOf(kind), hidden))
-  const shown = agentKindSchema.options.filter((kind) => entryOf(kind)?.reason !== 'disabled' && !masked.includes(kind))
+  const offered = agentKindSchema.options.filter((kind) => entryOf(kind)?.reason !== 'disabled')
+  const masked = offered.filter((kind) => hiddenAgent(entryOf(kind), hidden))
+  const shown = offered.filter((kind) => !masked.includes(kind))
+  const maskedLabels = new Intl.ListFormat(locale(), { type: 'conjunction' }).format(masked.map((kind) => AGENT_LABELS[kind]))
 
   return (
     <fieldset>
@@ -104,14 +106,15 @@ export function DraftAgentPicker({
                       : job?.status === 'failed' ? t('draft.agent.installFailed') : t('draft.agent.installShort')}
                   </span>
                 </button>
-                {/* Pour qui n'en veut pas : la carte disparaît tant qu'il manque. */}
+                {/* Pour qui n'en veut pas : la carte disparaît tant qu'il manque. Petite à
+                    l'œil, elle prend ses 44 px au doigt par un calque invisible. */}
                 {running ? null : (
                   <button
                     type="button"
                     aria-label={t('agent.install.dismiss')}
                     title={t('agent.install.dismiss')}
                     onClick={() => onHide(kind)}
-                    className="absolute top-1 right-1 flex size-6 items-center justify-center rounded text-ink-faint hover:bg-surface-high hover:text-ink"
+                    className="absolute top-1 right-1 flex size-6 items-center justify-center rounded text-ink-faint hover:bg-surface-high hover:text-ink pointer-coarse:after:absolute pointer-coarse:after:-inset-2.5"
                   >
                     <X size={12} />
                   </button>
@@ -168,7 +171,7 @@ export function DraftAgentPicker({
       </div>
       {masked.length > 0 ? (
         <p className="mt-2 text-xs text-ink-faint">
-          {t('agent.install.hidden', { labels: masked.map((kind) => AGENT_LABELS[kind]).join(', ') })}{' '}
+          {t('agent.install.hidden', { labels: maskedLabels })}{' '}
           <button type="button" className="underline hover:text-ink" onClick={onReveal}>
             {t('agent.install.reveal')}
           </button>

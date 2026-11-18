@@ -5,7 +5,7 @@ import { Button, EmptyState, Menu, MenuCheckboxItem, cx } from '@solera/ui'
 import { vaultNoteFilterSchema, type VaultNoteDto, type VaultNoteFilter } from '@solera/protocol'
 import { HeaderBand } from '../components/HeaderBand'
 import { elapsed } from '../lib/dates'
-import { useTranslate, type MessageKey } from '../lib/i18n'
+import { useTranslate, type MessageKey, pluralOf } from '../lib/i18n'
 import { useCreateNote, useVaultNotes, useVaultState } from '../lib/vault'
 
 /**
@@ -77,7 +77,7 @@ export function VaultBrowsePage() {
           <ChevronRight size={13} className="shrink-0 text-ink-faint" />
           <span className="min-w-0 truncate">{t('vault.browse.title')}</span>
           <span className="shrink-0 text-meta tabular-nums text-ink-faint">
-            {t('vault.browse.count', { count: String(rows.length) })}
+            {t(`vault.browse.count.${pluralOf(rows.length)}`, { count: String(rows.length) })}
           </span>
         </h1>
 

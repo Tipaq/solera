@@ -9,7 +9,7 @@ import type { AgentAuth } from '../agents/auth.js'
 import type { CliLauncher } from '../agents/cli-binary.js'
 import { agentProcessEnv } from '../agents/process-env.js'
 import type { ClaudeAccountGauges } from './gauges.js'
-import type { ClaudeIdentify } from './identity.js'
+import { addressesDiffer, type ClaudeIdentify } from './identity.js'
 import type { ClaudeAccountStore } from './store.js'
 
 /**
@@ -62,6 +62,28 @@ const ERROR_PATTERN = /OAuth\s*error:\s*(.*?)(?=[\s\x00]*(?:Press\s*Enter|Retryi
 const LOGIN_FAILED_PATTERN = /Login\s*failed:\s*([^\n\x00]*)/i
 /** Les relances d'`auth login` après un code refusé, avant d'abandonner. */
 const MAX_RELAUNCHES = 5
+
+/**
+ * Un refus de Solera, et non du CLI : un code que l'interface traduit, ce que sa phrase
+ * interpole, et le texte anglais qui sert de repli.
+ */
+class LoginRefusal extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly params: Record<string, string> = {},
+  ) {
+    super(message)
+  }
+}
+
+/** L'état d'une connexion après un échec : un refus avec son code, ou le texte tel quel. */
+function failed(status: ClaudeLoginStatusDto, err: unknown): ClaudeLoginStatusDto {
+  if (err instanceof LoginRefusal) {
+    return { ...status, state: 'failed', error: err.message, errorCode: err.code, errorParams: err.params }
+  }
+  return { ...status, state: 'failed', error: err instanceof Error ? err.message : String(err), errorCode: undefined, errorParams: undefined }
+}
 
 interface Login {
   ownerId: string
@@ -265,7 +287,7 @@ export class ClaudeLoginService {
     // donne, puis le code. Un code collé avec ses espaces ou sauts de ligne est nettoyé,
     // le CLI le refuserait tel quel.
     if (login.status.state === 'failed' && login.purpose === 'token') login.pty.write('\r')
-    login.status = { ...login.status, state: 'checking', error: null }
+    login.status = { ...login.status, state: 'checking', error: null, errorCode: undefined, errorParams: undefined }
     const since = login.output.length
     // Le code et l'Entrée en deux écritures, espacées : arrivés d'un bloc, le CLI tient
     // un code long pour un collage et l'Entrée qui le suit en fait partie, rien n'est
@@ -467,30 +489,38 @@ export class ClaudeLoginService {
     const email = this.identify ? await this.identify({ token }) : null
     const kept = this.keep(login, token, email)
     login.status =
-      typeof kept === 'string'
-        ? { ...login.status, state: 'failed', error: kept }
+      kept instanceof LoginRefusal
+        ? failed(login.status, kept)
         : { ...login.status, state: 'done', error: null, account: kept }
     void this.finish(loginId, null)
   }
 
   /**
    * Range le jeton : sur le compte reconnecté, sur le compte de la même adresse, ou dans
-   * un compte neuf. Rend le motif du refus quand il n'est pas rangé.
+   * un compte neuf. Rend le refus quand il n'est pas rangé.
    */
-  private keep(login: Login, token: string, email: string | null): ClaudeAccount | string {
+  private keep(login: Login, token: string, email: string | null): ClaudeAccount | LoginRefusal {
     const { ownerId } = login
     // Sans adresse, le jeton est rangé quand même : `auth status` n'en dit aucune sous un
     // jeton de `setup-token` (2.1.302 ne la donne qu'à une connexion claude.ai). C'est la
     // jauge, enchaînée juste après, qui la lit et la pose sur le compte.
     if (login.accountId) {
       const account = this.store.find(ownerId, login.accountId)
-      if (!account) return 'Ce compte a été supprimé pendant la connexion.'
-      if (email && account.email && email !== account.email) {
-        return `Ce code connecte ${email}, pas ${account.email}. Rien n'a été remplacé : ferme et recommence en choisissant ${account.email} sur la page d'autorisation.`
+      if (!account) return new LoginRefusal('claude_login_account_deleted', 'This account was deleted during the sign-in.')
+      if (addressesDiffer(account.email, email)) {
+        return new LoginRefusal(
+          'claude_login_token_mismatch',
+          'This code signs in {email}, not {expected}. Nothing was replaced: close and start again, choosing {expected} on the authorization page.',
+          { email: email!, expected: account.email! },
+        )
       }
       const other = email ? this.store.findByEmail(ownerId, email) : undefined
       if (other && other.id !== account.id) {
-        return `${email} est déjà le compte « ${other.label} ». Reconnecte plutôt celui-là, ou supprime l'un des deux.`
+        return new LoginRefusal(
+          'claude_login_email_taken',
+          '{email} is already the account “{label}”. Reconnect that one instead, or delete one of the two.',
+          { email: email!, label: other.label },
+        )
       }
       if (!email && account.email) {
         this.pendingTokens.set(account.id, { token, expires: Date.now() + PENDING_TOKEN_MS })
@@ -531,14 +561,17 @@ export class ClaudeLoginService {
           this.pendingTokens.delete(accountId)
           const email = this.identify ? await this.identify({ configDir: login.configDir }) : null
           if (this.identify && !email) {
-            throw new Error(
-              "La connexion a abouti, mais claude auth status ne dit pas à quel compte elle appartient. Rien n'a été enregistré : ferme et recommence.",
+            throw new LoginRefusal(
+              'claude_login_email_unknown',
+              'The sign-in went through, but claude auth status does not say which account it belongs to. Nothing was saved: close and start again.',
             )
           }
           // La jauge d'une autre adresse montrerait la consommation d'un autre compte.
-          if (account?.email && email && email !== account.email) {
-            throw new Error(
-              `Cette autorisation connecte ${email}, pas ${account.email} : la consommation affichée serait celle d'un autre compte. Rien n'a été enregistré, le jeton du compte non plus ; recommence en choisissant ${account.email} sur la page d'autorisation.`,
+          if (addressesDiffer(account?.email, email)) {
+            throw new LoginRefusal(
+              'claude_login_gauge_mismatch',
+              "This authorization signs in {email}, not {expected}: the usage shown would be another account's. Nothing was saved, nor the account's token; start again, choosing {expected} on the authorization page.",
+              { email: email!, expected: account!.email! },
             )
           }
           this.gauges!.adopt(accountId, login.configDir)
@@ -552,7 +585,7 @@ export class ClaudeLoginService {
           }
           login.status = { ...login.status, state: 'done', error: null, account: this.store.find(login.ownerId, accountId) ?? null }
         } catch (err) {
-          login.status = { ...login.status, state: 'failed', error: err instanceof Error ? err.message : String(err) }
+          login.status = failed(login.status, err)
         }
         void this.finish(loginId, null)
       })()
@@ -595,7 +628,7 @@ export class ClaudeLoginService {
       login.checking = null
     }
     if (error !== null && login.status.state !== 'done') {
-      login.status = { ...login.status, state: 'failed', error }
+      login.status = { ...login.status, state: 'failed', error, errorCode: undefined, errorParams: undefined }
     }
     // Le dossier ne s'efface qu'une fois le CLI parti : il y écrit encore en mourant,
     // et un dossier supprimé sous lui renaissait à moitié.

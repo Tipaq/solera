@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowDown,
   ArrowUp,
@@ -13,7 +13,7 @@ import {
   Tag,
 } from 'lucide-react'
 import type { RefSectionDto } from '@solera/protocol'
-import { useTranslate } from '../../../lib/i18n'
+import { useTranslate, pluralOf } from '../../../lib/i18n'
 import type { WorkspaceScope } from '../../../lib/workspace-scope'
 import { Banner, PanelEmpty, PanelGroup, PanelStatusIcon, cx, panelRowClass } from '@solera/ui'
 import { useGitActions } from './actions'
@@ -326,7 +326,7 @@ function Section({
             {line.ahead ? (
               <span
                 className="flex items-center gap-0.5 text-xs text-ink-faint tabular-nums"
-                title={t('git.branches.ahead', { count: line.ahead, upstream: line.upstream ?? '' })}
+                title={t(`git.branches.ahead.${pluralOf(line.ahead)}`, { count: line.ahead, upstream: line.upstream ?? '' })}
               >
                 <ArrowUp size={11} />
                 {line.ahead}
@@ -335,7 +335,7 @@ function Section({
             {line.behind ? (
               <span
                 className="flex items-center gap-0.5 text-xs text-ink-faint tabular-nums"
-                title={t('git.branches.behind', { count: line.behind, upstream: line.upstream ?? '' })}
+                title={t(`git.branches.behind.${pluralOf(line.behind)}`, { count: line.behind, upstream: line.upstream ?? '' })}
               >
                 <ArrowDown size={11} />
                 {line.behind}
@@ -346,7 +346,7 @@ function Section({
           </div>
         )
 
-        if (!movable) return <div key={line.fullName}>{row(null)}</div>
+        if (!movable) return <Fragment key={line.fullName}>{row(null)}</Fragment>
 
         return (
           <BranchMenu

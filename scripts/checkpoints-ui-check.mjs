@@ -9,13 +9,14 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // Les points de reprise d'un tour sur la démo : vrai serveur, vrai git, base temporaire.
 // Un tour est joué sans agent par `checkpoint-demo.ts`, captures et fichiers compris.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-checkpoints-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-checkpoints-check-')))
 // Les captures restent après la suite, à côté de la base temporaire et non dedans.
 const shots = join(tmpdir(), 'solera-checkpoints-shots')
 await mkdir(shots, { recursive: true })

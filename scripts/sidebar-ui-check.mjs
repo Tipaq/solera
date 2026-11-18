@@ -8,12 +8,13 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // Vrais composants et vraie API, dans une base temporaire. Aucun CLI n'est activé.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-ui-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-ui-check-')))
 const processes = []
 let browser
 
@@ -472,7 +473,7 @@ try {
 
   /*
     Le mode « un seul projet » (#51). On y entre depuis la ligne du projet dans l'arbre ;
-    la ligne du projet tient en une ligne — ⇅, le nom vers l'Aperçu, +, ⋯ — et les
+    la ligne du projet tient en une ligne — le nom vers l'Aperçu, +, ⋯, ⇅ — et les
     conversations suivent directement, sans liens de vues. Le choix se retient au
     rechargement, suit la conversation qu'on ouvre ailleurs, et revenir à l'arbre ne
     touche pas aux replis du compte.
@@ -487,12 +488,14 @@ try {
   assert.equal(await column.getByRole('link', { name: /^Tableau/ }).count(), 0, 'pas de liens de vues sous la ligne')
   await column.locator(`a[href$="/c/${hero.id}"]`).first().waitFor()
   /*
-    SID-5 : le ⇅ et les sessions du projet sont sur la colonne d'icônes, sans retrait.
-    SID-4 : le ⋯ du projet et le bouton de repli de la bande sont deux boutons `sm`
-    (28 px) centrés sur la même verticale, à 26 px du bord droit utile.
+    SID-5 : l'avatar du projet et les sessions sont sur la colonne d'icônes, sans
+    retrait — l'avatar comme dans l'arbre, le nom sur la verticale des titres.
+    SID-4 : le ⇅, au bout de la ligne comme le chevron d'un projet dans l'arbre, et le
+    bouton de repli de la bande sont deux boutons de 28 px sur la même verticale, à
+    26 px du bord droit utile.
   */
   const focusColumn = [
-    ...await centersFromLeft(focusLine.locator(':scope > :first-child')),
+    ...await centersFromLeft(focusLine.locator(':scope > a:first-child > :first-child')),
     ...await centersFromLeft(focusLine.locator('xpath=..').locator('ul > li > a > :first-child')),
   ]
   assert.deepEqual(distinct(focusColumn), [26], `mode projet sur la colonne d'icônes : ${focusColumn}`)
@@ -501,16 +504,16 @@ try {
   // Les fonds sont en transition : laisser la couleur arriver avant de la lire.
   await page.waitForTimeout(250)
   const collapse = column.getByRole('button', { name: 'Masquer la navigation' })
-  const projectMenu = focusLine.getByRole('button', { name: /^Actions du projet/ })
+  const focusSwitch = focusLine.getByRole('button', { name: /^Changer de projet/ })
   assert.deepEqual(
-    [await collapse.evaluate((node) => node.offsetWidth), await projectMenu.evaluate((node) => node.offsetWidth)],
+    [await collapse.evaluate((node) => node.offsetWidth), await focusSwitch.evaluate((node) => node.offsetWidth)],
     [28, 28],
-    'le repli et le ⋯ en taille sm',
+    'le repli et le ⇅ en 28 px',
   )
   assert.deepEqual(
-    distinct([...await centersFromRight(collapse), ...await centersFromRight(projectMenu)]).length,
+    distinct([...await centersFromRight(collapse), ...await centersFromRight(focusSwitch)]).length,
     1,
-    'le repli et le ⋯ sur la même verticale',
+    'le repli et le ⇅ sur la même verticale',
   )
   // Pas de fond sur toute la ligne au survol : chaque geste a le sien, le nom le sien.
   assert.equal(await focusLine.evaluate((node) => getComputedStyle(node).backgroundColor), 'rgba(0, 0, 0, 0)')
@@ -816,8 +819,59 @@ try {
   await page.screenshot({ path: join(shots, 'tiroir-mobile.png') })
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
 
+  /*
+    Au doigt (passe mobile, 2026-11-15) : un téléphone tactile et non une fenêtre
+    étroite, puisque les cibles suivent `pointer-coarse`. Le mode projet, celui de la
+    capture qui a lancé la passe.
+
+    - Une colonne à droite : le ×, les ⋯ et le ⇅ en 44 px se centrent sur la même
+      verticale, et le bord droit des compteurs des lieux tombe sur celui de leurs
+      icônes de 14 px.
+    - Pas d'épingle vide sur chaque ligne : épingler passe par le ⋯.
+    - Les points d'état ne se posent plus sur le ⋯, qui reste affiché au doigt.
+  */
+  const touchContext = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'fr-FR', serviceWorkers: 'block' })
+  await touchContext.addInitScript((id) => {
+    localStorage.setItem('solera.locale', 'fr')
+    localStorage.setItem('solera.display.projectFocus', id)
+  }, project.id)
+  assert.ok((await touchContext.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'solera-demo' } })).ok())
+  const touchPage = await touchContext.newPage()
+  touchPage.on('pageerror', (error) => errors.push(error.message))
+  await touchPage.goto(`${base}/p/${project.id}/c/${hero.id}`)
+  await touchPage.getByRole('button', { name: 'Ouvrir la navigation', exact: true }).click()
+  const touchColumn = touchPage.locator('aside').filter({ has: touchPage.locator('[data-project-focus]') })
+  const touchFocus = touchColumn.locator('[data-project-focus]')
+  await touchFocus.waitFor()
+  await touchPage.waitForTimeout(400)
+  const rowMenus = touchColumn.locator('[data-session-list] [data-row-menu]')
+  const rightColumn = [
+    ...await centersFromRight(touchColumn.getByRole('button', { name: 'Fermer la navigation', exact: true })),
+    ...await centersFromRight(touchFocus.getByRole('button', { name: /^Changer de projet/ })),
+    ...await centersFromRight(rowMenus),
+  ]
+  assert.deepEqual(distinct(rightColumn).length, 1, `au doigt, une colonne à droite : ${rightColumn}`)
+  assert.equal(await rowMenus.first().evaluate((node) => node.offsetWidth), 44, 'le ⋯ en 44 px')
+  const counterEdges = await rightsFromRight(touchColumn.getByRole('navigation', { name: 'Lieux' }).locator('.tabular-nums:not(:empty)'))
+  // À 1 px près : 16 px de marge, le pas de l'échelle le plus proche des 15 qu'il faudrait.
+  assert.ok(counterEdges.every((edge) => Math.abs(edge - (rightColumn[0] - 7)) <= 1), `les compteurs au bord des icônes : ${counterEdges}`)
+  assert.equal(
+    await touchColumn.locator('[data-session-list]').getByRole('button', { name: 'Épingler en haut', exact: true }).count(),
+    0,
+    'pas d’épingle vide au doigt',
+  )
+  const overlaps = await touchColumn.locator('[data-session-list] > li').evaluateAll((rows) => rows.flatMap((row) => {
+    const menu = row.querySelector('[data-row-menu]')?.getBoundingClientRect()
+    return [...row.querySelectorAll('[role=img]')]
+      .filter((dot) => menu && dot.getBoundingClientRect().right > menu.left)
+      .map(() => row.textContent)
+  }))
+  assert.deepEqual(overlaps, [], 'aucun point sur le ⋯')
+  await touchPage.screenshot({ path: join(shots, 'tiroir-doigt-mode-projet.png') })
+  await touchContext.close()
+
   assert.deepEqual(errors, [])
-  console.log('OK : lieux et leur raccourci de création, historique daté, arbre des projets, planifiées, défilement d’un seul bloc, colonne d’icônes et bord droit commun, modale d’activité, mode un seul projet, menu ⋯ d’un projet, menu du compte, consommation (vide, servie, lente, en panne, par compte), refus de rangement pendant un tour, Fils vers /sessions, lignes de fin, Ajuster à la hauteur et repli de l’Activité, 10 / 20 / 50, tiroir mobile.')
+  console.log('OK : lieux et leur raccourci de création, historique daté, arbre des projets, planifiées, défilement d’un seul bloc, colonne d’icônes et bord droit commun, modale d’activité, mode un seul projet, menu ⋯ d’un projet, menu du compte, consommation (vide, servie, lente, en panne, par compte), refus de rangement pendant un tour, Fils vers /sessions, lignes de fin, Ajuster à la hauteur et repli de l’Activité, 10 / 20 / 50, tiroir mobile, colonne de droite au doigt.')
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

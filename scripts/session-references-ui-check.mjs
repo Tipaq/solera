@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { launchBrowser } from './checks/browser.mjs'
 import { viteDependency } from './checks/vite-deps.mjs'
+import './checks/cleanup.mjs'
 
 // Citer une session (carte #105) : le menu « Insérer », la liste `@@`, la puce au-dessus
 // du champ et dans le fil, son aperçu au pointeur et au doigt, la largeur du fil.

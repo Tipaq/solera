@@ -9,6 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
 import { checkMilestoneAsks } from './checks/milestone-inbox.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 /*
  * Les pages de lieu : l'Aperçu d'un projet, celui du portefeuille, Planifiées, et le Journal.
@@ -31,7 +32,7 @@ import { checkMilestoneAsks } from './checks/milestone-inbox.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-places-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-places-check-')))
 const processes = []
 let browser
 
