@@ -1,4 +1,4 @@
-import { useState, type ComponentType, type ReactNode } from 'react'
+import { useState, type ComponentProps, type ComponentType, type ReactNode } from 'react'
 import {
   ArrowUpFromLine,
   Copy,
@@ -62,13 +62,41 @@ interface MenuKit {
     onSelect: () => void
     tone?: 'neutral' | 'critical'
     disabled?: boolean
+    /** Le raccourci clavier du geste, affiché au bout de l'entrée dans les deux menus. */
+    shortcut?: string
     children: ReactNode
   }>
   Separator: ComponentType
 }
 
+/**
+ * `ContextMenuItem` avec le `shortcut` que `MenuItem` a et qu'il n'a pas encore.
+ *
+ * Sans lui, le contrat de la trousse ne pourrait pas porter de raccourci, et le premier
+ * à en ajouter un le perdrait au clic droit sans que rien ne le signale. Le rendu
+ * recopie celui de `MenuItem` dans `@solera/ui` ; il disparaîtra quand
+ * `ContextMenuItem` saura le faire lui-même.
+ */
+function ContextItem({ shortcut, children, ...props }: ComponentProps<MenuKit['Item']>) {
+  return (
+    <ContextMenuItem {...props}>
+      <span className="min-w-0 flex-1">{children}</span>
+      {/* `aria-hidden`, comme dans `MenuItem` : un rappel pour l'œil, pas une partie
+          du nom de l'entrée. */}
+      {shortcut ? (
+        <kbd
+          aria-hidden
+          className="shrink-0 rounded border border-line px-1 font-sans text-micro text-ink-faint"
+        >
+          {shortcut}
+        </kbd>
+      ) : null}
+    </ContextMenuItem>
+  )
+}
+
 const DROPDOWN: MenuKit = { Item: MenuItem, Separator: MenuSeparator }
-const CONTEXT: MenuKit = { Item: ContextMenuItem, Separator: ContextMenuSeparator }
+const CONTEXT: MenuKit = { Item: ContextItem, Separator: ContextMenuSeparator }
 
 /**
  * Une ligne et son menu, ouvert des deux façons.
