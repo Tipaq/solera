@@ -320,6 +320,10 @@ par `chromium.launch` : Playwright logerait la mémoire partagée de Chromium da
 un `/tmp` presque plein donne une page Vite blanche, en `ERR_INSUFFICIENT_RESOURCES`, à
 une étape au hasard. Une suite qui monte un composant seul prend ses fournisseurs (React
 Query, routeur, `@solera/ui`) par `viteDependency()` (`scripts/checks/vite-deps.mjs`).
+Elle importe `scripts/checks/cleanup.mjs`, et y passe son dossier temporaire par
+`removeOnExit()` : son `finally` ne s'exécute pas sur SIGTERM ou Ctrl-C, et serveur, Vite
+et esbuild restaient orphelins des heures durant (#266). `ui-suites.mjs` refuse une suite
+qui ne l'importe pas.
 
 Une suite nouvelle se range dans `scripts/ui-suites.mjs`, dans un des lots que la CI
 lance en parallèle (job `ui-batch`), ou hors CI avec sa raison : sinon la CI échoue.

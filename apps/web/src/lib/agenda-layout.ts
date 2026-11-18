@@ -1,5 +1,5 @@
 import { RUN_VERDICTS, type Automation, type AutomationSchedule, type RunStatus } from './automations'
-import { upcoming, zonedParts, zonedTime, type CalendarDay } from './schedule-rule'
+import { cronRunsIn, upcoming, zonedParts, zonedTime, type CalendarDay } from './schedule-rule'
 
 /**
  * La géométrie de l'Agenda des actions (`actions.md` §1.G) : les passages passés et à
@@ -121,6 +121,8 @@ function plannedIn(schedule: AutomationSchedule, from: number, to: number, now: 
     for (; at < to && out.length < MAX_PLANNED; at += step) out.push(at)
     return out
   }
+  // Un motif dense se compte jour par jour : « chaque minute » coûterait sinon `MAX_PLANNED` `nextRun` (#283).
+  if (cadence.kind === 'cron') return cronRunsIn(cadence.expression, { from: Math.max(now + 1, from), to, count: MAX_PLANNED, timeZone })
   return upcoming(cadence, MAX_PLANNED, { after: start - 1, horizon: to - 1, timeZone }).filter((at) => at > now && at >= from)
 }
 

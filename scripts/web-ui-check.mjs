@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 /*
  * La vue *Web* du panneau.
@@ -35,7 +36,7 @@ import { launchBrowser } from './checks/browser.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-web-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-web-check-')))
 const processes = []
 let browser
 

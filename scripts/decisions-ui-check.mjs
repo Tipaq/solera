@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // Les décisions de bout en bout, avec les vrais composants et la vraie API, dans une base
 // temporaire : une session accordée dépose une décision par la même file que le serveur
@@ -22,7 +23,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
 const Database = createRequire(join(serverDir, 'package.json'))('better-sqlite3')
-const data = await mkdtemp(join(tmpdir(), 'solera-decisions-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-decisions-check-')))
 const shots = join(root, 'docs/audits/2026-10-22-decisions')
 const processes = []
 let browser

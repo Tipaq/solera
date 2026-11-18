@@ -52,7 +52,7 @@ import {
 } from '../../lib/entries'
 import { fileIconUrl } from '../../lib/file-icons'
 import { downloadArchive, downloadFile } from '../../lib/files-io'
-import { translate, useTranslate } from '../../lib/i18n'
+import { translate, useTranslate, pluralOf } from '../../lib/i18n'
 import { useRefreshTree, useTreeLevel } from '../../lib/tree'
 import {
   clearSelection,
@@ -856,7 +856,7 @@ function SelectionBar({ actions }: { actions: Actions }) {
         }}
       />
       <SelectionAction
-        label={t('filetree.selection.delete', { count })}
+        label={t(`filetree.selection.delete.${pluralOf(count)}`, { count })}
         icon={<Trash2 size={13} />}
         onClick={() => actions.onDelete(targets())}
       />
@@ -1309,7 +1309,7 @@ function selectionActions(targets: Picked[], actions: Actions): EntryAction[] {
       key: 'delete',
       group: 'edit',
       icon: <Trash2 size={14} />,
-      label: translate('filetree.selection.delete', { count: targets.length }),
+      label: translate(`filetree.selection.delete.${pluralOf(targets.length)}`, { count: targets.length }),
       hint: deleteHint(),
       tone: 'critical' as const,
       run: () => actions.onDelete(targets),

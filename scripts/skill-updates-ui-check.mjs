@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { launchBrowser } from './checks/browser.mjs'
 import { viteDependency } from './checks/vite-deps.mjs'
+import './checks/cleanup.mjs'
 
 // Vrais composants ; les sources simulées reproduisent les mises à jour partielles, sans toucher aux skills installés.
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))

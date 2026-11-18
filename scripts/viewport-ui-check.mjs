@@ -5,6 +5,7 @@ import { createServer } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { launchBrowser } from './checks/browser.mjs'
+import './checks/cleanup.mjs'
 
 // Les événements sont simulés : seul un iPad réel peut valider les calques WebKit.
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))

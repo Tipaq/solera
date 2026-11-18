@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { _electron as electron } from 'playwright'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 /**
  * L'application de bureau empaquetée, lancée pour de vrai : son serveur démarre, la
@@ -30,6 +31,7 @@ import { _electron as electron } from 'playwright'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const executable = process.argv[2] ?? join(root, 'apps/desktop/release', packagedApp())
 const scratch = await mkdtemp(join(tmpdir(), 'solera-desktop-check-'))
+if (process.env.KEEP_DESKTOP_CHECK !== '1') removeOnExit(scratch)
 const userData = join(scratch, 'user-data')
 const shots = join(scratch, 'shots')
 await mkdir(shots)

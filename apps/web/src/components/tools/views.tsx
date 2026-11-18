@@ -4,7 +4,7 @@ import type { ToolItem } from '../../lib/chat-fold'
 import { parseUnifiedDiff } from '../../lib/diff'
 import { languageFromPath } from '../../lib/highlight'
 import { toolEdits } from '../../lib/tool-edits'
-import { translate, type MessageKey } from '../../lib/i18n'
+import { translate, type MessageKey, pluralOf } from '../../lib/i18n'
 import { DiffHunks } from '../DiffHunks'
 import { ImageThumbnail } from '../ImageThumbnail'
 import { WebLink } from '../WebLink'
@@ -81,7 +81,7 @@ const read: ToolView = (tool) => {
   const hint = [
     path,
     offset === null ? null : translate('tool.read.fromLine', { line: offset }),
-    limit === null ? null : translate('tool.read.lines', { count: limit }),
+    limit === null ? null : translate(`tool.read.lines.${pluralOf(Number(limit))}`, { count: limit }),
   ]
     .filter((part): part is string => part !== null)
     .join(' · ')

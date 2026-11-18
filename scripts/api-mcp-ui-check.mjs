@@ -8,13 +8,14 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // Vérifie que les réglages présentent l'API et le serveur MCP côte à côte, qu'un jeton MCP
 // se crée sans les champs propres aux tâches, puis que ce jeton ouvre le vrai serveur MCP.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-api-mcp-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-api-mcp-check-')))
 const shots = process.env.API_MCP_SHOTS ?? (await mkdtemp(join(tmpdir(), 'solera-api-mcp-shots-')))
 const processes = []
 let browser

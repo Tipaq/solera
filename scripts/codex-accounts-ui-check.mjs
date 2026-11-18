@@ -9,6 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
 import { writeFakeCodex } from './checks/fake-clis.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // Comptes Codex supplémentaires : création, connexion par clé API et par code d'appareil,
 // sélecteur de compte dans les défauts du CLI. Vrais composants, vraie API, base temporaire ;
@@ -17,7 +18,7 @@ import { writeFakeCodex } from './checks/fake-clis.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-ui-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-ui-check-')))
 const processes = []
 let browser
 

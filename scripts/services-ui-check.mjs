@@ -11,13 +11,14 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { launchBrowser } from './checks/browser.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // Base, projets et serveurs jetables : aucun agent ni service utilisateur n'est arrêté.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
 const runtime = process.env.SOLERA_TEST_RUNTIME
-const data = await mkdtemp(join(tmpdir(), 'solera-services-ui-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-services-ui-')))
 const children = []
 const trackedProcesses = []
 // Unités systemd jetables, arrêtées en sortie même si le contrôle échoue.

@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // Les réglages des agents (#120) : les trois groupes de la modale, la section Agents, les demandes à Solera
 // en trois états au compte, les anciennes adresses, et l'héritage au projet — hérité,
@@ -18,7 +19,7 @@ import { launchBrowser } from './checks/browser.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-settings-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-settings-check-')))
 const processes = []
 let browser
 

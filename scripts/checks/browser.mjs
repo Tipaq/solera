@@ -1,5 +1,7 @@
 import { statfsSync } from 'node:fs'
 import { chromium } from 'playwright'
+// Les signaux passent par lui, d'où `handleSIG*: false` plus bas.
+import './cleanup.mjs'
 
 /**
  * Le Chromium des suites d'interface.
@@ -26,6 +28,11 @@ export function launchBrowser({ scrollbars = false, ...options } = {}) {
       // ne bouge quand la barre paraît doit la voir paraître.
       ...scrollbars ? ['--hide-scrollbars'] : [],
     ],
+    // Les signaux sont l'affaire de `cleanup.mjs`, que toute suite importe : sur SIGINT,
+    // Playwright sortirait aussitôt, sans laisser au `finally` le temps de finir.
+    handleSIGINT: false,
+    handleSIGTERM: false,
+    handleSIGHUP: false,
     ...options,
   })
 }
