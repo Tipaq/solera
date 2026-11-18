@@ -9,6 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
 import { writeFakeClaude } from './checks/fake-clis.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // Vrais composants et vraie API, dans une base temporaire : la tâche créée ici tire pour
 // de bon, à la minute. Le CLI Claude est un faux (`checks/fake-clis.mjs`) qui joue un
@@ -17,7 +18,7 @@ import { writeFakeClaude } from './checks/fake-clis.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-schedule-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-schedule-check-')))
 const shots = process.env.SCHEDULE_SHOTS ?? (await mkdtemp(join(tmpdir(), 'solera-schedule-shots-')))
 const processes = []
 let browser
@@ -64,6 +65,9 @@ try {
     SOLERA_DATA_DIR: join(data, 'data'),
     SOLERA_WEB_ROOT: join(data, 'web'),
     FAKE_CLAUDE_LOG: claudeStdinLog,
+    // Un tour de 5 s : la tuile doit avoir le temps de dire « En cours » (l. ~225),
+    // ce qu'un tour instantané ne lui laisse pas en CI.
+    FAKE_CLAUDE_TURN_MS: '5000',
   }
   const server = run(['--import', 'tsx', 'src/main.ts'], serverDir, env)
   const vite = run([join(webDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webDir, env)

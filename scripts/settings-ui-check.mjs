@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // Les réglages des agents (#120) : les trois groupes de la modale, la section Agents, les demandes à Solera
 // en trois états au compte, les anciennes adresses, et l'héritage au projet — hérité,
@@ -18,7 +19,7 @@ import { launchBrowser } from './checks/browser.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-settings-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-settings-check-')))
 const processes = []
 let browser
 
@@ -196,6 +197,9 @@ try {
   await save.click()
   const project1 = async () => (await (await context.request.get(`${base}/api/projects`)).json()).find((entry) => entry.id === project.id)
   await until(project1, (current) => current.configLayer.shared.cardFiling === 'deny', 'rangement de carte au projet')
+  // La page vide son brouillon une fois l'enregistré relu, après le serveur : un geste
+  // fait avant serait effacé avec lui, et « modifié ici » ne rendrait pas l'héritage (#268).
+  await page.getByText('1 réglage enregistré.', { exact: true }).waitFor()
   // Ce qu'il ne change pas reste celui du compte : les décisions réglées plus haut.
   const projectDecisions = page.locator('#reglage-agent-requests-decisions')
   assert.ok((await projectDecisions.getByRole('combobox', { name: 'Décisions' }).textContent()).includes('Demande mon accord'))

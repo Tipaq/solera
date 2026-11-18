@@ -9,6 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
 import { writeFakeClaude } from './checks/fake-clis.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // Vrais composants et vraie API, dans une base temporaire : la tâche créée ici tire pour
 // de bon. Le CLI Claude est un faux (`checks/fake-clis.mjs`) qui joue un tour court :
@@ -17,7 +18,7 @@ import { writeFakeClaude } from './checks/fake-clis.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-schedule-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-schedule-check-')))
 const shots = process.env.SCHEDULE_SHOTS ?? (await mkdtemp(join(tmpdir(), 'solera-schedule-shots-')))
 const processes = []
 let browser

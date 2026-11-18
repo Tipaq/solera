@@ -11,6 +11,7 @@ import { launchBrowser } from './checks/browser.mjs'
 import { checkTravailGraph } from './checks/travail-graph.mjs'
 import { assertMilestoneRows, installMilestoneAsks } from './checks/milestone-inbox.mjs'
 import { checkTravailTable } from './checks/travail-table.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 /*
  * L'onglet Travail d'un projet (carte #175, `projet.md` T-1 à T-5, T-14), qui remplace
@@ -38,7 +39,7 @@ import { checkTravailTable } from './checks/travail-table.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-activity-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-activity-check-')))
 const processes = []
 let browser
 

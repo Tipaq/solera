@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // Explorateur de fichiers : sélection multiple, clavier, presse-papiers, archive et
 // mode sélection au doigt. Base, projet et serveurs jetables, comme les autres contrôles.
@@ -18,7 +19,7 @@ const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
 const require = createRequire(join(serverDir, 'package.json'))
 const { unzipSync } = require('fflate')
-const data = await mkdtemp(join(tmpdir(), 'solera-explorer-ui-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-explorer-ui-')))
 const children = []
 let browser
 

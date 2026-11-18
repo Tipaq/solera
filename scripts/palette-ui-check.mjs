@@ -8,12 +8,13 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // Palette de recherche sur la vraie API et les données de démo. Aucun CLI n'est activé.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-palette-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-palette-check-')))
 // Captures sur demande seulement : `SHOTS=/un/dossier node scripts/palette-ui-check.mjs`.
 const shots = process.env.SHOTS
 const processes = []

@@ -3,7 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import type { SkillSearchResultDto, SkillSourceDto } from '@solera/protocol'
 import { ApiRequestError } from '../../lib/api'
 import { relativeDate } from '../../lib/dates'
-import { locale, useTranslate } from '../../lib/i18n'
+import { locale, useTranslate, pluralOf } from '../../lib/i18n'
 import {
   shortCommit,
   useCreateSkillSource,
@@ -105,7 +105,7 @@ function SourceRow({ source, isAdmin, onBrowse }: { source: SkillSourceDto; isAd
             </p>
             <p className="text-xs text-ink-faint">
               {fetched && source.lastFetchedAt !== null
-                ? t('skills.sources.fetched', {
+                ? t(`skills.sources.fetched.${pluralOf(source.skillCount ?? 0)}`, {
                     count: source.skillCount ?? 0,
                     commit: shortCommit(source.lastCommit),
                     when: relativeDate(source.lastFetchedAt),
@@ -282,7 +282,7 @@ function SkillsShSearch({ onOpen }: { onOpen: (browsing: Browsing) => void }) {
                     <span className="truncate text-xs text-ink-faint">
                       <span className="font-mono">{result.repository}</span>
                       {' · '}
-                      {t('skills.search.installs', { count: result.installs.toLocaleString(locale()) })}
+                      {t(`skills.search.installs.${pluralOf(result.installs)}`, { count: result.installs.toLocaleString(locale()) })}
                     </span>
                   </span>
                   {source && !source.enabled ? (

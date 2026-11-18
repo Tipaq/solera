@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout } from 'node:timers/promises'
 import { launchBrowser } from './checks/browser.mjs'
 import { viteDependency } from './checks/vite-deps.mjs'
+import './checks/cleanup.mjs'
 
 /*
  * « Lancés par les sessions » (AC-17), montés seuls avec les données de leurs stories :

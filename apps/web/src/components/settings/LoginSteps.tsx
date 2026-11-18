@@ -3,7 +3,7 @@ import { useState, type FormEvent } from 'react'
 import type { ClaudeLoginStatusDto } from '@solera/protocol'
 import { Banner, Button, Field } from '@solera/ui'
 import { ApiRequestError } from '../../lib/api'
-import { useSubmitClaudeLoginCode } from '../../lib/claude-accounts'
+import { loginError, useSubmitClaudeLoginCode } from '../../lib/claude-accounts'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
 
 /**
@@ -67,7 +67,7 @@ export function ClaudeCodeSteps({
         disabled={status.state === 'starting' || status.state === 'checking'}
         required
       />
-      {status.state === 'failed' && status.error ? <Banner>{status.error}</Banner> : null}
+      {status.state === 'failed' && status.error ? <Banner>{loginError(status)}</Banner> : null}
       {failure ? <Banner>{failure}</Banner> : null}
       <div className="flex flex-wrap items-center gap-2">
         <Button type="submit" disabled={submit.isPending || status.state === 'checking' || status.state === 'starting'}>

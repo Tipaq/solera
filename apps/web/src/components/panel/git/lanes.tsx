@@ -30,7 +30,17 @@ export function laneStep(lanes: number): number {
 }
 
 export const laneX = (lane: number, step: number): number => 9 + lane * step
-export const laneWidth = (lanes: number): number => laneX(lanes - 1, laneStep(lanes)) + 9
+const laneWidth = (lanes: number): number => laneX(lanes - 1, laneStep(lanes)) + 9
+
+/**
+ * La largeur de la colonne du graphe, en-tête et rangées confondus.
+ *
+ * Jamais moins que son libellé : à un ou deux couloirs, `laneWidth` ne fait que 18 ou
+ * 32 px, et « Graphe » débordait sur « Message » dans l'en-tête. Le plancher est en
+ * rem pour suivre la taille du texte ; les couloirs restent dessinés à gauche, la
+ * place en plus est à droite.
+ */
+export const graphWidth = (lanes: number): string => `max(${laneWidth(lanes)}px, 3.5rem)`
 
 /**
  * La couleur d'une course : celle de sa branche quand elle en a une.
@@ -147,7 +157,6 @@ export function Lanes({ node, lanes, runs, onHoverRun }: {
   onHoverRun: (run: number | null) => void
 }) {
   const step = laneStep(lanes)
-  const width = laneWidth(lanes)
   const middle = ROW_HEIGHT / 2
   const x = laneX(node.lane, step)
   const own = runColor(node.run, runs)
@@ -181,7 +190,7 @@ export function Lanes({ node, lanes, runs, onHoverRun }: {
   return (
     // Masqué aux lecteurs d'écran : le dessin double ce que dit la rangée, et ses
     // zones de survol ne sont qu'un raccourci du pointeur.
-    <svg width={width} height={ROW_HEIGHT} className="shrink-0" aria-hidden>
+    <svg height={ROW_HEIGHT} className="shrink-0" style={{ width: graphWidth(lanes) }} aria-hidden>
       {throughs.map(({ lane, run }) => hit(`through-${lane}`, run, {
         x1: laneX(lane, step), y1: 0, x2: laneX(lane, step), y2: ROW_HEIGHT,
       }))}

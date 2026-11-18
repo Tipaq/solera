@@ -24,6 +24,7 @@ import {
 import { copyText } from '../../lib/clipboard'
 import { clearReveal, useRevealTarget } from '../../lib/editor-reveal'
 import { fileIconUrl } from '../../lib/file-icons'
+import { keepFocusFromFrame } from '../../lib/frame-focus'
 import { languageFromPath } from '../../lib/highlight'
 import { downloadFile, rawFileUrl } from '../../lib/files-io'
 import { useTranslate } from '../../lib/i18n'
@@ -345,7 +346,7 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
   }
 
   if (isImage) return <ImageView scope={scope} path={path} />
-  if (isDocument) return <iframe data-editor-file={path} src={rawFileUrl(scope, path)} title={path} className="min-h-0 min-w-0 flex-1 border-0 bg-canvas" />
+  if (isDocument) return <iframe data-editor-file={path} src={rawFileUrl(scope, path)} title={path} onLoad={(event) => keepFocusFromFrame(event.currentTarget)} className="min-h-0 min-w-0 flex-1 border-0 bg-canvas" />
   if (mediaType) return <MediaView scope={scope} path={path} type={mediaType} />
   if (isModel) {
     return <Suspense fallback={<div className="flex min-h-0 flex-1 items-center justify-center text-ink-faint">

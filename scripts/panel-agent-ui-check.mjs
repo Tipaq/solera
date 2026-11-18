@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { launchBrowser } from './checks/browser.mjs'
 import { viteDependency } from './checks/vite-deps.mjs'
+import './checks/cleanup.mjs'
 
 // L'onglet Agent du panneau d'une conversation (#228, PAG-1 à PAG-7 et PAG-12), monté
 // seul : composants réels, API simulée, aucun CLI. Les gestes se vérifient par les
