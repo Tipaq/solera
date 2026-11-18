@@ -186,7 +186,7 @@ export function SettingsDialog() {
               <button
                 type="button"
                 onClick={() => showSettingsSection(null)}
-                className="-ml-1 flex size-8 shrink-0 items-center justify-center rounded-md text-ink-faint hover:bg-surface-high hover:text-ink md:hidden"
+                className="-ml-2.5 flex size-11 shrink-0 items-center justify-center rounded-md text-ink-faint hover:bg-surface-high hover:text-ink md:hidden"
                 aria-label={t('settings.back')}
               >
                 <ChevronRight size={16} className="rotate-180" />
