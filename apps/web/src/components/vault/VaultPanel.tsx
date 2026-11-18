@@ -2,7 +2,7 @@ import { ChevronLeft, FileText, History, Layers, Link2, ListTree, Unlink, X } fr
 import { useEffect, useRef, useState } from 'react'
 import { IconButton, TooltipButton, cx } from '@solera/ui'
 import type { VaultNoteFactsDto, VaultNoteHistoryDto, VaultTreeDto } from '@solera/protocol'
-import { locale, useTranslate } from '../../lib/i18n'
+import { locale, useTranslate, pluralOf } from '../../lib/i18n'
 import { setPanelExpanded, setPanelOpen, setDockedPanelWidth, setPanelWidth, restorePanelWidth } from '../../lib/panel'
 import { setVaultPanelTab, useVaultPanelTab, type VaultPanelTab } from '../../lib/vault-panel'
 import { resizeHandle } from '../../lib/resize-handle'
@@ -197,7 +197,7 @@ function ViewBar({ band, closable, tab, facts }: {
           jamais — une note citée quatre fois doit le dire même l'onglet fermé. */}
       <Tab icon={<Link2 size={15} />} label={t('vault.panel.links')} keepLabel={!band}
         badge={facts?.incoming.length ?? 0}
-        announce={t('vault.panel.links.badge', { count: String(facts?.incoming.length ?? 0) })}
+        announce={t(`vault.panel.links.badge.${pluralOf(facts?.incoming.length ?? 0)}`, { count: String(facts?.incoming.length ?? 0) })}
         active={tab === 'links'} onSelect={() => setVaultPanelTab('links')} />
       <Tab icon={<History size={15} />} label={t('vault.panel.history')} keepLabel={!band}
         active={tab === 'history'} onSelect={() => setVaultPanelTab('history')} />

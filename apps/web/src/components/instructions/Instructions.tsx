@@ -7,7 +7,7 @@ import {
   type ProjectInstructionsMode,
 } from '@solera/protocol'
 import { ApiRequestError } from '../../lib/api'
-import { locale, useTranslate } from '../../lib/i18n'
+import { locale, useTranslate, pluralOf } from '../../lib/i18n'
 import { useGlobalInstructions, useSaveGlobalInstructions } from '../../lib/instructions'
 import { useUserSettings } from '../../lib/user-settings'
 import { Markdown } from '../chat/Markdown'
@@ -100,7 +100,7 @@ export function MarkdownEditor({
           </>
         ) : null}
         <span className="text-xs text-ink-faint">
-          {t('instructions.count', { count: text.length.toLocaleString(locale()) })}
+          {t(`instructions.count.${pluralOf(text.length)}`, { count: text.length.toLocaleString(locale()) })}
         </span>
         {footer}
       </div>

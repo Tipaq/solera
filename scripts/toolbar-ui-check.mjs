@@ -125,9 +125,10 @@ try {
     await page.locator('#check').getByText('« jalon »').waitFor()
     await page.mouse.click(viewport.width - 5, viewport.height - 5)
     await setTimeout(300)
-    // Au téléphone, elle a déjà toute la place au repos : elle la garde, sans descendre
-    // sous ce qu'il faut pour lire ce qu'on tape.
-    if (narrow) assert.ok(rest >= 96 && (await box(field)).width >= rest, `largeur au téléphone : ${rest}`)
+    // Au téléphone, repliée sur sa loupe au repos (passe mobile) : à côté des outils d'une
+    // vraie page, il ne lui restait que deux lettres de son indication. Avec du texte,
+    // elle reste ouverte, à la largeur qu'il faut pour lire ce qu'on tape.
+    if (narrow) assert.ok(rest === 44 && (await box(field)).width >= 96, `largeur au téléphone : ${rest}`)
     else assert.ok((await box(field)).width > rest, 'garde sa largeur quand elle a du texte')
     await oneLine('recherche remplie')
     await toolbar.getByRole('button', { name: 'Effacer la recherche' }).click()

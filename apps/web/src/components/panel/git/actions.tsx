@@ -359,9 +359,9 @@ function lossLine(t: Translate, loss: GitLossDto): string {
         count: loss.count,
       })
     case 'stash':
-      return t('git.guard.loss.stash', { count: loss.count })
+      return t(`git.guard.loss.stash.${pluralOf(loss.count)}`, { count: loss.count })
     case 'remote':
-      return t('git.guard.loss.remote', { count: loss.count })
+      return t(`git.guard.loss.remote.${pluralOf(loss.count)}`, { count: loss.count })
     case 'commits':
       // Le singulier n'est pas de la coquetterie : « 1 commits » sur un garde-fou
       // fait douter de tout ce qu'il annonce par ailleurs.

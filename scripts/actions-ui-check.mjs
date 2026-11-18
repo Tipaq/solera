@@ -19,6 +19,21 @@ const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
 const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-actions-check-')))
 const shots = process.env.ACTIONS_SHOTS ?? (await mkdtemp(join(tmpdir(), 'solera-actions-shots-')))
+
+/**
+ * Amène la semaine de l'Agenda sur le prochain 03:00, l'heure des planifiées de la suite.
+ * La semaine affichée va du lundi au dimanche : un dimanche passé 3 h, ce passage tombe la
+ * semaine suivante, et la suite échouait ce jour-là (#268).
+ */
+async function showNextThreeAm(page) {
+  const next = new Date()
+  if (next.getHours() >= 3) next.setDate(next.getDate() + 1)
+  next.setHours(3, 0, 0, 0)
+  const nextMonday = new Date()
+  nextMonday.setHours(0, 0, 0, 0)
+  nextMonday.setDate(nextMonday.getDate() + 7 - ((nextMonday.getDay() + 6) % 7))
+  if (next >= nextMonday) await page.getByRole('button', { name: 'Période suivante', exact: true }).click()
+}
 const processes = []
 let browser
 /** Unité du service d'essai : arrêtée à la fin même si la suite échoue avant de la supprimer. */
@@ -762,7 +777,11 @@ async function checkProjectTab(base, env, api) {
     const boxes = await page.locator('[data-action-tile]').evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().toJSON()))
     // À 390, « À supprimer » n'est plus, et « Statique servi » s'est ajouté là où systemd le permet.
     assert.equal(boxes.length, phone && !linuxServices ? 3 : 4)
-    assert.ok(boxes.every((box) => Math.abs(box.height - 152) < 1), `tuiles de 9,5 rem : ${boxes.map((box) => box.height)}`)
+    // 10 rem au doigt : le geste du pied y passe à 44 px, et il mangeait les lignes du milieu.
+    const tileHeight = phone ? 160 : 152
+    assert.ok(boxes.every((box) => Math.abs(box.height - tileHeight) < 1), `tuiles de ${tileHeight} px : ${boxes.map((box) => box.height)}`)
+    const clipped = await page.locator('[data-action-tile] > header + div').evaluateAll((nodes) => nodes.filter((node) => node.scrollHeight > node.clientHeight + 1).map((node) => node.textContent))
+    assert.deepEqual(clipped, [], 'les lignes du milieu ne sont pas coupées')
     assert.ok(boxes.every((box) => Math.abs(box.width - boxes[0].width) < 1), 'tuiles de même largeur')
     if (phone) assert.ok(boxes.every((box) => Math.abs(box.x - boxes[0].x) < 1), 'une colonne au téléphone')
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
@@ -896,6 +915,7 @@ async function checkProjectTab(base, env, api) {
     await page.getByRole('button', { name: 'Affichage : Agenda' }).click()
     await page.getByRole('radiogroup', { name: 'Période' }).getByRole('radio', { name: 'Semaine', exact: true }).click()
     await page.keyboard.press('Escape')
+    await showNextThreeAm(page)
     await page.locator(':text("Sauvegarde"):visible').first().waitFor()
     await page.screenshot({ path: join(shots, `tab-agenda-${width}.png`) })
     await page.goto(tab)
@@ -1127,6 +1147,7 @@ async function checkPortfolioTab(base, env, api) {
     await page.keyboard.press('Escape')
     await page.locator('[data-portfolio-actions-list]').waitFor({ state: 'detached' })
     await runningNow.waitFor({ state: 'detached' })
+    await showNextThreeAm(page)
     await page.locator(':text("Pf Nuit"):visible').first().waitFor()
     await shot('agenda')
     // La vue se retient.
@@ -1406,7 +1427,14 @@ try {
     const moved = (await api('/api/actions')).find((entry) => entry.id === service.id)
     assert.equal(moved.service.served.worktreeId, offline.id)
     assert.equal(moved.service.cwd, offline.path)
-    assert.equal(await fetch(`http://127.0.0.1:${httpPort}/`).then((response) => response.status), 200)
+    // Le service redémarre dans l'autre arbre : son port se rouvre un instant après que
+    // l'API l'a déclaré servi. Un seul essai tombait parfois sur ECONNREFUSED en CI (#268).
+    let servedStatus = null
+    for (let i = 0; i < 100 && servedStatus !== 200; i++) {
+      servedStatus = await fetch(`http://127.0.0.1:${httpPort}/`).then((response) => response.status, () => null)
+      if (servedStatus !== 200) await delay(150)
+    }
+    assert.equal(servedStatus, 200)
     await page.screenshot({ path: join(shots, 'served-switched.png') })
 
     // « Servir une autre branche… » depuis son détail : retour à la racine.

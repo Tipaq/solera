@@ -60,7 +60,7 @@ export function CapBlock({ project }: { project: Pick<ProjectDto, 'id' | 'cap'> 
       <button
         type="button"
         onClick={() => setDraft('')}
-        className="flex items-center gap-1.5 self-start rounded px-1 text-sm text-ink-faint hover:text-ink"
+        className="flex items-center gap-1.5 self-start rounded px-1 text-sm text-ink-faint hover:text-ink pointer-coarse:min-h-11"
       >
         <Plus size={14} /> {t('milestones.cap.add')}
       </button>

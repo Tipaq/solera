@@ -60,6 +60,7 @@ const BATCHES = [
   [
     'git', // 70
     'places', // 56
+    'actions', // ~56 en local, à mesurer
     'sidebar', // 34
     'composer', // 26
     'terminals', // 26
@@ -92,7 +93,6 @@ const BATCHES = [
 /** Hors CI, et pourquoi : la carte qui doit l'y ramener, ou le job qui l'éprouve ailleurs. */
 const OUTSIDE = {
   desktop: "l'app empaquetée, éprouvée par le job desktop sur main",
-  actions: 'instable, lignes en double (#259)',
 }
 
 const onDisk = readdirSync(join(root, 'scripts'))
