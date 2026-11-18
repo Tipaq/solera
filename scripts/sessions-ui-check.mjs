@@ -248,11 +248,11 @@ try {
   await scope.getByRole('radio', { name: /Actives/ }).click()
   await page.waitForFunction(() => !new URL(location.href).searchParams.has('portee'))
 
-  // ─── SES-8 / SES-11 : Affichage ▾, Par état ─────────────────────────────
+  // ─── #296 : une vue choisie avant que la page ait suivi la portée ────────
+  // Le routeur suit l'adresse sous transition : la vue ne doit pas réécrire la portée du
+  // dernier rendu. Les deux gestes partent dans la même tâche, sans rendu entre eux.
   const display = toolbar.getByRole('button', { name: /^Affichage/ })
   const displayMenu = page.getByRole('dialog', { name: 'Affichage' })
-  // Le routeur suit l'adresse sous transition : la vue choisie avant que la page ait suivi
-  // la portée ne doit pas la défaire (#296). Les deux gestes partent dans la même tâche.
   await page.goto(`${base}/sessions?portee=archivees`)
   await line('Migrate icons to Lucide').waitFor()
   await display.click()
@@ -271,6 +271,7 @@ try {
   await page.waitForFunction(() => new URL(location.href).searchParams.get('vue') === 'liste')
   await page.keyboard.press('Escape')
 
+  // ─── SES-8 / SES-11 : Affichage ▾, Par état ─────────────────────────────
   await display.click()
   await displayMenu.getByRole('radio', { name: 'Par état' }).click()
   await page.waitForFunction(() => new URL(location.href).searchParams.get('vue') === 'etat')

@@ -30,9 +30,9 @@ export function useView<K extends string>(scope: string, projectId: string | nul
       // De l'adresse courante, pas de celle du dernier rendu que passe la forme
       // fonctionnelle de `setParams` : le routeur suit l'adresse sous transition, et une
       // vue choisie juste après un filtre l'aurait défait (#296).
-      const updated = new URLSearchParams(window.location.search)
-      updated.set(VIEW_PARAM, next)
-      setParams(updated, { replace: true })
+      const latest = new URLSearchParams(window.location.search)
+      latest.set(VIEW_PARAM, next)
+      setParams(latest, { replace: true })
     },
     [setParams, storage],
   )
