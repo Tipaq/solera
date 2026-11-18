@@ -16,7 +16,7 @@ import { Button, cx } from '@solera/ui'
 import { AgentIcon } from '../AgentIcon'
 import { SessionRequestBody } from '../project/SessionRequestPreview'
 import { elapsed } from '../../lib/dates'
-import { useTranslate } from '../../lib/i18n'
+import { useTranslate, pluralOf } from '../../lib/i18n'
 import {
   inboxSummary,
   isHeavy,
@@ -238,7 +238,7 @@ function describe(
     case 'draft':
       return {
         icon: <ListTree size={14} aria-hidden className="shrink-0 text-accent" />,
-        title: t('inbox.draft.title', { count: item.cards.length }),
+        title: t(`inbox.draft.title.${pluralOf(item.cards.length)}`, { count: item.cards.length }),
         hint: item.error
           ? t('inbox.draft.failed', { error: item.error })
           : item.cards.map((card) => card.title).join(t('inbox.summary.joiner')),

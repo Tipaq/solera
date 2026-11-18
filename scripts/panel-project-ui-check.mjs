@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { launchBrowser } from './checks/browser.mjs'
 import { viteDependency } from './checks/vite-deps.mjs'
+import './checks/cleanup.mjs'
 
 // L'onglet Projet du panneau d'une conversation (#229, PPR-1 à PPR-5), monté seul :
 // composants réels, API simulée, aucun CLI. Les gestes se vérifient par les requêtes

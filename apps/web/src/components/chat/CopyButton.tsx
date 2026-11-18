@@ -5,6 +5,12 @@ import { cx } from '@solera/ui'
 import { useTranslate } from '../../lib/i18n'
 
 /**
+ * La cible au doigt d'un geste du pied d'un message : 25 px à l'œil, 44 au doigt par un
+ * calque invisible, sans écarter les messages.
+ */
+export const FOOTER_TAP = 'relative pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-2.5'
+
+/**
  * Copie d'un bloc de texte.
  *
  * Discret au survol sur desktop, toujours visible au doigt : un bouton qui n'apparaît
@@ -25,6 +31,7 @@ export function CopyButton({ text, label }: { text: string; label?: string }) {
       onClick={() => copy(text)}
       className={cx(
         'flex items-center gap-1 rounded-md px-1.5 py-1 text-meta transition-[color,opacity]',
+        FOOTER_TAP,
         'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100',
         state === 'failed' ? 'text-critical' : 'text-ink-faint hover:text-ink',
       )}
