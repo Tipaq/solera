@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 /**
  * Le vault de bout en bout : un dossier de notes sur le disque, l'index qui le lit, et
@@ -26,7 +27,7 @@ import { launchBrowser } from './checks/browser.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-vault-ui-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-vault-ui-')))
 const children = []
 let browser
 

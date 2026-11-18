@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // Le découpage en cartes (#70) de bout en bout, avec les vrais composants et la vraie
 // API, dans une base temporaire : l'entrée du board ouvre le brouillon de conversation
@@ -21,7 +22,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
 const Database = createRequire(join(serverDir, 'package.json'))('better-sqlite3')
-const data = await mkdtemp(join(tmpdir(), 'solera-card-draft-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-card-draft-check-')))
 const shots = join(root, 'docs/audits/2026-10-25-card-draft')
 const processes = []
 let browser

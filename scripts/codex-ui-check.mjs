@@ -9,6 +9,7 @@ import { checkJournalCache } from './checks/journal-cache.mjs'
 import { checkThreadPages } from './checks/thread-pages.mjs'
 import { checkEventBodies, checkEventImages } from './checks/event-bodies.mjs'
 import { checkJournalLoading } from './checks/journal-loading.mjs'
+import './checks/cleanup.mjs'
 
 // Vérifie les vrais composants avec une API simulée ; aucune conversation réelle.
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -9,6 +10,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // Explorateur de fichiers : sélection multiple, clavier, presse-papiers, archive et
 // mode sélection au doigt. Base, projet et serveurs jetables, comme les autres contrôles.
@@ -17,7 +19,7 @@ const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
 const require = createRequire(join(serverDir, 'package.json'))
 const { unzipSync } = require('fflate')
-const data = await mkdtemp(join(tmpdir(), 'solera-explorer-ui-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-explorer-ui-')))
 const children = []
 let browser
 
@@ -76,9 +78,23 @@ try {
   const seed = run(['--import', 'tsx', 'src/cli/demo-seed.ts'], serverDir, env)
   assert.equal((await once(seed, 'exit'))[0], 0, seed.diagnostics)
   const Sqlite = require('better-sqlite3')
-  const db = new Sqlite(join(env.SOLERA_DATA_DIR, 'solera.db'), { readonly: true })
+  const db = new Sqlite(join(env.SOLERA_DATA_DIR, 'solera.db'))
   const project = db.prepare('SELECT * FROM projects WHERE name = ?').get('Nimbus')
   const conversation = db.prepare('SELECT * FROM conversations WHERE project_id = ? LIMIT 1').get(project.id)
+  // #106 : un projet dont le dossier n'est pas un dépôt git, avec un fil où ouvrir le
+  // panneau. Copiés de Nimbus : la démo n'en a pas, et les CLI coupés ne créeraient
+  // pas de fil.
+  const plainDir = join(data, 'carnet')
+  await mkdir(plainDir)
+  await writeFile(join(plainDir, 'notes.md'), '# Notes\n')
+  const copyRow = (table, row, patch) => {
+    const next = { ...row, ...patch }
+    const columns = Object.keys(next)
+    db.prepare(`INSERT INTO ${table} (${columns.join(', ')}) VALUES (${columns.map((column) => `@${column}`).join(', ')})`).run(next)
+    return next
+  }
+  const plain = copyRow('projects', project, { id: randomUUID(), name: 'Carnet', workspace_path: plainDir })
+  const plainConversation = copyRow('conversations', conversation, { id: randomUUID(), project_id: plain.id, worktree_id: null, title: 'Relire les notes' })
   db.close()
 
   // Un dossier à soi dans le workspace de démonstration, trié en tête de la racine.
@@ -242,6 +258,38 @@ try {
   assert.deepEqual(await selected(), ['aa-explorer/c.txt'])
   await delay(200)
   await page.screenshot({ path: '/tmp/solera-explorer-desktop.png' })
+
+  // #106 : hors d'un dépôt git, le panneau n'offre pas d'onglet Git. L'onglet choisi
+  // survit d'un fil à l'autre : Git, choisi sur Nimbus, retombe sur Fichiers dans le
+  // Carnet plutôt que d'ouvrir une vue absente, et se retrouve au retour.
+  // Chaque fil retient si son panneau est ouvert : on l'ouvre au besoin, sans recharger
+  // la page, qui oublierait l'onglet choisi.
+  const go = async (thread) => {
+    await page.evaluate((target) => {
+      history.pushState(null, '', target)
+      dispatchEvent(new PopStateEvent('popstate'))
+    }, `/p/${thread.project_id}/c/${thread.id}`)
+    // L'en-tête du fil d'avant dirait encore l'état de son panneau.
+    await page.locator('header').getByText(thread.title, { exact: true }).waitFor()
+    const toggle = page.getByRole('button', { name: /^(Ouvrir|Fermer) le panneau/ }).first()
+    await toggle.waitFor()
+    if ((await toggle.getAttribute('aria-label')).startsWith('Ouvrir')) await toggle.click()
+  }
+  // Les vues sont des boutons à bascule ; accosté, leur rangée est dans la bande
+  // d'en-tête, hors du panneau.
+  const view = (name) => page.locator('button[aria-pressed]').and(page.getByRole('button', { name, exact: true }))
+  const gitTab = view('Git')
+  await gitTab.click()
+  await panel.locator('[data-git-line]').waitFor()
+  await go(plainConversation)
+  await panel.locator('[data-tree-path="notes.md"]').waitFor()
+  assert.equal(await gitTab.count(), 0, 'Hors dépôt, l’onglet Git est proposé')
+  await view('Fichiers').and(page.locator('[aria-pressed="true"]')).waitFor()
+  assert.equal(await panel.getByText("Ce répertoire de travail n'est pas un dépôt git.").count(), 0)
+  await go(conversation)
+  await panel.locator('[data-git-line]').waitFor()
+  assert.equal(await gitTab.getAttribute('aria-pressed'), 'true')
+  await view('Fichiers').click()
 
   // Au doigt : « Sélectionner » ouvre le mode sélection, où un appui coche.
   const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'fr-FR', serviceWorkers: 'block' })

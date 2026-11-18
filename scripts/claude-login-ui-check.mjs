@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // Connexions guidées Claude menées jusqu'au succès : le jeton d'un abonnement, qui nomme le
 // compte par son adresse, puis sa jauge, enchaînée d'office ; une reconnexion vers une autre
@@ -20,7 +21,7 @@ import { launchBrowser } from './checks/browser.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-ui-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-ui-check-')))
 const processes = []
 let browser
 

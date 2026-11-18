@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // Le fil d'une conversation dont le worktree a disparu (carte #61) : le bandeau prend la
 // place du composer et porte ses deux issues, le panneau ne montre plus de fichiers, la
@@ -17,7 +18,7 @@ import { launchBrowser } from './checks/browser.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-ui-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-ui-check-')))
 // Les captures restent après la suite, à côté de la base temporaire et non dedans.
 const shots = join(tmpdir(), 'solera-worktree-gone-shots')
 await mkdir(shots, { recursive: true })

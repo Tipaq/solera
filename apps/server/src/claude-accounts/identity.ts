@@ -21,6 +21,16 @@ import type { ClaudeAccountStore } from './store.js'
  */
 export type ClaudeIdentify = (source: { token: string } | { configDir: string }) => Promise<string | null>
 
+/**
+ * La règle « même adresse ou refus », partout où une adresse lue doit être celle d'un
+ * compte : le jeton d'une reconnexion, la jauge qu'on lui donne, celles qu'on revérifie au
+ * démarrage. Deux adresses connues qui diffèrent sont deux comptes ; une adresse que rien
+ * ne dit ne contredit rien.
+ */
+export function addressesDiffer(expected: string | null | undefined, read: string | null | undefined): boolean {
+  return Boolean(expected && read && read !== expected)
+}
+
 export function claudeIdentity(cli: CliLauncher): ClaudeIdentify {
   return async (source) => {
     // Un dossier vide pour le jeton : le CLI ne doit lire ni la connexion du poste, ni
@@ -91,7 +101,7 @@ export async function checkGauges(store: ClaudeAccountStore, identify: ClaudeIde
   const removed: string[] = []
   for (const { id, email } of store.withGauge()) {
     const gaugeEmail = await identify({ configDir: gauges.path(id) })
-    if (!gaugeEmail || gaugeEmail === email) continue
+    if (!addressesDiffer(email, gaugeEmail)) continue
     gauges.forget(id)
     removed.push(id)
   }

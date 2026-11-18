@@ -73,7 +73,9 @@ export function TurnChangesView({
         <p className="border-b border-line/60 px-2.5 py-1.5 text-meta text-ink-faint">
           {checkpoint.excluded > 0 ? (
             <span title={t('checkpoint.view.excluded.hint')}>
-              {t('checkpoint.view.excluded', { count: checkpoint.excluded })}
+              {t(`checkpoint.view.excluded.${pluralOf(checkpoint.excluded)}`, {
+                count: checkpoint.excluded,
+              })}
             </span>
           ) : null}
           {checkpoint.excluded > 0 && checkpoint.truncated ? ' · ' : null}

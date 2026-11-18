@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { EventEmitter } from 'node:events'
+import { isAbsolute } from 'node:path'
 import { processOrigins } from '../services/origins.js'
 import { and, eq, gt, or, sql } from 'drizzle-orm'
 import {
@@ -29,7 +30,7 @@ import {
 } from '@solera/protocol'
 import type { OutgoingNotification } from '../notifications/dispatcher.js'
 import type { AgentRegistry } from '../agents/registry.js'
-import type { CliLauncher } from '../agents/cli-binary.js'
+import { managedBinDir, type CliLauncher } from '../agents/cli-binary.js'
 import { copyTranscript } from '../agents/claude/transcript.js'
 import { claudeTranscripts, containerClaudeHome } from '../agents/claude/transcript-home.js'
 import { builtinMcpEnabled, builtinMcpServer } from '../agents/mcp-builtin.js'
@@ -89,6 +90,7 @@ import type { EnvironmentProvider } from '../environments/provider.js'
 import { ConfinedEnvironment } from '../environments/confined/confined.js'
 import { sessionScope, type SessionScopeInput } from '../environments/confined/scope.js'
 import { Environments, environmentOf } from '../environments/environments.js'
+import { hostEnvironment } from '../environments/host.js'
 import { Devcontainers } from '../environments/devcontainer/containers.js'
 import { mountsDrives } from '../environments/devcontainer/paths.js'
 import { patchOverrides, refreshConversationConfig } from '../conversations/config-inheritance.js'
@@ -653,12 +655,13 @@ export class SessionManager {
     )
     try {
       await this.openEnvironment(conversation, cli.environment)
+      const binary = this.requireCli(conversation, cli.environment)
       return await adapter.fork(
         {
           agentSessionId: conversation.agentSessionId,
           cwd,
           accountEnv: accountEnvInside(accountEnv, cli.environment),
-          cli,
+          cli: { environment: cli.environment, executable: async () => binary },
           transcripts: claudeTranscripts(this.config.paths, conversation),
         },
         adapter.forkCut(this.log, conversationId, throughSeq),
@@ -1107,8 +1110,38 @@ export class SessionManager {
     // valeur à `spawn`, qui consulte le PATH mais ignore le préfixe où Solera installe
     // les CLI qu'il gère. Un runner qui recevrait le nom nu manquerait donc les
     // installations faites depuis l'interface.
+    //
+    // Le nom nu n'est qu'un repli d'attente : le conteneur à elle d'une session confinée
+    // ne connaît son CLI qu'une fois ouvert. `requireCli` tranche après l'ouverture.
     const binary = environment.resolveBinary(adapter.binary, adapter.cli.managedDir) ?? adapter.binary
     return { environment, binary, executable: async () => binary }
+  }
+
+  /**
+   * Le chemin du CLI d'une session dans son environnement, ou le refus s'il n'y est pas
+   * (#41). Lancé quand même sous son nom nu, il mourait plus loin, sur un `spawn ENOENT`
+   * pour Codex, OpenCode et Grok, sur la phrase du SDK pour Claude, qui parle de son
+   * option `pathToClaudeCodeExecutable` : rien qui dise que le CLI manque, ni où on l'a
+   * cherché. Appelé une fois l'environnement ouvert, pour la raison dite dans `sessionCli`.
+   */
+  private requireCli(conversation: ConversationRow, environment: EnvironmentProvider): string {
+    const adapter = this.registry.adapter(conversation.agent)
+    const found = environment.resolveBinary(adapter.binary, adapter.cli.managedDir)
+    if (found) return found
+    // Un nom nu sur l'hôte se cherche dans le préfixe géré puis le PATH, et s'installe
+    // depuis l'interface ; un chemin réglé, ou un conteneur, désigne un endroit précis.
+    if (environment.environment.where === 'host' && !isAbsolute(adapter.binary)) {
+      throw conflict(
+        'agent_cli_not_found',
+        'The {agent} CLI cannot be found: "{binary}" is neither in {managedDir} nor on the PATH of the Solera service. Install it from Settings › Agents.',
+        { agent: adapter.label, binary: adapter.binary, managedDir: managedBinDir(adapter.cli.managedDir) },
+      )
+    }
+    throw conflict(
+      'agent_cli_unavailable',
+      'The {agent} CLI cannot be launched: "{binary}" does not exist or is not executable in the environment of this session.',
+      { agent: adapter.label, binary: adapter.binary },
+    )
   }
 
   private buildContext(conversation: ConversationRow): RunnerContext {
@@ -1643,18 +1676,23 @@ export class SessionManager {
     const fresh = await refreshConversationConfig(this.db, this.registry, this.loadConversation(conversationId))
     // Avant `makeRoom` : un lancement voué à l'échec ne doit pas évincer un runner vivant.
     this.refuseMissingCwd(fresh)
+    // Sur l'hôte, confiné ou non, le CLI se cherche déjà ici, comme le fera son
+    // environnement. Un conteneur ne le connaît qu'une fois préparé, ou ouvert.
+    if (environmentOf(fresh).where === 'host') this.requireCli(fresh, hostEnvironment)
     this.refuseWithoutAccount(fresh)
     await this.prepareEnvironment(fresh)
     await this.makeRoom()
 
     const context = this.buildContext(fresh)
+    let binary: string
     try {
       await this.openEnvironment(fresh, context.environment)
+      binary = this.requireCli(fresh, context.environment)
     } catch (err) {
       await context.environment.close().catch(() => undefined)
       throw err
     }
-    const runner = this.registry.adapter(fresh.agent).createRunner(context)
+    const runner = this.registry.adapter(fresh.agent).createRunner({ ...context, binary })
 
     this.runners.set(conversationId, {
       runner,

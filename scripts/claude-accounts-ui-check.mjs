@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // Comptes Claude supplémentaires : l'écran de réglages, puis le sélecteur de compte dans
 // les défauts du CLI. Vrais composants et vraie API, base temporaire, aucun CLI lancé.
@@ -16,7 +17,7 @@ import { launchBrowser } from './checks/browser.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-ui-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-ui-check-')))
 const processes = []
 let browser
 
