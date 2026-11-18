@@ -258,10 +258,10 @@ try {
   await display.click()
   await displayMenu.getByRole('radio', { name: 'Par état' }).waitFor()
   await page.evaluate(() => {
-    const radio = (scope, name) =>
-      [...document.querySelectorAll(`${scope} [role="radio"]`)].find((node) => node.textContent.trim().startsWith(name))
-    radio('[data-toolbar] [role="radiogroup"]', 'Actives').click()
-    radio('[role="dialog"]', 'Par état').click()
+    const radio = (within, name) =>
+      [...document.querySelectorAll(`${within} [role="radio"]`)].find((node) => node.textContent.trim().startsWith(name))
+    radio('[data-toolbar] [role="radiogroup"][aria-label="Actives ou archivées"]', 'Actives').click()
+    radio('[role="dialog"][aria-label="Affichage"]', 'Par état').click()
   })
   await page.waitForFunction(() => new URL(location.href).searchParams.get('vue') === 'etat')
   assert.equal(new URL(page.url()).searchParams.get('portee'), null, 'La vue s’écrit sur l’adresse courante, pas sur celle du dernier rendu')

@@ -29,7 +29,8 @@ export function useView<K extends string>(scope: string, projectId: string | nul
       }
       // De l'adresse courante, pas de celle du dernier rendu que passe la forme
       // fonctionnelle de `setParams` : le routeur suit l'adresse sous transition, et une
-      // vue choisie juste après un filtre l'aurait défait (#296).
+      // vue choisie juste après un autre réglage de l'adresse l'aurait défait (#296).
+      // Sous un MemoryRouter (les stories), `window.location` n'est pas son adresse (#297).
       const latest = new URLSearchParams(window.location.search)
       latest.set(VIEW_PARAM, next)
       setParams(latest, { replace: true })
