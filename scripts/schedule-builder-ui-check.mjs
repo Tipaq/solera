@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout } from 'node:timers/promises'
 import { launchBrowser } from './checks/browser.mjs'
 import { viteDependency } from './checks/vite-deps.mjs'
+import './checks/cleanup.mjs'
 
 /*
  * La planification lisible (PLA-1 à PLA-11), montée seule avec le banc de sa story :

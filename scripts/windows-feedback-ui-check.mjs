@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // Retours d'un utilisateur Windows de Sillage (20 oct. 2026), repris chez nous :
 // avancement de l'installation d'un CLI, CLI manquants masquables, sélection de texte
@@ -18,7 +19,7 @@ import { launchBrowser } from './checks/browser.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-feedback-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-feedback-check-')))
 const shots = process.env.WINDOWS_FEEDBACK_SHOTS ?? (await mkdtemp(join(tmpdir(), 'solera-feedback-shots-')))
 const processes = []
 let browser

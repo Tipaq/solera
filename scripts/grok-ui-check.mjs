@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout } from 'node:timers/promises'
 import { launchBrowser } from './checks/browser.mjs'
 import { viteDependency } from './checks/vite-deps.mjs'
+import './checks/cleanup.mjs'
 
 // Vérifie que le fil rend ce que l'adaptateur Grok Build journalise : outils sous leurs noms
 // du journal (dont un outil MCP appelé par `use_tool`), permission, question rendue par

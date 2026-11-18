@@ -1,8 +1,10 @@
 #!/usr/bin/env node
-import { spawnSync } from 'node:child_process'
-import { readdirSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { once } from 'node:events'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { receivedSignal } from './checks/cleanup.mjs'
 
 /**
  * Lance un lot des suites d'interface `scripts/*-ui-check.mjs`, pour la matrice `ui-batch`
@@ -16,6 +18,9 @@ import { fileURLToPath } from 'node:url'
  *
  * Les lots sont équilibrés à la main sur les durées mesurées en CI (en secondes, à côté
  * de chaque nom) ; le résumé de fin les redonne pour les rééquilibrer.
+ *
+ * Les suites tournent en `spawn` et non en `spawnSync` : interrompu, le lanceur doit
+ * pouvoir réagir au signal et emporter la suite en cours avec ses enfants (carte #266).
  */
 
 const root = join(fileURLToPath(import.meta.url), '../..')
@@ -55,6 +60,7 @@ const BATCHES = [
   [
     'git', // 70
     'places', // 56
+    'actions', // ~56 en local, à mesurer
     'sidebar', // 34
     'composer', // 26
     'terminals', // 26
@@ -87,7 +93,6 @@ const BATCHES = [
 /** Hors CI, et pourquoi : la carte qui doit l'y ramener, ou le job qui l'éprouve ailleurs. */
 const OUTSIDE = {
   desktop: "l'app empaquetée, éprouvée par le job desktop sur main",
-  actions: 'instable, lignes en double (#259)',
 }
 
 const onDisk = readdirSync(join(root, 'scripts'))
@@ -98,6 +103,9 @@ const problems = [
   ...onDisk.filter((name) => !ranked.includes(name)).map((name) => `${name} : rangée nulle part`),
   ...ranked.filter((name) => !onDisk.includes(name)).map((name) => `${name} : scripts/${name}-ui-check.mjs n'existe pas`),
   ...ranked.filter((name, i) => ranked.indexOf(name) !== i).map((name) => `${name} : rangée deux fois`),
+  ...onDisk
+    .filter((name) => !/^import .*['"]\.\/checks\/cleanup\.mjs['"]/m.test(readFileSync(join(root, 'scripts', `${name}-ui-check.mjs`), 'utf8')))
+    .map((name) => `${name} : n'importe pas ./checks/cleanup.mjs, et laisserait serveur et Vite orphelins si on la tue (#266)`),
 ]
 if (problems.length) {
   for (const problem of problems) console.log(`::error file=scripts/ui-suites.mjs::${problem}`)
@@ -114,7 +122,9 @@ const results = []
 for (const name of BATCHES[Number(match[1]) - 1]) {
   console.log(`::group::${name}`)
   const start = Date.now()
-  const { status } = spawnSync(process.execPath, [join(root, 'scripts', `${name}-ui-check.mjs`)], { cwd: root, stdio: 'inherit' })
+  const suite = spawn(process.execPath, [join(root, 'scripts', `${name}-ui-check.mjs`)], { cwd: root, stdio: 'inherit' })
+  const [status] = await once(suite, 'exit')
+  if (receivedSignal()) process.exit()
   console.log('::endgroup::')
   const seconds = Math.round((Date.now() - start) / 1000)
   if (status !== 0) console.log(`::error::${name}-ui-check a échoué (${seconds} s)`)

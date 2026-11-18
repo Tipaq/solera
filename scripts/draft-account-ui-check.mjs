@@ -9,6 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
 import { writeFakeClaude, writeFakeCodex } from './checks/fake-clis.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // Choix du compte sur la page de nouvelle session, avec l'usage de chaque compte sous son
 // nom. Vrais composants, vraie API, base temporaire ; de faux CLI (`checks/fake-clis.mjs`)
@@ -16,7 +17,7 @@ import { writeFakeClaude, writeFakeCodex } from './checks/fake-clis.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-ui-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-ui-check-')))
 const processes = []
 let browser
 
