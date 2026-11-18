@@ -13,6 +13,8 @@ import { join } from 'node:path'
  *
  * Chaque message reçu est ajouté à `$FAKE_CLAUDE_LOG` s'il est posé : c'est là qu'une
  * suite vérifie ce que le serveur a envoyé, puisque la réponse, elle, est jouée.
+ * `$FAKE_CLAUDE_TURN_MS` retient le `result` d'autant : un tour instantané ne laisse pas
+ * à l'écran le temps de montrer qu'il tourne.
  */
 const FAKE_CLAUDE = `#!/usr/bin/env node
 const { appendFileSync } = require('node:fs')
@@ -30,6 +32,7 @@ const option = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i 
 const sessionId = option('--session-id') ?? option('--resume') ?? randomUUID()
 const model = option('--model') ?? 'claude-fake'
 const reply = 'OK'
+const turnMs = Number(process.env.FAKE_CLAUDE_TURN_MS ?? 0)
 const send = (message) => process.stdout.write(JSON.stringify(message) + '\\n')
 const log = (line) => { if (process.env.FAKE_CLAUDE_LOG) appendFileSync(process.env.FAKE_CLAUDE_LOG, line + '\\n') }
 const usage = { input_tokens: 1, output_tokens: 1, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
@@ -60,11 +63,11 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     type: 'assistant', session_id: sessionId, uuid: randomUUID(), parent_tool_use_id: null,
     message: { id: 'msg_' + randomUUID(), type: 'message', role: 'assistant', model, content: [{ type: 'text', text: reply }], stop_reason: 'end_turn', stop_sequence: null, usage },
   })
-  send({
+  setTimeout(() => send({
     type: 'result', subtype: 'success', is_error: false, session_id: sessionId, uuid: randomUUID(),
     duration_ms: 5, duration_api_ms: 1, num_turns: 1, result: reply, stop_reason: 'end_turn',
     total_cost_usd: 0, usage, modelUsage: {}, permission_denials: [],
-  })
+  }), turnMs)
 })
 process.stdin.on('end', () => process.exit(0))
 `

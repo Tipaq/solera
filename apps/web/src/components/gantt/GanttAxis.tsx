@@ -7,6 +7,8 @@ export const AXIS_H = 48
 const AXIS_TOP = 22
 /** En deçà, la bande d'un mois ne porte que son nom, sans l'année. */
 const MONTH_LONG_MIN = 110
+/** En deçà, la bande d'un mois entamé ne porte pas de nom : trois lettres coupées n'en sont pas un. */
+const MONTH_NAME_MIN = 40
 
 /**
  * L'en-tête de l'axe, sur deux étages : les mois en haut (une bande par mois, son nom
@@ -39,17 +41,22 @@ export function GanttAxis({ scale, zoom, now = Date.now(), inset = 0 }: { scale:
       {monthsOf(days).map(({ at, end }) => {
         const width = scale.x(end) - scale.x(at)
         return (
+          // `overflow-clip` et non `overflow-hidden` : coupé, le nom d'un mois entamé ne
+          // déborde plus sur le suivant (« ctobNovembre » au téléphone), et `clip` ne
+          // fait pas de la bande un conteneur de défilement, ce qui casserait le collage.
           <div
             key={at}
-            className="absolute top-0 border-b border-l border-line/70"
+            className="absolute top-0 overflow-clip border-b border-l border-line/70"
             style={{ left: scale.x(at), width, height: AXIS_TOP }}
           >
-            <span
-              className="sticky inline-block px-2 text-xs font-medium whitespace-nowrap text-ink-soft first-letter:uppercase"
-              style={{ left: inset, lineHeight: `${AXIS_TOP}px` }}
-            >
-              {(width > MONTH_LONG_MIN ? formats.month : formats.monthShort).format(at)}
-            </span>
+            {width >= MONTH_NAME_MIN ? (
+              <span
+                className="sticky inline-block px-2 text-xs font-medium whitespace-nowrap text-ink-soft first-letter:uppercase"
+                style={{ left: inset, lineHeight: `${AXIS_TOP}px` }}
+              >
+                {(width > MONTH_LONG_MIN ? formats.month : formats.monthShort).format(at)}
+              </span>
+            ) : null}
           </div>
         )
       })}
