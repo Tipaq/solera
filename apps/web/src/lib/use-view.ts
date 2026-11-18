@@ -27,14 +27,12 @@ export function useView<K extends string>(scope: string, projectId: string | nul
       } catch {
         // Stockage refusé (navigation privée) : la vue tient encore par l'adresse.
       }
-      setParams(
-        (current) => {
-          const updated = new URLSearchParams(current)
-          updated.set(VIEW_PARAM, next)
-          return updated
-        },
-        { replace: true },
-      )
+      // De l'adresse courante, pas de celle du dernier rendu que passe la forme
+      // fonctionnelle de `setParams` : le routeur suit l'adresse sous transition, et une
+      // vue choisie juste après un filtre l'aurait défait (#296).
+      const updated = new URLSearchParams(window.location.search)
+      updated.set(VIEW_PARAM, next)
+      setParams(updated, { replace: true })
     },
     [setParams, storage],
   )

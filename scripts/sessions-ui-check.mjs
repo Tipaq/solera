@@ -250,8 +250,28 @@ try {
 
   // ─── SES-8 / SES-11 : Affichage ▾, Par état ─────────────────────────────
   const display = toolbar.getByRole('button', { name: /^Affichage/ })
-  await display.click()
   const displayMenu = page.getByRole('dialog', { name: 'Affichage' })
+  // Le routeur suit l'adresse sous transition : la vue choisie avant que la page ait suivi
+  // la portée ne doit pas la défaire (#296). Les deux gestes partent dans la même tâche.
+  await page.goto(`${base}/sessions?portee=archivees`)
+  await line('Migrate icons to Lucide').waitFor()
+  await display.click()
+  await displayMenu.getByRole('radio', { name: 'Par état' }).waitFor()
+  await page.evaluate(() => {
+    const radio = (scope, name) =>
+      [...document.querySelectorAll(`${scope} [role="radio"]`)].find((node) => node.textContent.trim().startsWith(name))
+    radio('[data-toolbar] [role="radiogroup"]', 'Actives').click()
+    radio('[role="dialog"]', 'Par état').click()
+  })
+  await page.waitForFunction(() => new URL(location.href).searchParams.get('vue') === 'etat')
+  assert.equal(new URL(page.url()).searchParams.get('portee'), null, 'La vue s’écrit sur l’adresse courante, pas sur celle du dernier rendu')
+  await page.keyboard.press('Escape')
+  await display.click()
+  await displayMenu.getByRole('radio', { name: 'Liste' }).click()
+  await page.waitForFunction(() => new URL(location.href).searchParams.get('vue') === 'liste')
+  await page.keyboard.press('Escape')
+
+  await display.click()
   await displayMenu.getByRole('radio', { name: 'Par état' }).click()
   await page.waitForFunction(() => new URL(location.href).searchParams.get('vue') === 'etat')
   await shot('1280-affichage', displayMenu)
