@@ -8,12 +8,13 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // Vérifie la permission de création sur ordinateur et téléphone, puis la vraie API.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-api-projects-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-api-projects-check-')))
 const shots = process.env.API_PROJECTS_SHOTS ?? (await mkdtemp(join(tmpdir(), 'solera-api-projects-shots-')))
 const processes = []
 let browser

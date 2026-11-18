@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout } from 'node:timers/promises'
 import { launchBrowser } from './checks/browser.mjs'
 import { viteDependency } from './checks/vite-deps.mjs'
+import './checks/cleanup.mjs'
 
 /*
  * La barre d'outils sur une ligne (BAR-1 à BAR-7), montée seule avec la page de

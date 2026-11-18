@@ -14,6 +14,7 @@ import { launchBrowser } from './checks/browser.mjs'
 import { mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import './checks/cleanup.mjs'
 
 const BASE_URL = process.env.SOLERA_URL ?? 'http://127.0.0.1:7517'
 const USERNAME = process.env.SOLERA_DEMO_USER ?? 'alex'
