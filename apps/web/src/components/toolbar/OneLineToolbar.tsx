@@ -12,8 +12,9 @@ import { useTranslate } from '../../lib/i18n'
  * Les puces occupent la place qui reste et défilent de côté quand elles débordent : elles
  * ne passent jamais à la ligne, sans quoi la barre changerait de hauteur à chaque coche
  * et le contenu sauterait dessous. La gouttière est celle de la coque (`px-4 md:px-6`).
- * Au téléphone, quand des puces sont posées, la recherche vide se replie sur sa loupe
- * pour leur laisser la place, et se rouvre au focus.
+ * Au téléphone, la recherche vide se replie sur sa loupe et se rouvre au focus : à
+ * côté de « Filtrer », de l'affichage et de l'action, il lui restait de quoi montrer
+ * deux lettres de son indication (« Se »), qui n'en disaient plus rien.
  */
 export function OneLineToolbar({
   search,
@@ -73,12 +74,13 @@ export function ToolbarSearch({
   return (
     <label
       className={cx(
-        'group shrink transition-[width,background-color,border-color]',
+        // `overflow-hidden` : repliée, la boîte coupe le champ qui dépasse de la loupe.
+        'group shrink overflow-hidden transition-[width,background-color,border-color]',
         toolbarFieldClass(),
         widthClass ??
           (value
             ? 'w-56'
-            : 'w-36 focus-within:w-56 max-sm:group-has-[[data-filter-chip]]/toolbar:w-11 max-sm:group-has-[[data-filter-chip]]/toolbar:focus-within:w-56'),
+            : 'w-36 focus-within:w-56 max-sm:w-11 max-sm:focus-within:w-56'),
       )}
     >
       <Search size={16} className="shrink-0" />
@@ -88,7 +90,11 @@ export function ToolbarSearch({
         onChange={(event) => onChange(event.target.value)}
         aria-label={label ?? hint}
         placeholder={hint}
-        className="min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-ink-soft [&::-webkit-search-cancel-button]:hidden"
+        /* Replié au téléphone, le champ garde 6 px, coupés par la boîte, plutôt que
+           rien : un champ de largeur nulle ne se remplit plus de lui-même (saisie
+           automatique, pilotes de test). L'indication y est transparente tant qu'il
+           n'a pas le focus — elle ne montrerait qu'un bout de lettre. */
+        className="min-w-1.5 flex-1 bg-transparent text-ink outline-none placeholder:text-ink-soft max-sm:placeholder:text-transparent max-sm:focus:placeholder:text-ink-soft [&::-webkit-search-cancel-button]:hidden"
       />
       {value ? (
         <IconButton label={t('toolbar.search.clear')} size="sm" onClick={() => onChange('')} className="-mr-1.5">
@@ -137,11 +143,12 @@ export function IconTool({ label, onClick, children }: { label: string; onClick:
 /**
  * Le bouton d'un menu de la barre (« Filtrer », « Affichage ») : icône, libellé, compte.
  * La hauteur de `Button size="sm"` (« + Carte »), 36 px à la souris et 44 au doigt, pour
- * que la ligne reste alignée. Actif quand un filtre est posé.
+ * que la ligne reste alignée. Actif quand un filtre est posé. 44 px de large au doigt
+ * aussi : « Affichage » perd son libellé au téléphone, et son icône seule en faisait 38.
  */
 export const toolbarButtonClass = (active: boolean) =>
   cx(
-    'inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors md:h-9 pointer-coarse:h-11 focus-visible:outline-2 focus-visible:outline-accent',
+    'inline-flex h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors md:h-9 md:min-w-0 pointer-coarse:h-11 pointer-coarse:min-w-11 focus-visible:outline-2 focus-visible:outline-accent',
     active ? 'border-line-strong bg-surface-high text-ink' : 'border-line text-ink-soft hover:border-line-strong hover:text-ink',
   )
 

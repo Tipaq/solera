@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // L'avancement des worktrees sur la démo : vrai serveur, vrai git, base temporaire.
 // La démo porte deux arbres créés par Solera (« offline cache », non commité ; « radar
@@ -17,7 +18,7 @@ import { launchBrowser } from './checks/browser.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'solera-worktree-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-worktree-check-')))
 // Les captures restent après la suite, à côté de la base temporaire et non dedans.
 const shots = join(tmpdir(), 'solera-worktrees-shots')
 const processes = []

@@ -3,7 +3,7 @@ import { Library, X } from 'lucide-react'
 import { useState } from 'react'
 import { skillNameSchema, type LibrarySkillScope, type SourceSkillDto } from '@solera/protocol'
 import { ApiRequestError } from '../../lib/api'
-import { useTranslate } from '../../lib/i18n'
+import { useTranslate, pluralOf } from '../../lib/i18n'
 import {
   shortCommit,
   useInstallSourceSkill,
@@ -211,7 +211,7 @@ export function CatalogDialog({
                 {busy ? t('skills.catalog.installing') : t('skills.batch.install', { count: checked.size })}
               </Button>
             </div>
-            {completed > 0 ? <p role="status" className="mt-2 text-sm text-positive">{t('skills.batch.completed', { count: completed })}</p> : null}
+            {completed > 0 ? <p role="status" className="mt-2 text-sm text-positive">{t(`skills.batch.completed.${pluralOf(completed)}`, { count: completed })}</p> : null}
           </footer> : null}
         </Dialog.Content>
       </Dialog.Portal>

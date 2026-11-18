@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { launchBrowser } from './checks/browser.mjs'
 import { viteDependency } from './checks/vite-deps.mjs'
+import './checks/cleanup.mjs'
 
 // Le tiroir commun et la règle « un seul comportement de panneau par page » (TIR-1 à
 // TIR-8), montés seuls : composants réels, sans daemon ni base.

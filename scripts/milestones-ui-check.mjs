@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { launchBrowser } from './checks/browser.mjs'
 import { viteDependency } from './checks/vite-deps.mjs'
+import './checks/cleanup.mjs'
 
 // Les vues des jalons (spec page projet v2, jalons.md §6), une étape par sujet. Composants
 // réels, montés seuls dans une page de lieu réduite ; API simulée, ni daemon ni base.
