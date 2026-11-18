@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ClaudeAccount, ClaudeAccountListDto, ClaudeLoginStatusDto } from '@solera/protocol'
 import { AGENT_AUTH_KEY } from './agents'
 import { api } from './api'
+import { translateError } from './i18n'
 
 /**
  * Comptes Claude supplémentaires du compte courant.
@@ -136,3 +137,11 @@ export function useStartClaudeGauge() {
   })
 }
 
+/**
+ * Le motif d'une connexion échouée, dans la langue de l'écran quand c'est Solera qui
+ * refuse ; tel que le CLI l'a dit sinon.
+ */
+export function loginError(status: ClaudeLoginStatusDto): string | null {
+  if (!status.error) return null
+  return status.errorCode ? translateError(status.errorCode, status.error, status.errorParams) : status.error
+}

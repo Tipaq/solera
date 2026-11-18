@@ -112,11 +112,17 @@ export function registerAgentRoutes(
     // présente un lancement de process, et les faire à la queue leu leu ferait attendre
     // l'écran pour rien.
     const agents = await Promise.all(
-      registry.all().map(async (adapter) => ({
-        ...(await adapter.cli.describe(force)),
-        preferredVersion: PREFERRED_CLI_RELEASES[adapter.kind].version,
-        install: installer.state(adapter.kind),
-      })),
+      registry.all().map(async (adapter) => {
+        // L'état d'installation se lit avant la sonde : une installation qui aboutit
+        // pendant qu'elle tourne doit encore se dire en cours, sans quoi « terminée »
+        // s'accolerait à une sonde faite sur un disque à moitié écrit (#281).
+        const install = installer.state(adapter.kind)
+        return {
+          ...(await adapter.cli.describe(force)),
+          preferredVersion: PREFERRED_CLI_RELEASES[adapter.kind].version,
+          install,
+        }
+      }),
     )
     return { agents }
   })

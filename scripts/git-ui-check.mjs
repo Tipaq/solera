@@ -448,6 +448,18 @@ try {
   await panel.getByText(/^parent /).waitFor()
   await panel.getByText(/^Dans /).waitFor()
   await panel.screenshot({ animations: 'disabled', path: join(shots, 'commit-selectionne.png') })
+  // Le clic droit ne porte que sur le sujet (carte #57) : le sha et ceux des parents
+  // sont du texte qu'on copie, et c'est le menu du navigateur qui doit s'y ouvrir.
+  const shas = panel.locator('.font-mono').filter({ hasText: /^[0-9a-f]{7,}$/ })
+  assert.ok((await shas.count()) >= 2, 'le sha du commit et celui de son parent')
+  for (const sha of await shas.all()) {
+    await sha.click({ button: 'right' })
+    await delay(300)
+    assert.equal(await page.getByRole('menuitem').count(), 0, 'chaque sha garde le menu du navigateur')
+  }
+  await panel.getByText('Convert Fahrenheit without rounding twice', { exact: true }).last().click({ button: 'right' })
+  await page.getByRole('menuitem', { name: /^Copier le sha / }).waitFor()
+  await page.keyboard.press('Escape')
   await panel.getByRole('button', { name: 'Revenir au graphe', exact: true }).click()
   await panel.getByText(/^En cours — /).first().waitFor()
   console.log('OK : un commit dit son auteur agent, son parent, les branches qui le contiennent, et son diff.')
@@ -465,6 +477,15 @@ try {
   // Le fil qui occupe le worktree, l'autre chose que GitKraken ne peut pas avoir.
   await panel.getByRole('button', { name: /Add offline caching/ }).first().waitFor()
   await panel.screenshot({ animations: 'disabled', path: join(shots, 'branches.png') })
+  // Une seule forme pour toutes les lignes (carte #57) : une étiquette, qu'on ne
+  // déplace pas, est enfant direct de sa section comme une branche locale l'est.
+  const depth = (text) =>
+    panel.locator('.pb-1').getByText(text, { exact: true }).first().evaluate((node) => {
+      let steps = 0
+      for (let at = node; !at.matches('.pb-1'); at = at.parentElement) steps++
+      return steps
+    })
+  assert.equal(await depth('v0.9.0'), await depth('feat/offline-cache'), 'pas d’enveloppe autour des lignes fixes')
   console.log('OK : Local, Worktrees avec leur fil, Étiquettes, et les sections vides qui le disent.')
 
   // ─── En cours : indexer, écrire un message, commiter ──────────────────────
@@ -934,7 +955,11 @@ try {
   await steps.first().focus()
   await page.keyboard.press(' ')
   await page.keyboard.press('ArrowDown')
+  // Tant qu'une ligne est tenue, *Lancer* est éteint (carte #57) : l'écran montre
+  // l'ordre prévisualisé, et un clic enverrait un ordre que personne n'a posé.
+  assert.equal(await panel.getByRole('button', { name: 'Lancer', exact: true }).isDisabled(), true, 'Lancer éteint pendant la saisie')
   await page.keyboard.press('Enter')
+  assert.equal(await panel.getByRole('button', { name: 'Lancer', exact: true }).isDisabled(), false, 'Lancer rallumé au lâcher')
   // L'ordre a changé à l'écran, et c'est l'ordre dans lequel git rejouera.
   assert.match(await steps.first().innerText(), /Lot four second step/, 'la ligne saisie est descendue')
   await panel.screenshot({ animations: 'disabled', path: join(shots4, 'plan-reordonne.png') })

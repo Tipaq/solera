@@ -18,7 +18,7 @@ import { createConversation } from '../conversations/create.js'
 import { listBranches } from '../git.js'
 import type { EventLog } from '../events/event-log.js'
 import type { AppContext } from '../http/context.js'
-import { HttpError, conflict } from '../http/errors.js'
+import { HttpError, conflict, describeHttpError } from '../http/errors.js'
 import type { SessionManager } from '../sessions/session-manager.js'
 import { vaultRoot } from '../settings/app-settings.js'
 import { placeDirectory } from '../workspace.js'
@@ -301,7 +301,7 @@ export class TaskScheduler {
       update({
         status: 'failed',
         finishedAt: Date.now(),
-        error: `Lancement impossible : ${err instanceof Error ? err.message : String(err)}`,
+        error: `Lancement impossible : ${describeHttpError(err)}`,
       })
       this.logger?.warn({ err, task: task.id }, 'tir planifié en échec à la vérification')
     } finally {
@@ -371,7 +371,7 @@ export class TaskScheduler {
     } catch (err) {
       run.status = 'failed'
       run.finishedAt = Date.now()
-      run.error = `Lancement impossible : ${err instanceof Error ? err.message : String(err)}`
+      run.error = `Lancement impossible : ${describeHttpError(err)}`
       this.logger?.warn({ err, task: task.id }, 'tir planifié en échec au lancement')
     } finally {
       this.firing.delete(task.id)

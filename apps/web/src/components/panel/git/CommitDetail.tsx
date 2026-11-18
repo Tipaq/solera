@@ -50,17 +50,49 @@ export function CommitDetail({
   const removed = (data?.files ?? []).reduce((sum, file) => sum + file.removed, 0)
 
   /**
-   * L'en-tête, écrit une fois et rendu deux : avec son menu une fois le commit lu, et
-   * sans tant qu'il se charge. C'est aussi lui qui porte le clic droit.
+   * Le bloc d'identité — le sujet et son `⋯` —, seule cible du clic droit.
+   *
+   * Pas l'en-tête entier : l'auteur, le sha et ceux des parents sont du texte qu'on
+   * sélectionne pour le copier, et le clic droit est justement le geste qui copie. Le
+   * menu n'offre « Copier le sha » que pour ce commit ; sur le reste, le menu du
+   * navigateur doit rester. Le retour non plus n'a rien à faire dans la zone.
    */
-  const header = (menu: ReactNode) => (
+  const identity = (menu: ReactNode) => (
+    <div className="flex items-start gap-1.5">
+      <p className="min-w-0 flex-1 text-xs font-medium text-ink">{data?.subject ?? ''}</p>
+      {menu}
+    </div>
+  )
+
+  const header = (
     <div className="flex items-start gap-1.5 border-b border-line px-2 py-1.5">
       <IconButton size="sm" label={t(beside ? 'common.close' : 'git.commit.back')} onClick={onBack}>
         {beside ? <X size={15} /> : <ArrowLeft size={15} />}
       </IconButton>
 
       <div className="min-w-0 flex-1">
-        <p className="text-xs font-medium text-ink">{data?.subject ?? ''}</p>
+        {/* Le même menu que dans le graphe : un commit ouvert doit pouvoir tout ce
+            qu'un commit de la liste peut, sinon on retourne à la liste pour agir. */}
+        {data ? (
+          <CommitMenu
+            hash={data.hash}
+            shortHash={data.shortHash}
+            threadId={data.thread?.id ?? null}
+            context={menus}
+            row={identity}
+            trigger={
+              <button
+                type="button"
+                aria-label={t('git.menu.commit.label', { subject: data.subject })}
+                className="flex size-6 shrink-0 items-center justify-center rounded-md text-ink-faint hover:bg-surface-high hover:text-ink"
+              >
+                <MoreHorizontal size={15} />
+              </button>
+            }
+          />
+        ) : (
+          identity(null)
+        )}
 
         {data ? (
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-micro text-ink-faint">
@@ -111,35 +143,12 @@ export function CommitDetail({
           </p>
         ) : null}
       </div>
-
-      {menu}
     </div>
   )
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto pb-safe">
-      {/* Le même menu que dans le graphe : un commit ouvert doit pouvoir tout ce
-          qu'un commit de la liste peut, sinon on retourne à la liste pour agir. */}
-      {data ? (
-        <CommitMenu
-          hash={data.hash}
-          shortHash={data.shortHash}
-          threadId={data.thread?.id ?? null}
-          context={menus}
-          row={header}
-          trigger={
-            <button
-              type="button"
-              aria-label={t('git.menu.commit.label', { subject: data.subject })}
-              className="flex size-6 shrink-0 items-center justify-center rounded-md text-ink-faint hover:bg-surface-high hover:text-ink"
-            >
-              <MoreHorizontal size={15} />
-            </button>
-          }
-        />
-      ) : (
-        header(null)
-      )}
+      {header}
 
       {isPending ? (
         <p className="flex items-center gap-1.5 px-2.5 py-2 text-xs text-ink-faint">

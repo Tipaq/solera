@@ -78,6 +78,7 @@ export const AgentsPane = memo(function AgentsPane({
   editTurns,
   teammates = [],
   selectedId,
+  hasGit = true,
   onOpenFile,
 }: {
   conversationId: string
@@ -93,6 +94,8 @@ export const AgentsPane = memo(function AgentsPane({
   /** Les sessions que celle-ci a lancées (`useTeammates`). */
   teammates?: Teammate[]
   selectedId: string | null
+  /** Faux hors d'un dépôt : l'onglet Git n'existe pas, et rien n'y mène. */
+  hasGit?: boolean
   onOpenFile: (path: string) => void
 }) {
   const t = useTranslate()
@@ -125,6 +128,7 @@ export const AgentsPane = memo(function AgentsPane({
           conversationId={conversationId}
           agent={selected}
           canMessage={AGENT_CAPABILITIES[agent].relaySubAgentMessage}
+          hasGit={hasGit}
           onOpenFile={onOpenFile}
         />
       </div>
@@ -211,7 +215,7 @@ export const AgentsPane = memo(function AgentsPane({
           {showFiles ? (
             <ul className="min-h-0 overflow-y-auto pb-1.5">
               {written.map((file) => (
-                <SessionFileLine key={file.path} file={file} agents={agents} onOpenFile={onOpenFile} />
+                <SessionFileLine key={file.path} file={file} agents={agents} hasGit={hasGit} onOpenFile={onOpenFile} />
               ))}
             </ul>
           ) : null}
@@ -402,7 +406,7 @@ function fileName(path: string) {
  * Une ligne de fichier : le nom ouvre le fichier, l'icône de diff mène à Git. Deux gestes,
  * donc deux boutons, plutôt qu'une ligne qui ferait l'un ou l'autre selon l'endroit.
  */
-function FileLine({ path, meta, delta, onOpenFile }: { path: string; meta?: string; delta: ReactNode; onOpenFile: (path: string) => void }) {
+function FileLine({ path, meta, delta, hasGit, onOpenFile }: { path: string; meta?: string; delta: ReactNode; hasGit: boolean; onOpenFile: (path: string) => void }) {
   const t = useTranslate()
   const name = fileName(path)
   return (
@@ -412,20 +416,22 @@ function FileLine({ path, meta, delta, onOpenFile }: { path: string; meta?: stri
         {meta ? <span className="min-w-0 truncate text-xs text-ink-faint">{meta}</span> : null}
       </button>
       {delta}
-      <IconButton
-        size="sm"
-        label={t('panel.agent.files.diff', { name })}
-        title={t('panel.agent.files.diffTitle')}
-        onClick={() => setPanelTab('git')}
-        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
-      >
-        <FileDiff size={13} aria-hidden />
-      </IconButton>
+      {hasGit ? (
+        <IconButton
+          size="sm"
+          label={t('panel.agent.files.diff', { name })}
+          title={t('panel.agent.files.diffTitle')}
+          onClick={() => setPanelTab('git')}
+          className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
+        >
+          <FileDiff size={13} aria-hidden />
+        </IconButton>
+      ) : null}
     </li>
   )
 }
 
-function SessionFileLine({ file, agents, onOpenFile }: { file: SessionFile; agents: SubAgent[]; onOpenFile: (path: string) => void }) {
+function SessionFileLine({ file, agents, hasGit, onOpenFile }: { file: SessionFile; agents: SubAgent[]; hasGit: boolean; onOpenFile: (path: string) => void }) {
   const t = useTranslate()
   const by = [
     ...(file.byMain ? [t('panel.agent.files.main')] : []),
@@ -434,7 +440,7 @@ function SessionFileLine({ file, agents, onOpenFile }: { file: SessionFile; agen
       return writer ? [subAgentLabel(writer)] : []
     }),
   ]
-  return <FileLine path={file.path} meta={by.join(', ')} delta={<Delta added={file.added} removed={file.removed} passes={file.passes} />} onOpenFile={onOpenFile} />
+  return <FileLine path={file.path} meta={by.join(', ')} delta={<Delta added={file.added} removed={file.removed} passes={file.passes} />} hasGit={hasGit} onOpenFile={onOpenFile} />
 }
 
 /**
@@ -480,12 +486,14 @@ function SubAgentDetail({
   conversationId,
   agent,
   canMessage,
+  hasGit,
   onOpenFile,
 }: {
   conversationId: string
   agent: SubAgent
   /** Le CLI de la session sait faire relayer un message à son sous-agent. */
   canMessage: boolean
+  hasGit: boolean
   onOpenFile: (path: string) => void
 }) {
   const t = useTranslate()
@@ -573,6 +581,7 @@ function SubAgentDetail({
                   key={file.path}
                   path={file.path}
                   delta={<Delta added={file.added} removed={file.removed} passes={file.passes} />}
+                  hasGit={hasGit}
                   onOpenFile={onOpenFile}
                 />
               ))}
