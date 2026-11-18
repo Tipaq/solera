@@ -132,7 +132,12 @@ export const SidePanel = memo(function SidePanel({
   const worktreeView = !conversationId && worktree !== undefined
   const scope = conversationId ?? (worktreeView ? worktreeScope(worktree.id) : projectScope(projectId ?? ''))
   const { data: projects } = useProjects()
-  const projectName = projects?.find((project) => project.id === projectId)?.name
+  const project = projects?.find((entry) => entry.id === projectId)
+  const projectName = project?.name
+  // Hors d'un dépôt, l'onglet Git n'aurait qu'à le dire : il disparaît, comme le choix
+  // de worktree. Tant que le projet n'est pas lu, on le garde plutôt que de le faire
+  // clignoter ; un arbre, lui, est toujours dans un dépôt.
+  const hasGit = worktreeView || project === undefined || project.git !== null
   const workspaceLabel = hasWorkspace
     ? [projectName, (worktreeView ? worktree.name : workspaceName) ?? t('terminal.dir.workspace')].filter(Boolean).join(' · ')
     : t('panel.noWorkspace')
@@ -163,9 +168,11 @@ export const SidePanel = memo(function SidePanel({
       ? 'agents'
       : rootOnlyTab
         ? 'git'
-        : conversationId || !sessionTab
-          ? chosenTab
-          : 'files'
+        : chosenTab === 'git' && !hasGit
+          ? 'files'
+          : conversationId || !sessionTab
+            ? chosenTab
+            : 'files'
   // Lus seulement quand l'onglet Agent est ouvert : c'est le seul à les montrer.
   const teammates = useTeammates(tab === 'agents' ? conversationId : undefined, tab === 'agents' ? (projectId ?? undefined) : undefined)
   // Le badge de *Projet* compte ce qui attend une relecture : c'est la seule chose du
@@ -367,6 +374,7 @@ export const SidePanel = memo(function SidePanel({
         closable={!modal && !docked}
         tab={tab}
         hasWorkspace={hasWorkspace}
+        hasGit={hasGit}
         showRootViews={!worktreeView}
         hasConversation={Boolean(conversationId)}
         hasWeb={hasWeb}
@@ -469,6 +477,7 @@ export const SidePanel = memo(function SidePanel({
           editTurns={editTurns}
           teammates={teammates}
           selectedId={selectedSubAgent}
+          hasGit={hasGit}
           onOpenFile={openInFiles}
         />
       ) : null}
@@ -535,7 +544,7 @@ export const SidePanel = memo(function SidePanel({
  * *Agent* et *Projet*. Sur un fil libre il ne reste qu'*Agent* — sans board, *Projet*
  * n'a rien à montrer — et le trait n'a donc rien à séparer.
  */
-function ViewBar({ band, closable, tab, hasWorkspace, showRootViews, hasConversation, hasWeb, agentBadge, projectBadge, projectId }: {
+function ViewBar({ band, closable, tab, hasWorkspace, hasGit, showRootViews, hasConversation, hasWeb, agentBadge, projectBadge, projectId }: {
   /** Vrai quand cette rangée *est* le segment de bande du panneau, à sa hauteur. */
   band: boolean
   /** Le panneau recouvre le bouton du fil : il porte alors sa propre fermeture. */
@@ -543,6 +552,8 @@ function ViewBar({ band, closable, tab, hasWorkspace, showRootViews, hasConversa
   tab: PanelTab
   /** Faux sur un fil libre : les cinq vues de répertoire n'ont rien à montrer. */
   hasWorkspace: boolean
+  /** Faux hors d'un dépôt git : la vue Git n'aurait rien à montrer. */
+  hasGit: boolean
   /** Faux sur un arbre sans session : Terminaux et Actions s'ouvriraient à la racine. */
   showRootViews: boolean
   hasConversation: boolean
@@ -562,8 +573,10 @@ function ViewBar({ band, closable, tab, hasWorkspace, showRootViews, hasConversa
             active={tab === 'files'} onSelect={() => setPanelTab('files')} />
           <Tab icon={<Search size={15} />} label={t('panel.tab.search')} keepLabel={!band}
             active={tab === 'search'} onSelect={() => setPanelTab('search')} />
-          <Tab icon={<GitCompare size={15} />} label={t('panel.tab.git')} keepLabel={!band}
-            active={tab === 'git'} onSelect={() => setPanelTab('git')} />
+          {hasGit ? (
+            <Tab icon={<GitCompare size={15} />} label={t('panel.tab.git')} keepLabel={!band}
+              active={tab === 'git'} onSelect={() => setPanelTab('git')} />
+          ) : null}
           {showRootViews ? (
             <>
               <Tab icon={<SquareTerminal size={15} />} label={t('panel.tab.terminals')} keepLabel={!band}
