@@ -92,6 +92,45 @@ export async function checkDownloads({ page, context, base, project, hero, data 
     assert.equal(page.url(), `${base}/p/${project.id}/travail`, 'Downloading must keep the IDE open')
   }
 
+  // La visionneuse PDF de Chromium prend le focus une centaine de ms après le `load` de
+  // son iframe (carte #251). On retient la réponse du PDF jusqu'au milieu de la saisie
+  // dans « Ouvrir un fichier » : la fin du chargement tombe alors pendant la frappe, et
+  // toute la saisie doit rester dans le champ.
+  const holdPdf = async (path) => {
+    let release
+    const released = new Promise((resolve) => { release = resolve })
+    const url = (target) => target.pathname.endsWith('/file/raw') && target.searchParams.get('path') === path
+    await page.route(url, async (route) => { await released; await route.continue() })
+    const loaded = panel.locator('iframe[data-editor-file]').evaluate((frame) => new Promise((resolve) => frame.addEventListener('load', resolve, { once: true })))
+    return { release, loaded, unroute: () => page.unroute(url) }
+  }
+  const typeWhilePdfLoads = async ({ release, loaded, unroute }) => {
+    await page.evaluate(() => {
+      window.pdfFocusSteals = 0
+      window.countPdfFocusSteals = () => { if (document.activeElement?.tagName === 'IFRAME') window.pdfFocusSteals++ }
+      addEventListener('blur', window.countPdfFocusSteals)
+    })
+    const picker = page.getByRole('dialog', { name: 'Ouvrir un fichier', exact: true })
+    const field = picker.getByRole('combobox')
+    const typed = 'ui-downloads/vide.txt'
+    await page.keyboard.press('Control+p')
+    await picker.waitFor()
+    await field.pressSequentially(typed.slice(0, 4))
+    release()
+    await loaded
+    await field.pressSequentially(typed.slice(4), { delay: 60 })
+    await unroute()
+    const steals = await page.evaluate(() => {
+      removeEventListener('blur', window.countPdfFocusSteals)
+      return window.pdfFocusSteals
+    })
+    assert.ok(steals > 0, 'The PDF viewer took the focus while loading')
+    assert.equal(await field.inputValue(), typed, 'Typing must stay in the field while a PDF finishes loading')
+    assert.equal(await field.evaluate((element) => element === document.activeElement), true)
+    await page.keyboard.press('Escape')
+    await picker.waitFor({ state: 'hidden' })
+  }
+
   await openFile('ui-downloads/note.txt')
   const code = panel.locator('.cm-content')
   await code.fill('Brouillon local, à conserver.')
@@ -107,17 +146,10 @@ export async function checkDownloads({ page, context, base, project, hero, data 
 
   for (const name of ['image.svg', 'document.pdf', binaryName, 'vide.txt']) {
     const path = `ui-downloads/${name}`
+    const pdf = name === 'document.pdf' ? await holdPdf(path) : null
     await openFile(path)
     await expectDownload(name, () => panel.getByRole('button', { name: `Télécharger ${path}`, exact: true }).click())
-    // La visionneuse PDF de Chromium prend le focus en finissant de charger, même sous
-    // un dialogue modal et même dans une iframe inerte. Si ce moment tombe pendant la
-    // saisie dans « Ouvrir un fichier », le texte part dans l'iframe et l'option
-    // n'apparaît jamais. Aucun signal ne dit que le vol est passé (il suit l'événement
-    // `load` d'une centaine de ms) : on retire donc l'iframe avant d'écrire (carte #248).
-    if (name === 'document.pdf') {
-      await panel.getByRole('button', { name: `Fermer ${path}`, exact: true }).click()
-      await panel.locator('iframe[data-editor-file]').waitFor({ state: 'detached' })
-    }
+    if (pdf) await typeWhilePdfLoads(pdf)
   }
   for (const width of [320, 390]) {
     await page.setViewportSize({ width, height: 844 })
