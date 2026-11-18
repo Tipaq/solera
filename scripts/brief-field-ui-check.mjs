@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { launchBrowser } from './checks/browser.mjs'
 import { viteDependency } from './checks/vite-deps.mjs'
+import './checks/cleanup.mjs'
 
 // Le champ d'écriture à mentions (#192, WRT-1 à WRT-10, PJ-1 à PJ-5, CMP-5), monté seul
 // dans un tiroir commun : composants réels, sans daemon ni base.

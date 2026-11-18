@@ -11,8 +11,12 @@ import { cx } from '@solera/ui'
 export const TILE_GRID =
   'grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(16.5rem,1fr))] 2xl:[grid-template-columns:repeat(auto-fill,minmax(18rem,1fr))]'
 
-/** Hauteur fixe, rien ne dépasse : chaque rangée interne tronque, la boîte coupe le reste. */
-export const TILE_BOX = '@container/tile flex h-[9.5rem] min-w-0 flex-col overflow-hidden rounded-xl border p-3'
+/**
+ * Hauteur fixe, rien ne dépasse : chaque rangée interne tronque, la boîte coupe le reste.
+ * Au doigt, le geste du pied passe à 44 px : à 9,5 rem il mangeait la consigne et la
+ * cadence, coupées à mi-hauteur. 10 rem leur rendent leurs deux lignes.
+ */
+export const TILE_BOX = '@container/tile flex h-[9.5rem] min-w-0 flex-col overflow-hidden rounded-xl border p-3 pointer-coarse:h-40'
 
 /** Un groupe : en-tête sobre (icône, titre, compte), puis la grille et sa tuile d'ajout. */
 export function LauncherGroup({
