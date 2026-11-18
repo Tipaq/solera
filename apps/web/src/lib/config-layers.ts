@@ -146,8 +146,18 @@ export function useConfigLayerDraft(project: ProjectDto) {
     },
     /** Les réglages changés, un par un, pour la barre. */
     changed,
-    /** Le corps du `PATCH` : les changements qui mènent de l'enregistré au brouillon. */
-    body: () => diffConfigLayers(stored, draft),
+    /**
+     * Le brouillon tel qu'il part : le corps du `PATCH` (les changements qui mènent de
+     * l'enregistré au brouillon), et `settle`, qui ne retire une fois enregistrés que ces
+     * changements-là. Ceux posés pendant l'enregistrement restent.
+     */
+    take: () => {
+      const sent = patches
+      return {
+        body: diffConfigLayers(stored, draft),
+        settle: () => setPatches((current) => current.filter((patch) => !sent.includes(patch))),
+      }
+    },
     clear: () => setPatches([]),
     /** Le compte relu : avant, les rangées diraient les défauts du protocole. */
     ready: settings !== undefined,

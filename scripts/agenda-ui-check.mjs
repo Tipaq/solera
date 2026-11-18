@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout } from 'node:timers/promises'
 import { launchBrowser } from './checks/browser.mjs'
 import { viteDependency } from './checks/vite-deps.mjs'
+import './checks/cleanup.mjs'
 
 /*
  * L'Agenda des actions (AGD-1 à AGD-10), monté seul avec les données de sa story : une

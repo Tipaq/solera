@@ -14,6 +14,7 @@ import { useLiveBackground, useLiveLoops, useLiveSeq, useLiveStatus } from '../.
 import { conversationPath, useOpenConversationId } from '../../lib/conversation-route'
 import { useDisplaySettings } from '../../lib/display-settings'
 import { useTranslate } from '../../lib/i18n'
+import { useMediaQuery } from '../../lib/viewport'
 import { isUnreadSettled } from '../../lib/reads'
 import { buildSidebarSignals, threadState } from '../../lib/signals'
 import { AgentIcon } from '../AgentIcon'
@@ -57,6 +58,8 @@ export const ConversationLine = memo(function ConversationLine({
   const isArchived = conversation.archivedAt !== null
   const navigate = useNavigate()
   const openId = useOpenConversationId()
+  // Au doigt, pas de survol pour révéler l'épingle : elle passe dans le ⋯.
+  const coarse = useMediaQuery('(pointer: coarse)')
   const [editing, setEditing] = useState(false)
   // Tenu ici et non dans le menu, qui démonte son contenu en se refermant.
   const arrange = useArrangeConversation(conversation)
@@ -70,6 +73,8 @@ export const ConversationLine = memo(function ConversationLine({
     [status, background, loops],
   )
   const loop = signals.find((signal) => signal.kind === 'loop') ?? null
+  const togglePin = () => setPinned.mutate({ id: conversation.id, pinned: !conversation.pinned })
+  const pinLabel = t(conversation.pinned ? 'shell.conversation.unpin' : 'shell.conversation.pin')
   const commit = (draft: string) => {
     setEditing(false)
     const value = draft.trim()
@@ -99,7 +104,9 @@ export const ConversationLine = memo(function ConversationLine({
     <li
       onContextMenu={openRowMenu}
       className={cx(
-        'group/row flex h-11 items-center rounded-md pr-0.5 transition-colors md:h-8 pointer-coarse:h-11',
+        // Au doigt, le ⋯ de 44 px touche le bord du conteneur : son centre tombe à
+        // l'aplomb du × de la bande, du chevron des projets et des compteurs des lieux.
+        'group/row flex h-11 items-center rounded-md pr-0.5 transition-colors md:h-8 pointer-coarse:h-11 pointer-coarse:pr-0',
         isActive ? 'bg-accent-wash' : 'hover:bg-surface-high hover:text-ink',
         isActive || unread ? 'text-ink' : 'text-ink-soft',
       )}
@@ -136,6 +143,11 @@ export const ConversationLine = memo(function ConversationLine({
           </span>
         ) : null}
         {project && display.projectDot ? <ProjectAvatar project={project} className="size-3" /> : null}
+        {/* Au doigt, le ⋯ reste affiché : les points ne peuvent plus partager sa case,
+            ils s'y posaient dessus. Ils passent au bout du titre. */}
+        {coarse && (state || loop) ? (
+          <span className="flex shrink-0 items-center gap-1"><RowDots state={state} loop={loop} /></span>
+        ) : null}
       </NavLink>
 
       {/* L'épingle a son propre emplacement, à gauche du menu : marque quand elle est
@@ -147,18 +159,20 @@ export const ConversationLine = memo(function ConversationLine({
           les yeux, l'épingle est une propriété qui ne bouge que si on la retire. Les
           mêler faisait disparaître la seconde dès que le premier avait quelque chose à
           dire — c'est-à-dire sur les fils qu'on suit, ceux qu'on épingle. */}
-      {conversation.isOwner || conversation.pinned ? (
+      {/* Au doigt, la case n'existe que pour un fil épinglé : une épingle vide sur chaque
+          ligne chargeait la liste, et épingler passe par le ⋯. */}
+      {(conversation.isOwner && !coarse) || conversation.pinned ? (
         <span className="flex size-11 shrink-0 items-center justify-center md:size-7 pointer-coarse:size-11">
           <IconButton
-            label={t(conversation.pinned ? 'shell.conversation.unpin' : 'shell.conversation.pin')}
+            label={pinLabel}
             size="sm"
             disabled={!conversation.isOwner}
-            onClick={() => setPinned.mutate({ id: conversation.id, pinned: !conversation.pinned })}
+            onClick={togglePin}
             className={cx(
               'transition-opacity',
               conversation.pinned
                 ? 'text-ink-soft'
-                : 'opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100 pointer-coarse:opacity-100',
+                : 'opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100',
             )}
           >
             <Pin size={13} className={cx(conversation.pinned && 'fill-current')} />
@@ -175,11 +189,11 @@ export const ConversationLine = memo(function ConversationLine({
           Opacité et non `hidden` : l'état reste annoncé aux lecteurs d'écran pendant
           que la souris passe, et `pointer-events-none` laisse le clic au bouton. */}
       <span className="relative flex size-11 shrink-0 items-center justify-center md:size-7 pointer-coarse:size-11">
-        <span className="pointer-events-none absolute inset-0 flex items-center justify-center gap-1 transition-opacity group-hover/row:opacity-0 group-focus-within/row:opacity-0">
-          {/* Deux points au plus : l'état, selon la charte de la colonne, et la boucle. */}
-          {state ? <StateDot state={state} /> : null}
-          {loop ? <SignalDot signal={loop} /> : null}
-        </span>
+        {coarse ? null : (
+          <span className="pointer-events-none absolute inset-0 flex items-center justify-center gap-1 transition-opacity group-hover/row:opacity-0 group-focus-within/row:opacity-0">
+            <RowDots state={state} loop={loop} />
+          </span>
+        )}
 
         <Menu
           trigger={
@@ -196,6 +210,11 @@ export const ConversationLine = memo(function ConversationLine({
           <MenuItem icon={<Pencil size={14} />} disabled={!conversation.isOwner} onSelect={() => setEditing(true)}>
             {t('shell.rename')}
           </MenuItem>
+          {coarse ? (
+            <MenuItem icon={<Pin size={14} />} disabled={!conversation.isOwner} onSelect={togglePin}>
+              {pinLabel}
+            </MenuItem>
+          ) : null}
           {/* Carte #14 : le rangement vit ici, entre renommer et archiver, parce que
               c'est le même registre — ce qu'on fait d'un fil sans y entrer. Un tir de
               tâche planifiée reste où sa tâche l'a mis. */}
@@ -240,3 +259,16 @@ export const ConversationLine = memo(function ConversationLine({
     </li>
   )
 })
+
+/** Deux points au plus : l'état, selon la charte de la colonne, et la boucle. */
+function RowDots({ state, loop }: {
+  state: ReturnType<typeof threadState>
+  loop: ReturnType<typeof buildSidebarSignals>[number] | null
+}) {
+  return (
+    <>
+      {state ? <StateDot state={state} /> : null}
+      {loop ? <SignalDot signal={loop} /> : null}
+    </>
+  )
+}

@@ -145,8 +145,10 @@ export function Sidebar({
       {/* La bande réserve la même gouttière de barre que le bloc qui défile, quelle que
           soit la largeur de la barre sur la plateforme : son bord droit utile est celui
           des lignes. Le bouton de repli en `sm` (28 px), avec les 12 px de la bande, se
-          centre à 26 px de ce bord, comme le ⋯ d'un projet (conteneur 8 + ligne 4 + 14). */}
-      <HeaderBand zone="nav" className="overflow-y-hidden pl-4 [scrollbar-gutter:stable]">
+          centre à 26 px de ce bord, comme le ⋯ d'un projet (conteneur 8 + ligne 4 + 14).
+          Au doigt, le × en 44 px touche les 8 px du bord : il est sur la colonne de
+          droite du téléphone, celle des ⋯ et des chevrons de 44 px (8 + 22 = 30). */}
+      <HeaderBand zone="nav" className="overflow-y-hidden pl-4 [scrollbar-gutter:stable] pointer-coarse:pr-2">
         <Logo size={20} className="text-accent" />
         <span className="text-heading font-semibold tracking-tight">Solera</span>
         {/* Enveloppes plutôt que `hidden` sur le bouton : `IconButton` pose déjà un

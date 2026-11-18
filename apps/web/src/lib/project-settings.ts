@@ -90,6 +90,19 @@ export function settingsPatchOf(base: SettingsBase, edits: SettingsEdits): Recor
   return patch
 }
 
+/**
+ * Le brouillon une fois enregistré le `PATCH` tiré de `base` et `sent` : ce qui est parti
+ * s'en retire, tel qu'il est parti. Un champ modifié pendant l'enregistrement y reste,
+ * pour partir au suivant, comme celui que le `PATCH` n'a pas porté.
+ */
+export function unsentEdits(current: SettingsEdits, base: SettingsBase, sent: SettingsEdits): SettingsEdits {
+  const rest: SettingsEdits = { ...current }
+  for (const field of changedFields(base, sent)) {
+    if (current[field] === sent[field]) delete rest[field]
+  }
+  return rest
+}
+
 export type DraftProblem = 'nameEmpty' | 'pathEmpty' | 'capTooLong'
 
 /** Ce qui empêche d'enregistrer le brouillon tel qu'il est, avant que le serveur le dise. */

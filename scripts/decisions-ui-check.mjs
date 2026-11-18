@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { removeOnExit } from './checks/cleanup.mjs'
 
 // Les décisions de bout en bout, avec les vrais composants et la vraie API, dans une base
 // temporaire : une session accordée dépose une décision par la même file que le serveur
@@ -22,7 +23,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
 const Database = createRequire(join(serverDir, 'package.json'))('better-sqlite3')
-const data = await mkdtemp(join(tmpdir(), 'solera-decisions-check-'))
+const data = removeOnExit(await mkdtemp(join(tmpdir(), 'solera-decisions-check-')))
 const shots = join(root, 'docs/audits/2026-10-22-decisions')
 const processes = []
 let browser
@@ -119,6 +120,13 @@ try {
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
+  // Le toast naît d'un `notify` en direct, que le serveur n'envoie qu'aux onglets qui se
+  // sont déclarés visibles. Demander avant cette déclaration le perdait, une fois sur
+  // quelques-unes en CI (#268) : on attend que la page l'ait envoyée.
+  let declaredVisible = false
+  page.on('websocket', (socket) => socket.on('framesent', ({ payload }) => {
+    if (typeof payload === 'string' && payload.includes('"t":"presence"') && payload.includes('"visible":true')) declaredVisible = true
+  }))
   await page.goto(`${base}/p/${project.id}/board`)
   await page.getByRole('group', { name: 'Suivi des conversations', exact: true }).waitFor()
   // Ce qui t'attend est en tête de l'Activité (#121) : plus de section à part.
@@ -127,6 +135,8 @@ try {
   assert.equal(await section.getByRole('button', { name: /Monter vite/ }).count(), 0, 'Rien tant que rien n’attend')
 
   // La session demande : le toast et la section apparaissent, sans recharger.
+  for (let i = 0; i < 100 && !declaredVisible; i++) await delay(100)
+  assert.ok(declaredVisible, 'La page se déclare visible au serveur')
   const first = ask({
     question: 'Monter vite en 7.0 maintenant ?',
     context: '**Vite 7.0** est sorti hier. Les tests passent sur la branche `chore/vite-7`, mais deux plugins affichent des avertissements de dépréciation.\n\n- Diff : 4 fichiers',
