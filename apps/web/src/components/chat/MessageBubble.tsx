@@ -7,7 +7,7 @@ import { renderableBlocks, type MessageItem } from '../../lib/chat-fold'
 import { locale, useTranslate } from '../../lib/i18n'
 import { cx } from '@solera/ui'
 import { ImageThumbnail } from '../ImageThumbnail'
-import { CopyButton } from './CopyButton'
+import { CopyButton, FOOTER_TAP } from './CopyButton'
 import { Markdown } from './Markdown'
 
 /**
@@ -64,6 +64,7 @@ function MessageFooter({
           title={t('message.fork.title')}
           className={cx(
             'flex items-center gap-1 rounded-md px-1.5 py-1 transition-[color,opacity]',
+            FOOTER_TAP,
             'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100',
             'text-ink-faint hover:text-ink',
           )}
