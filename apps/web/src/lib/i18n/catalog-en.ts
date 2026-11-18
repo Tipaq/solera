@@ -3902,6 +3902,8 @@ export const en = {
   'error.worktree_removed': "This worktree has been removed.",
   'error.working_directory_missing': "This conversation's working directory no longer exists: {path}.",
   'error.agent_account_required': "No {agent} account is connected: connect one in Settings › Agents to start this conversation.",
+  'error.agent_cli_not_found': "The {agent} CLI cannot be found: \"{binary}\" is neither in {managedDir} nor on the PATH of the Solera service. Install it from Settings › Agents.",
+  'error.agent_cli_unavailable': "The {agent} CLI cannot be launched: \"{binary}\" does not exist or is not executable in the environment of this session.",
   'error.worktree_not_gone': "This conversation still has its worktree.",
   'error.conversation_not_in_worktree': 'This conversation already works at the project root.',
   'error.conversation_busy_return_to_root': 'A turn is running: wait for it to end before bringing the session back to the root.',
