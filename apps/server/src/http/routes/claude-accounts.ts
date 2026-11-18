@@ -9,7 +9,7 @@ import {
   type ClaudeAccountListDto,
   type ClaudeLoginStatusDto,
 } from '@solera/protocol'
-import type { ClaudeIdentify } from '../../claude-accounts/identity.js'
+import { addressesDiffer, type ClaudeIdentify } from '../../claude-accounts/identity.js'
 import type { ClaudeLoginService } from '../../claude-accounts/login.js'
 import type { ClaudeAccountStore } from '../../claude-accounts/store.js'
 import { HttpError, notFound } from '../errors.js'
@@ -146,8 +146,8 @@ export function registerClaudeAccountRoutes(
       throw new HttpError(400, 'claude_account_alias_required', 'An API key has no address: it keeps its name.')
     }
     const email = body.token ? await emailOf(body.token) : null
-    if (email && account.email && email !== account.email) {
-      throw new HttpError(409, 'claude_account_email_mismatch', 'This token belongs to {email}, not {expected}.', { email, expected: account.email })
+    if (addressesDiffer(account.email, email)) {
+      throw new HttpError(409, 'claude_account_email_mismatch', 'This token belongs to {email}, not {expected}.', { email: email!, expected: account.email! })
     }
     const other = email ? accounts.findByEmail(user.id, email) : undefined
     if (other && other.id !== id) {
