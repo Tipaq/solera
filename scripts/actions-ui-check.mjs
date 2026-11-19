@@ -904,8 +904,10 @@ async function checkProjectTab(base, env, api) {
     // fermeture. La vue ne doit pas réécrire le `?action=` du dernier rendu : il rouvrait
     // le tiroir, qui prenait le focus et refermait « Affichage » sous le clic suivant.
     // Le tiroir s'ouvre par l'adresse, pour que le rendu la porte ; les deux gestes
-    // partent dans la même tâche, sans rendu entre eux. Au téléphone, le tiroir est
-    // modal : « Affichage » ne s'ouvre pas par-dessus.
+    // partent dans la même tâche, sans rendu entre eux. « Affichage » s'ouvre par un
+    // événement et non un clic : le voile du tiroir prendrait le clic et le fermerait.
+    // Au téléphone, le tiroir est modal : « Affichage » ne s'ouvre pas par-dessus. Le ✕
+    // du détail et l'Annuler de l'éditeur ferment par le même `setPanel(null)`.
     if (!phone) {
       await page.goto(`${tab}?vue=liste&action=${idOf(hello)}`)
       const detail = page.getByRole('dialog', { name: 'Bonjour', exact: true })
@@ -915,8 +917,8 @@ async function checkProjectTab(base, env, api) {
       await displayMenu.getByRole('radio', { name: 'Agenda' }).waitFor()
       await page.evaluate(() => {
         document.querySelector('[role="dialog"][aria-label="Bonjour"] button[aria-label="Fermer"]').click()
-        const views = document.querySelectorAll('[role="dialog"][aria-label="Affichage"] [role="radio"]')
-        ;[...views].find((node) => node.textContent.trim() === 'Agenda').click()
+        const viewRadios = document.querySelectorAll('[role="dialog"][aria-label="Affichage"] [role="radio"]')
+        ;[...viewRadios].find((node) => node.textContent.trim() === 'Agenda').click()
       })
       await page.waitForFunction(() => new URL(location.href).searchParams.get('vue') === 'agenda')
       assert.equal(search().get('action'), null, 'La vue s’écrit sur l’adresse courante, pas sur celle du dernier rendu')
