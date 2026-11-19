@@ -899,6 +899,35 @@ async function checkProjectTab(base, env, api) {
     await row('Sauvegarde').getByText('dans', { exact: false }).waitFor()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await page.screenshot({ path: join(shots, `tab-list-${width}.png`) })
+
+    // #298 : le tiroir fermé, puis une vue choisie avant que la page ait suivi la
+    // fermeture. La vue ne doit pas réécrire le `?action=` du dernier rendu : il rouvrait
+    // le tiroir, qui prenait le focus et refermait « Affichage » sous le clic suivant.
+    // Le tiroir s'ouvre par l'adresse, pour que le rendu la porte ; les deux gestes
+    // partent dans la même tâche, sans rendu entre eux. « Affichage » s'ouvre par un
+    // événement et non un clic : le voile du tiroir prendrait le clic et le fermerait.
+    // Au téléphone, le tiroir est modal : « Affichage » ne s'ouvre pas par-dessus. Le ✕
+    // du détail et l'Annuler de l'éditeur ferment par le même `setPanel(null)`.
+    if (!phone) {
+      await page.goto(`${tab}?vue=liste&action=${idOf(hello)}`)
+      const detail = page.getByRole('dialog', { name: 'Bonjour', exact: true })
+      await detail.waitFor()
+      await page.getByRole('button', { name: 'Affichage : Liste' }).dispatchEvent('click')
+      const displayMenu = page.getByRole('dialog', { name: 'Affichage', exact: true })
+      await displayMenu.getByRole('radio', { name: 'Agenda' }).waitFor()
+      await page.evaluate(() => {
+        document.querySelector('[role="dialog"][aria-label="Bonjour"] button[aria-label="Fermer"]').click()
+        const viewRadios = document.querySelectorAll('[role="dialog"][aria-label="Affichage"] [role="radio"]')
+        ;[...viewRadios].find((node) => node.textContent.trim() === 'Agenda').click()
+      })
+      await page.waitForFunction(() => new URL(location.href).searchParams.get('vue') === 'agenda')
+      assert.equal(search().get('action'), null, 'La vue s’écrit sur l’adresse courante, pas sur celle du dernier rendu')
+      await detail.waitFor({ state: 'hidden' })
+      await displayMenu.getByRole('radiogroup', { name: 'Période' }).waitFor()
+      await displayMenu.getByRole('radio', { name: 'Liste' }).click()
+      await page.keyboard.press('Escape')
+    }
+
     // « Planifier » d'une action à la demande ouvre l'éditeur sur Quand.
     await row('Bonjour').getByRole('button', { name: /Planifier/ }).click()
     const when = page.getByRole('dialog', { name: 'Modifier « Bonjour »', exact: true })
