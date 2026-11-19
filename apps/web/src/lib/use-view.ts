@@ -27,13 +27,14 @@ export function useView<K extends string>(scope: string, projectId: string | nul
       } catch {
         // Stockage refusé (navigation privée) : la vue tient encore par l'adresse.
       }
-      // De l'adresse courante, pas de celle du dernier rendu que passe la forme
-      // fonctionnelle de `setParams` : le routeur suit l'adresse sous transition, et une
-      // vue choisie juste après un autre réglage de l'adresse l'aurait défait (#296).
-      // Sous un MemoryRouter (les stories), `window.location` n'est pas son adresse (#297).
-      const latest = new URLSearchParams(window.location.search)
-      latest.set(VIEW_PARAM, next)
-      setParams(latest, { replace: true })
+      setParams(
+        (current) => {
+          const updated = new URLSearchParams(current)
+          updated.set(VIEW_PARAM, next)
+          return updated
+        },
+        { replace: true },
+      )
     },
     [setParams, storage],
   )
